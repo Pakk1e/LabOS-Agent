@@ -17,7 +17,7 @@ class ChatGPTPage:
         self.page = page
 
     def open(self, url: str = "https://chatgpt.com/") -> ChatStatus:
-        self.page.goto(url, wait_until="domcontentloaded")
+        self.page.goto(url, wait_until="domcontentloaded", timeout=60000)
         return self.status()
 
     def status(self) -> ChatStatus:
