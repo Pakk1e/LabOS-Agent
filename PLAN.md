@@ -3,49 +3,51 @@
 ## Phase 0 — Repository bootstrap
 - [x] Create dedicated repository.
 - [x] Establish project purpose and safety rules.
-- [ ] Add Python package skeleton.
-- [ ] Add configuration/state model.
-- [ ] Add tests for controller state transitions.
+- [x] Add Python package skeleton.
+- [x] Add configuration/state model.
+- [x] Add tests for controller state transitions.
 
 ## Phase 1 — Local controller
-- [ ] Implement run lifecycle.
-- [ ] Implement deadline handling.
-- [ ] Implement iteration and rollover limits.
-- [ ] Implement persistent state.
-- [ ] Implement structured logs.
+- [x] Implement run lifecycle.
+- [x] Implement deadline handling.
+- [x] Implement iteration and rollover limits.
+- [x] Implement persistent state.
+- [ ] Add structured logs beyond persistent state.
 
 ## Phase 2 — Browser
-- [ ] Add Playwright.
-- [ ] Launch persistent Chromium profile.
-- [ ] Manually authenticate to ChatGPT.
-- [ ] Detect active conversation.
-- [ ] Detect response generation/completion.
-- [ ] Submit a continuation message.
-- [ ] Capture the completed response safely.
+- [x] Add Playwright.
+- [x] Launch persistent Chromium profile.
+- [x] Attach to an existing Chromium over CDP.
+- [x] Manually authenticate to ChatGPT.
+- [x] Detect active ChatGPT page.
+- [x] Detect response generation/completion conservatively.
+- [x] Submit a continuation message.
+- [x] Capture the completed response safely.
 
 ## Phase 3 — Weather integration
-- [ ] Add Weather project configuration.
-- [ ] Read Weather project state files.
-- [ ] Define continuation prompt.
-- [ ] Validate repository/test state before continuation.
-- [ ] Add manual-confirmation mode.
+- [x] Add Weather project configuration.
+- [x] Read Weather project state files.
+- [x] Define continuation prompt.
+- [x] Validate repository state before continuation.
+- [x] Add one-iteration manual mode.
 
 ## Phase 4 — Chat rollover
-- [ ] Define conservative context rollover threshold.
-- [ ] Request a new-chat handoff.
-- [ ] Capture and persist the handoff.
-- [ ] Open a new conversation.
-- [ ] Paste handoff and resume.
-- [ ] Test recovery after browser interruption.
+- [x] Define conservative rollover thresholds.
+- [x] Request a new-chat handoff.
+- [x] Capture and persist the handoff.
+- [x] Preserve Project context as a hard requirement.
+- [x] Provide configurable Project new-chat navigation.
+- [ ] Run a live rollover test against the user's actual Project UI.
 
 ## Phase 5 — Autonomous mode
-- [ ] Add safety gates.
-- [ ] Add repeated-failure detection.
-- [ ] Add hard deadline.
-- [ ] Add BLOCKED handling.
-- [ ] Add overnight run command.
-- [ ] Produce morning report.
+- [x] Add safety gates.
+- [x] Add repeated-failure detection.
+- [x] Add hard deadline.
+- [x] Add BLOCKED handling.
+- [x] Add overnight/run command.
+- [ ] Produce a structured morning report.
 
 ## Phase 6 — Generalization
 - [ ] Support additional Lab OS projects.
-- [ ] Keep project-specific rules/configuration isolated.
+- [x] Keep project-specific rules/configuration isolated.
+- [ ] Add project adapters only where required.
