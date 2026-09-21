@@ -127,5 +127,6 @@ def main():
     args=build_parser().parse_args()
     if args.command=="run": run_command(args)
     elif args.command=="continue": continue_command(args)
-    elif args.command=="browser-project-diagnose": browser_project_diagnose_command(args)\n    elif args.command=="browser-attach": browser_attach_command(args)
+    elif args.command=="browser-project-diagnose": browser_project_diagnose_command(args)
+    elif args.command=="browser-attach": browser_attach_command(args)
     elif args.command=="browser-smoke": browser_smoke_command(args)
