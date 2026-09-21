@@ -1,26 +1,25 @@
 from pathlib import Path
+from labos_agent.state import AgentState,RunState,load_state,save_state
 
-from labos_agent.state import AgentState, RunState, load_state, save_state
-
-
-def test_state_round_trip(tmp_path: Path):
-    path = tmp_path / "state.json"
-    state = AgentState(project="weather", run_id="abc")
-    state.transition(RunState.STARTING)
-
-    save_state(path, state)
-    restored = load_state(path)
-
-    assert restored is not None
-    assert restored.project == "weather"
-    assert restored.run_id == "abc"
-    assert restored.state == RunState.STARTING
-
+def test_state_round_trip(tmp_path:Path):
+    path=tmp_path/"state.json"
+    state=AgentState(project="weather",run_id="abc"); state.transition(RunState.STARTING)
+    save_state(path,state); restored=load_state(path)
+    assert restored is not None and restored.project=="weather" and restored.state==RunState.STARTING
 
 def test_terminal_transition_records_reason():
-    state = AgentState(project="weather", run_id="abc")
-    state.transition(RunState.BLOCKED, reason="human decision required")
+    state=AgentState(project="weather",run_id="abc")
+    state.transition(RunState.BLOCKED,reason="human decision required")
+    assert state.state==RunState.BLOCKED and state.reason=="human decision required" and state.stopped_at is not None
 
-    assert state.state == RunState.BLOCKED
-    assert state.reason == "human decision required"
-    assert state.stopped_at is not None
+def test_rollover_position_round_trip(tmp_path:Path):
+    state=AgentState(project="weather",run_id="x",iteration=20,rollover_count=1,iteration_at_last_rollover=20)
+    state.transition(RunState.WAITING)
+    path=tmp_path/"state.json"; save_state(path,state); restored=load_state(path)
+    assert restored is not None and restored.iteration_at_last_rollover==20
+
+def test_old_state_defaults_rollover_position(tmp_path:Path):
+    path=tmp_path/"state.json"
+    path.write_text('{"project":"weather","run_id":"x","state":"WAITING","iteration":3,"rollover_count":1,"consecutive_failures":0}',encoding="utf-8")
+    state=load_state(path)
+    assert state is not None and state.iteration_at_last_rollover==0
