@@ -73,7 +73,12 @@ def browser_smoke_command(args: argparse.Namespace) -> None:
         print(f"URL: {status.url}")
         print(f"Title: {status.title}")
         print(f"Message input detected: {status.has_input}")
+        if status.is_challenge:
+            print("Browser is showing a Cloudflare/verification challenge. Complete verification in an interactive browser before retrying.")
         if not status.has_input:
+            screenshot = profile / "browser-smoke.png"
+            session.context.pages[0].screenshot(path=str(screenshot), full_page=True)
+            print(f"Diagnostic screenshot: {screenshot}")
             print("ChatGPT input was not detected. Do not enable autonomous mode.")
 
 
