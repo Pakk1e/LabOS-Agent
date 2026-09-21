@@ -27,6 +27,7 @@ def build_parser() -> argparse.ArgumentParser:
     browser = sub.add_parser("browser-smoke", help="open persistent ChatGPT browser for manual smoke testing")
     browser.add_argument("--profile-dir", default="./browser-profile")
     browser.add_argument("--headless", action="store_true")
+    browser.add_argument("--display", help="X display to use for headed Chromium, e.g. :99")
     return parser
 
 
@@ -66,6 +67,9 @@ def browser_smoke_command(args: argparse.Namespace) -> None:
     profile = Path(args.profile_dir).expanduser().resolve()
     print(f"Launching persistent Chromium profile: {profile}")
     print("If ChatGPT is not authenticated, log in manually. No credentials are stored by LabOS-Agent.")
+    import os
+    if args.display:
+        os.environ["DISPLAY"] = args.display
     with BrowserSession(profile, headless=args.headless) as session:
         page = session.context.pages[0] if session.context.pages else session.context.new_page()
         chat = ChatGPTPage(page)
