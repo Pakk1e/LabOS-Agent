@@ -1,19 +1,22 @@
-# Copy to config.yaml for local use.
-# Never commit config.yaml if it contains machine-specific or sensitive values.
-
-controller:
-  poll_interval_seconds: 2
-  default_max_iterations: 50
-  default_max_rollovers: 10
-  safety:
-    max_consecutive_failures: 3
+# Copy to config.yaml for local use. Never commit config.yaml if it contains machine-specific values.
 
 browser:
-  profile_dir: "./browser-profile"
-  headless: false
+  cdp_url: "http://127.0.0.1:9222"
+  profile_dir: "/home/park-pro/LabOS-Agent/browser-profile"
+  response_timeout_seconds: 300
+  quiet_seconds: 3
 
 projects:
   weather:
     repository: "Pakk1e/VilaPro-Weather"
-    continuation_message: "Continue Weather"
     project_root: "/home/park-pro/VilaPro/VilaPro-Weather"
+    continuation_message: "Continue Weather"
+    # These identify the ChatGPT Project used for the Weather development chats.
+    # Set them before enabling rollover/autonomous mode.
+    project_name: "REPLACE_WITH_CHATGPT_PROJECT_NAME"
+    project_url: "REPLACE_WITH_PROJECT_URL"
+    # Use a selector verified against the current ChatGPT Project UI.
+    # Example only; do not assume this selector is stable across UI changes.
+    new_chat_selector: "REPLACE_WITH_VERIFIED_SELECTOR"
+    rollover_after_iterations: 20
+    rollover_after_response_chars: 120000
