@@ -1,0 +1,19 @@
+# Copy to config.yaml for local use.
+# Never commit config.yaml if it contains machine-specific or sensitive values.
+
+controller:
+  poll_interval_seconds: 2
+  default_max_iterations: 50
+  default_max_rollovers: 10
+  safety:
+    max_consecutive_failures: 3
+
+browser:
+  profile_dir: "./browser-profile"
+  headless: false
+
+projects:
+  weather:
+    repository: "Pakk1e/VilaPro-Weather"
+    continuation_message: "Continue Weather"
+    project_root: "/home/park-pro/VilaPro/VilaPro-Weather"
