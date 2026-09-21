@@ -26,6 +26,8 @@ def build_parser():
     browser=sub.add_parser("browser-smoke",help="open persistent ChatGPT browser for manual smoke testing")
     browser.add_argument("--profile-dir",default="./browser-profile"); browser.add_argument("--headless",action="store_true")
     browser.add_argument("--display"); browser.add_argument("--test-message"); browser.add_argument("--keep-open",action="store_true")
+    diag=sub.add_parser("browser-project-diagnose",help="inspect Project/new-chat UI without clicking")
+    diag.add_argument("--cdp",default="http://127.0.0.1:9222")
     attach=sub.add_parser("browser-attach",help="attach to an existing Chromium over CDP")
     attach.add_argument("--cdp",default="http://127.0.0.1:9222"); attach.add_argument("--test-message"); attach.add_argument("--keep-open",action="store_true")
     return parser
@@ -52,6 +54,32 @@ def continue_command(args):
     print(f"LabOS-Agent iteration finished: state={result.state.state.value} iteration={result.state.iteration}")
     if result.state.reason: print(f"Reason: {result.state.reason}")
     if result.response: print(result.response)
+
+def browser_project_diagnose_command(args):
+    session=BrowserSession(Path("."))
+    try:
+        context=session.connect_over_cdp(args.cdp)
+        page=next((p for p in context.pages if p.url.startswith("https://chatgpt.com/")),None)
+        if page is None: raise RuntimeError("No ChatGPT page is attached")
+        print(f"URL: {page.url}")
+        print(f"Title: {page.title()}")
+        for selector in ("button","a"):
+            loc=page.locator(selector)
+            print(f"--- {selector} ---")
+            for i in range(min(loc.count(),200)):
+                item=loc.nth(i)
+                try:
+                    text=item.inner_text(timeout=500).strip().replace("\\n"," ")
+                    aria=item.get_attribute("aria-label") or ""
+                    title=item.get_attribute("title") or ""
+                    testid=item.get_attribute("data-testid") or ""
+                    combined=" | ".join(x for x in (text,aria,title,testid) if x)
+                    if combined and any(k in combined.casefold() for k in ("project","new chat","chat")):
+                        print(f"{i}: {combined[:300]}")
+                except Exception:
+                    continue
+    finally:
+        session.close()
 
 def browser_attach_command(args):
     print(f"Attaching to existing Chromium: {args.cdp}")
@@ -99,5 +127,5 @@ def main():
     args=build_parser().parse_args()
     if args.command=="run": run_command(args)
     elif args.command=="continue": continue_command(args)
-    elif args.command=="browser-attach": browser_attach_command(args)
+    elif args.command=="browser-project-diagnose": browser_project_diagnose_command(args)\n    elif args.command=="browser-attach": browser_attach_command(args)
     elif args.command=="browser-smoke": browser_smoke_command(args)
