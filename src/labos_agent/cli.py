@@ -77,6 +77,25 @@ def browser_project_diagnose_command(args):
                 print(loc.first.evaluate("(el) => el.outerHTML"))
             else:
                 print(f"Project options button not found: {needle}")
+        print("--- composer-diagnostic ---")
+        selectors=("textarea", '[contenteditable="true"]', '[role="textbox"]')
+        seen=set()
+        for selector in selectors:
+            loc=page.locator(selector)
+            print(f"selector: {selector} count={loc.count()}")
+            for i in range(min(loc.count(),20)):
+                item=loc.nth(i)
+                try:
+                    outer=item.evaluate("(el) => el.outerHTML.slice(0,1200)")
+                    if outer in seen:
+                        continue
+                    seen.add(outer)
+                    disabled=item.is_disabled() if selector == "textarea" else False
+                    print(f"  [{i}] visible={item.is_visible()} hidden={item.is_hidden()} disabled={disabled}")
+                    print(f"  [{i}] aria-label={item.get_attribute('aria-label')!r} placeholder={item.get_attribute('placeholder')!r} role={item.get_attribute('role')!r} contenteditable={item.get_attribute('contenteditable')!r} data-testid={item.get_attribute('data-testid')!r}")
+                    print(f"  [{i}] outerHTML={outer}")
+                except Exception as exc:
+                    print(f"  [{i}] diagnostic error: {exc}")
         for selector in ("button","a"):
             loc=page.locator(selector)
             print(f"--- {selector} ---")
