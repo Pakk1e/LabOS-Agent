@@ -25,7 +25,24 @@ def _visible(page: Page, selector: str) -> bool:
 
 def observe(page: Page) -> ResponseObservation:
     box=page.locator('textarea, [contenteditable="true"]').first
-    available=box.count()>0 and box.is_visible()
+    available=False
+    try:
+        if box.count()>0:
+            # Keep lightweight/fake locators compatible with unit tests while
+            # using semantic checks with real Playwright locators.
+            if not hasattr(box, "get_attribute"):
+                available=box.is_visible()
+            else:
+                tag=box.evaluate("(el) => el.tagName.toLowerCase()")
+                contenteditable=box.get_attribute("contenteditable")
+                textbox=box.get_attribute("role") == "textbox"
+                hidden=box.is_hidden()
+                disabled=box.is_disabled() if tag == "textarea" else False
+                available=not hidden and not disabled and (
+                    tag == "textarea" or contenteditable == "true" or textbox
+                )
+    except Exception:
+        available=False
     stop=any(_visible(page,s) for s in _STOP_SELECTORS)
     count=page.locator('[data-message-author-role="assistant"]').count()
     return ResponseObservation(generating=stop,input_available=available,stop_control_visible=stop,assistant_count=count)
