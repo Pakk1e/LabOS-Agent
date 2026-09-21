@@ -1,6 +1,9 @@
 """Conservative ChatGPT browser adapter."""
 from __future__ import annotations
+
 from dataclasses import dataclass
+from urllib.parse import urlparse
+
 from playwright.sync_api import Page
 
 
@@ -10,6 +13,7 @@ class ChatStatus:
     title: str
     has_input: bool
     is_challenge: bool
+    is_chatgpt: bool
 
 
 class ChatGPTPage:
@@ -27,7 +31,16 @@ class ChatGPTPage:
             title=self.page.title(),
             has_input=self._find_input() is not None,
             is_challenge=("__cf_chl_" in url or "challenge" in url.lower()),
+            is_chatgpt=self._is_chatgpt_url(url),
         )
+
+    @staticmethod
+    def _is_chatgpt_url(url: str) -> bool:
+        try:
+            host = (urlparse(url).hostname or "").lower()
+        except ValueError:
+            return False
+        return host == "chatgpt.com" or host.endswith(".chatgpt.com")
 
     def _find_input(self):
         for selector in ('textarea', '[contenteditable="true"]'):
@@ -37,7 +50,9 @@ class ChatGPTPage:
         return None
 
     def is_authenticated(self) -> bool:
-        return self._find_input() is not None
+        """Return True only when the ChatGPT origin and composer are both present."""
+        status = self.status()
+        return status.is_chatgpt and status.has_input
 
     def send_message(self, message: str) -> None:
         if not message.strip():
@@ -47,7 +62,6 @@ class ChatGPTPage:
             raise RuntimeError("ChatGPT message input was not found")
         input_box.fill(message)
         input_box.press("Enter")
-
 
     def _assistant_texts(self) -> list[str]:
         locator = self.page.locator('[data-message-author-role="assistant"]')

@@ -30,6 +30,11 @@ def build_parser() -> argparse.ArgumentParser:
     browser.add_argument("--display", help="X display to use for headed Chromium, e.g. :99")
     browser.add_argument("--test-message", help="send exactly one controlled test message")
     browser.add_argument("--keep-open", action="store_true", help="keep the browser open after smoke testing")
+
+    attach = sub.add_parser("browser-attach", help="attach to an existing Chromium over CDP")
+    attach.add_argument("--cdp", default="http://127.0.0.1:9222", help="Chromium DevTools HTTP endpoint")
+    attach.add_argument("--test-message", help="send exactly one controlled test message")
+    attach.add_argument("--keep-open", action="store_true", help="keep the attached session alive")
     return parser
 
 
@@ -102,9 +107,56 @@ def browser_smoke_command(args: argparse.Namespace) -> None:
                 print("Closing browser.")
 
 
+def browser_attach_command(args: argparse.Namespace) -> None:
+    print(f"Attaching to existing Chromium: {args.cdp}")
+    print("LabOS-Agent will not launch the remote Chromium.")
+
+    session = BrowserSession(Path("."))
+    try:
+        context = session.connect_over_cdp(args.cdp)
+        pages = context.pages
+        chat_pages = [page for page in pages if page.url.startswith("https://chatgpt.com/")]
+        page = chat_pages[0] if chat_pages else (pages[0] if pages else context.new_page())
+        chat = ChatGPTPage(page)
+        status = chat.status()
+
+        print(f"URL: {status.url}")
+        print(f"Title: {status.title}")
+        print(f"Message input detected: {status.has_input}")
+        if status.is_challenge:
+            print("Browser is showing a verification challenge. Stop here and complete it manually.")
+            return
+        if not status.is_chatgpt:
+            print("No ChatGPT page is currently attached. Open ChatGPT in the existing Chromium first.")
+            return
+        if not status.has_input:
+            print("ChatGPT message input was not detected. Do not enable autonomous mode.")
+            return
+
+        if args.test_message:
+            print("Sending one controlled test message.")
+            response = chat.send_and_wait_for_response(args.test_message)
+            print("Test message completed.")
+            print("Assistant response:")
+            print(response)
+
+        if args.keep_open:
+            print("Attached session kept alive. Press Ctrl+C to detach.")
+            try:
+                import time
+                while True:
+                    time.sleep(1)
+            except KeyboardInterrupt:
+                print("Detaching from Chromium.")
+    finally:
+        session.close()
+
+
 def main() -> None:
     args = build_parser().parse_args()
     if args.command == "run":
         run_command(args)
     elif args.command == "browser-smoke":
         browser_smoke_command(args)
+    elif args.command == "browser-attach":
+        browser_attach_command(args)
