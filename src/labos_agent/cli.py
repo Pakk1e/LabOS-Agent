@@ -29,6 +29,11 @@ def build_parser():
     diag=sub.add_parser("browser-project-diagnose",help="inspect Project/new-chat UI without clicking")
     diag.add_argument("--cdp",default="http://127.0.0.1:9222")
     diag.add_argument("--project-name",default="")
+    newchat=sub.add_parser("browser-project-new-chat-test",help="open a new chat from a ChatGPT Project without sending a message")
+    newchat.add_argument("--cdp",default="http://127.0.0.1:9222")
+    newchat.add_argument("--project-name",required=True)
+    newchat.add_argument("--project-url",default="")
+    newchat.add_argument("--selector",default="")
     attach=sub.add_parser("browser-attach",help="attach to an existing Chromium over CDP")
     attach.add_argument("--cdp",default="http://127.0.0.1:9222"); attach.add_argument("--test-message"); attach.add_argument("--keep-open",action="store_true")
     return parser
@@ -91,6 +96,36 @@ def browser_project_diagnose_command(args):
     finally:
         session.close()
 
+def browser_project_new_chat_test_command(args):
+    print(f"Attaching to existing Chromium: {args.cdp}")
+    print("LabOS-Agent will not launch the remote Chromium.")
+    session=BrowserSession(Path("."))
+    try:
+        context=session.connect_over_cdp(args.cdp)
+        pages=[p for p in context.pages if p.url.startswith("https://chatgpt.com/")]
+        page=pages[0] if pages else None
+        if page is None:
+            raise RuntimeError("No ChatGPT page is attached")
+        chat=ChatGPTPage(page)
+        chat.assert_ready()
+        if not chat.project_context_present(args.project_name):
+            raise RuntimeError(f"required ChatGPT Project context not detected: {args.project_name}")
+        before_url=page.url
+        chat.start_new_project_chat(
+            project_name=args.project_name,
+            project_url=args.project_url or None,
+            selector=args.selector or None,
+        )
+        print("Project new-chat navigation completed.")
+        print(f"Previous URL: {before_url}")
+        print(f"New URL: {page.url}")
+        print(f"Title: {page.title()}")
+        print(f"Message input detected: {chat.status().has_input}")
+        print(f"Project context present: {chat.project_context_present(args.project_name)}")
+        print("No message was sent.")
+    finally:
+        session.close()
+
 def browser_attach_command(args):
     print(f"Attaching to existing Chromium: {args.cdp}")
     print("LabOS-Agent will not launch the remote Chromium.")
@@ -138,5 +173,6 @@ def main():
     if args.command=="run": run_command(args)
     elif args.command=="continue": continue_command(args)
     elif args.command=="browser-project-diagnose": browser_project_diagnose_command(args)
+    elif args.command=="browser-project-new-chat-test": browser_project_new_chat_test_command(args)
     elif args.command=="browser-attach": browser_attach_command(args)
     elif args.command=="browser-smoke": browser_smoke_command(args)
