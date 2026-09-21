@@ -29,6 +29,7 @@ def build_parser() -> argparse.ArgumentParser:
     browser.add_argument("--headless", action="store_true")
     browser.add_argument("--display", help="X display to use for headed Chromium, e.g. :99")
     browser.add_argument("--test-message", help="send exactly one controlled test message")
+    browser.add_argument("--keep-open", action="store_true", help="keep the browser open after smoke testing")
     return parser
 
 
@@ -91,6 +92,14 @@ def browser_smoke_command(args: argparse.Namespace) -> None:
             session.context.pages[0].screenshot(path=str(screenshot), full_page=True)
             print(f"Diagnostic screenshot: {screenshot}")
             print("ChatGPT input was not detected. Do not enable autonomous mode.")
+        if args.keep_open:
+            print("Browser kept open. Press Ctrl+C to close it.")
+            try:
+                import time
+                while True:
+                    time.sleep(1)
+            except KeyboardInterrupt:
+                print("Closing browser.")
 
 
 def main() -> None:
