@@ -82,8 +82,10 @@ def browser_smoke_command(args: argparse.Namespace) -> None:
             print("Browser is showing a Cloudflare/verification challenge. Complete verification in an interactive browser before retrying.")
         if args.test_message and status.has_input:
             print("Sending one controlled test message.")
-            chat.send_message(args.test_message)
-            print("Test message submitted.")
+            response = chat.send_and_wait_for_response(args.test_message)
+            print("Test message completed.")
+            print("Assistant response:")
+            print(response)
         if not status.has_input:
             screenshot = profile / "browser-smoke.png"
             session.context.pages[0].screenshot(path=str(screenshot), full_page=True)
