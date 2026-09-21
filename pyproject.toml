@@ -1,0 +1,18 @@
+[project]
+name = "labos-agent"
+version = "0.1.0"
+description = "Autonomous development controller for Vadovsky Tech Lab OS"
+requires-python = ">=3.11"
+dependencies = [
+  "PyYAML>=6.0,<7",
+]
+
+[project.scripts]
+lab-agent = "labos_agent.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
