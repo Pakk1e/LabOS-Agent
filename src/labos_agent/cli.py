@@ -111,7 +111,8 @@ def browser_attach_command(args: argparse.Namespace) -> None:
     print(f"Attaching to existing Chromium: {args.cdp}")
     print("LabOS-Agent will not launch the remote Chromium.")
 
-    with BrowserSession(Path(".")) as session:
+    session = BrowserSession(Path("."))
+    try:
         context = session.connect_over_cdp(args.cdp)
         pages = context.pages
         chat_pages = [page for page in pages if page.url.startswith("https://chatgpt.com/")]
@@ -147,6 +148,8 @@ def browser_attach_command(args: argparse.Namespace) -> None:
                     time.sleep(1)
             except KeyboardInterrupt:
                 print("Detaching from Chromium.")
+    finally:
+        session.close()
 
 
 def main() -> None:
