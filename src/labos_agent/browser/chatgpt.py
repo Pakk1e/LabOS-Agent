@@ -37,7 +37,7 @@ class ChatGPTPage:
         return host=="chatgpt.com" or host.endswith(".chatgpt.com")
 
     def _find_input(self):
-        for selector in ('textarea','[contenteditable="true"]'):
+        for selector in ('[contenteditable="true"][role="textbox"]','#prompt-textarea[contenteditable="true"]','[contenteditable="true"]','textarea'):
             loc=self.page.locator(selector).first
             if loc.count()>0 and loc.is_visible(): return loc
         return None

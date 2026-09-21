@@ -24,7 +24,18 @@ def _visible(page: Page, selector: str) -> bool:
         return False
 
 def observe(page: Page) -> ResponseObservation:
-    box=page.locator('textarea, [contenteditable="true"]').first
+    selectors=('[contenteditable="true"][role="textbox"]','#prompt-textarea[contenteditable="true"]','[contenteditable="true"]','textarea')
+    box=None
+    for selector in selectors:
+        candidate=page.locator(selector).first
+        try:
+            if candidate.count()>0 and candidate.is_visible():
+                box=candidate
+                break
+        except Exception:
+            continue
+    if box is None:
+        box=page.locator('textarea, [contenteditable="true"]').first
     available=False
     try:
         if box.count()>0:
