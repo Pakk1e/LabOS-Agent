@@ -21,7 +21,7 @@ The controller now supports:
 
 Project context is part of the execution contract. The controller must not silently roll a chat over into a global conversation because that would lose Project files/instructions/memory. Configure `project_name`, `project_url`, and a verified `new_chat_selector` before enabling rollover.
 
-Projects are designed to keep related chats, files, and instructions together, so keeping the agent inside the same Project is intentional. citeturn0search1
+Projects are designed to keep related chats, files, and instructions together, so keeping the agent inside the same Project is intentional.
 
 ## Commands
 
