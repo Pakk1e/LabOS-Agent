@@ -7,8 +7,8 @@ from playwright.sync_api import Page
 class ResponseObservation:
     generating: bool
     input_available: bool
-    stop_control_visible: bool
-    assistant_count: int
+    stop_control_visible: bool = False
+    assistant_count: int = 0
 
 _STOP_SELECTORS=(
     'button[aria-label*="Stop" i]',
