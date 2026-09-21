@@ -3,11 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from playwright.sync_api import Page
 
+
 @dataclass(frozen=True)
 class ChatStatus:
     url: str
     title: str
     has_input: bool
+    is_challenge: bool
+
 
 class ChatGPTPage:
     def __init__(self, page: Page) -> None:
@@ -18,7 +21,13 @@ class ChatGPTPage:
         return self.status()
 
     def status(self) -> ChatStatus:
-        return ChatStatus(self.page.url, self.page.title(), self._find_input() is not None)
+        url = self.page.url
+        return ChatStatus(
+            url=url,
+            title=self.page.title(),
+            has_input=self._find_input() is not None,
+            is_challenge=("__cf_chl_" in url or "challenge" in url.lower()),
+        )
 
     def _find_input(self):
         for selector in ('textarea', '[contenteditable="true"]'):
