@@ -75,6 +75,20 @@ def browser_project_diagnose_command(args):
             if loc.count():
                 print("--- project-options-html ---")
                 print(loc.first.evaluate("(el) => el.outerHTML"))
+                print("--- project-menu-diagnostic ---")
+                try:
+                    loc.first.click()
+                    page.wait_for_timeout(300)
+                    menus=page.locator('[role="menu"]')
+                    print(f"menu count={menus.count()}")
+                    for i in range(min(menus.count(),10)):
+                        menu=menus.nth(i)
+                        if not menu.is_visible():
+                            continue
+                        print(f"menu[{i}] text={menu.inner_text()!r}")
+                        print(f"menu[{i}] html={menu.evaluate('(el) => el.outerHTML.slice(0,5000)')}")
+                except Exception as exc:
+                    print(f"menu diagnostic error: {exc}")
             else:
                 print(f"Project options button not found: {needle}")
         print("--- composer-diagnostic ---")
