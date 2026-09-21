@@ -28,6 +28,7 @@ def build_parser():
     browser.add_argument("--display"); browser.add_argument("--test-message"); browser.add_argument("--keep-open",action="store_true")
     diag=sub.add_parser("browser-project-diagnose",help="inspect Project/new-chat UI without clicking")
     diag.add_argument("--cdp",default="http://127.0.0.1:9222")
+    diag.add_argument("--project-name",default="")
     attach=sub.add_parser("browser-attach",help="attach to an existing Chromium over CDP")
     attach.add_argument("--cdp",default="http://127.0.0.1:9222"); attach.add_argument("--test-message"); attach.add_argument("--keep-open",action="store_true")
     return parser
@@ -63,6 +64,14 @@ def browser_project_diagnose_command(args):
         if page is None: raise RuntimeError("No ChatGPT page is attached")
         print(f"URL: {page.url}")
         print(f"Title: {page.title()}")
+        if args.project_name:
+            needle=f"Open project options for {args.project_name}"
+            loc=page.locator(f'button[aria-label="{needle}"]')
+            if loc.count():
+                print("--- project-options-html ---")
+                print(loc.first.evaluate("(el) => el.outerHTML"))
+            else:
+                print(f"Project options button not found: {needle}")
         for selector in ("button","a"):
             loc=page.locator(selector)
             print(f"--- {selector} ---")
@@ -73,7 +82,8 @@ def browser_project_diagnose_command(args):
                     aria=item.get_attribute("aria-label") or ""
                     title=item.get_attribute("title") or ""
                     testid=item.get_attribute("data-testid") or ""
-                    combined=" | ".join(x for x in (text,aria,title,testid) if x)
+                    href=item.get_attribute("href") or ""
+                    combined=" | ".join(x for x in (text,aria,title,testid,href) if x)
                     if combined and any(k in combined.casefold() for k in ("project","new chat","chat")):
                         print(f"{i}: {combined[:300]}")
                 except Exception:
