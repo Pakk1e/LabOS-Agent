@@ -91,7 +91,7 @@ def run_loop(config:AppConfig,project_name:str,*,deadline:datetime|None,max_iter
                     save_state(state_path(project_name),state); return RunResult(state)
                 time.sleep(2); continue
             save_state(state_path(project_name),state)
-            if state.iteration>=project.rollover_after_iterations or len(response)>=project.rollover_after_response_chars:
+            if (state.iteration-state.iteration_at_last_rollover)>=project.rollover_after_iterations or len(response)>=project.rollover_after_response_chars:
                 controller.rollover(); save_state(state_path(project_name),state)
                 try:
                     continuation, _=rollover(chat,project,state_dir(project_name),
