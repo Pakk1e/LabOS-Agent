@@ -172,8 +172,13 @@ class ChatGPTPage:
         else:
             raise RuntimeError("Project rollover requires a Project name, URL, or verified selector")
 
-        self.assert_ready()
+        # Project-home navigation has its own stronger readiness check.
+        # Do not require generic composer detection here because the live
+        # ChatGPT UI can expose the Project composer before generic selectors
+        # are classified as ready.
         if project_name and not self.project_context_present(project_name):
             raise RuntimeError(f"required ChatGPT Project context not detected: {project_name}")
         if project_name and not self.project_chat_composer_present(project_name):
             raise RuntimeError(f"Project composer does not identify a new chat for: {project_name}")
+        if not project_name:
+            self.assert_ready()
