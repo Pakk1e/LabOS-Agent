@@ -119,30 +119,60 @@ class ChatGPTPage:
                 continue
         return False
 
-    def start_new_project_chat(self,*,project_name:str|None,project_url:str|None,selector:str|None)->None:
-        """Prepare the Project home so the next send creates a new Project chat.
+    def _project_home_button(self, project_name: str):
+        """Find the Project-home button belonging to the named Project."""
+        buttons=self.page.locator('button[aria-label="Open project home"]')
+        for i in range(buttons.count()):
+            button=buttons.nth(i)
+            try:
+                if not button.is_visible():
+                    continue
+                if button.evaluate(
+                    """(el, name) => {
+                        let node = el;
+                        for (let depth = 0; node && depth < 8; depth++, node = node.parentElement) {
+                            const text = (node.innerText || '').trim();
+                            if (text.toLowerCase().includes(name.toLowerCase())) return true;
+                        }
+                        return false;
+                    }""",
+                    project_name,
+                ):
+                    return button
+            except Exception:
+                continue
+        return None
 
-        Current ChatGPT UI exposes the Project composer as "New chat in <Project>".
-        The Project options menu does not contain a New chat action. Therefore a
-        verified Project URL is the safe default navigation mechanism: opening the
-        Project home gives us a fresh Project composer, and the subsequent
-        send_message() creates the new chat. A configured selector is still
-        supported for a UI flow that has been independently verified.
+    def start_new_project_chat(self,*,project_name:str|None,project_url:str|None,selector:str|None)->None:
+        """Navigate to a fresh Project composer using the visible Project UI.
+
+        Current ChatGPT exposes Project navigation through the sidebar's
+        "Open project home" control. The Project home then exposes a composer
+        labelled "New chat in <Project>". We prefer this UI flow over direct
+        URL navigation so the agent follows the same user-visible path and
+        does not need to know or persist a Project URL.
         """
-        if project_url:
+        if project_name:
+            home=self._project_home_button(project_name)
+            if home is None:
+                raise RuntimeError(
+                    f"visible Project home button not found for: {project_name}"
+                )
+            home.click()
+            self.page.wait_for_timeout(1000)
+        elif project_url:
             self.page.goto(project_url,wait_until="domcontentloaded",timeout=60000)
-        elif not selector:
-            raise RuntimeError("Project rollover requires a verified project_url or new_chat_selector")
-        if project_name and not self.project_context_present(project_name):
-            raise RuntimeError(f"required ChatGPT Project context not detected: {project_name}")
-        if selector:
+        elif selector:
             loc=self.page.locator(selector).first
             if loc.count()==0 or not loc.is_visible():
                 raise RuntimeError("configured Project new-chat selector not found")
             loc.click()
             self.page.wait_for_timeout(1000)
+        else:
+            raise RuntimeError("Project rollover requires a Project name, URL, or verified selector")
+
         self.assert_ready()
         if project_name and not self.project_context_present(project_name):
-            raise RuntimeError("Project context disappeared after preparing the new chat")
-        if project_name and project_url and not selector and not self.project_chat_composer_present(project_name):
+            raise RuntimeError(f"required ChatGPT Project context not detected: {project_name}")
+        if project_name and not self.project_chat_composer_present(project_name):
             raise RuntimeError(f"Project composer does not identify a new chat for: {project_name}")
