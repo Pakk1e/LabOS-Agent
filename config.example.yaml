@@ -15,8 +15,8 @@ projects:
     # Set them before enabling rollover/autonomous mode.
     project_name: "REPLACE_WITH_CHATGPT_PROJECT_NAME"
     project_url: "REPLACE_WITH_PROJECT_URL"
-    # Use a selector verified against the current ChatGPT Project UI.
-    # Example only; do not assume this selector is stable across UI changes.
-    new_chat_selector: "REPLACE_WITH_VERIFIED_SELECTOR"
+    # Current ChatGPT UI uses the Project home composer ("New chat in <Project>").
+    # Leave this empty unless a different, verified UI action is required.
+    new_chat_selector: ""
     rollover_after_iterations: 20
     rollover_after_response_chars: 120000
