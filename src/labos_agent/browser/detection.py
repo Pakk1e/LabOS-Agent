@@ -13,7 +13,7 @@ class ResponseObservation:
 
 
 def _has_max_length_notice(text: str) -> bool:
-    normalized = re.sub(r"\\s+", " ", text).strip().casefold()
+    normalized = re.sub(r"\s+", " ", text).strip().casefold()
     return (
         "you've reached the maximum length for this conversation" in normalized
         and "you can keep talking by starting a new chat" in normalized
