@@ -9,6 +9,7 @@ from .browser.chatgpt import ChatGPTPage
 from .browser.session import BrowserSession
 from .config import load_config
 from .loop import run_loop,run_once,state_path
+from .rollover import rollover
 from .controller import Controller
 from .safety import SafetyLimits
 from .state import AgentState,save_state
@@ -41,6 +42,10 @@ def build_parser():
     rollover.add_argument("--project-name",required=True)
     rollover.add_argument("--handoff-message",required=True)
     rollover.add_argument("--require-rollover",action="store_true",help="require ChatGPT's explicit maximum-length UI before rolling over")
+    handoff=sub.add_parser("browser-project-handoff-rollover-test",help="generate a real handoff, open a fresh Project chat, and resume from it")
+    handoff.add_argument("--cdp",default="http://127.0.0.1:9222")
+    handoff.add_argument("--project-name",required=True)
+    handoff.add_argument("--state-dir",default="")
     attach=sub.add_parser("browser-attach",help="attach to an existing Chromium over CDP")
     attach.add_argument("--cdp",default="http://127.0.0.1:9222"); attach.add_argument("--test-message"); attach.add_argument("--keep-open",action="store_true")
     return parser
@@ -231,6 +236,53 @@ def browser_project_rollover_test_command(args):
     finally:
         session.close()
 
+def browser_project_handoff_rollover_test_command(args):
+    print(f"Attaching to existing Chromium: {args.cdp}")
+    print("LabOS-Agent will not launch the remote Chromium.")
+    session=BrowserSession(Path("."))
+    try:
+        context=session.connect_over_cdp(args.cdp)
+        pages=[p for p in context.pages if p.url.startswith("https://chatgpt.com/")]
+        page=pages[0] if pages else None
+        if page is None:
+            raise RuntimeError("No ChatGPT page is attached")
+        chat=ChatGPTPage(page)
+        status=chat.status()
+        if status.is_challenge:
+            raise RuntimeError("ChatGPT verification challenge is active")
+        if not status.is_chatgpt:
+            raise RuntimeError("attached page is not ChatGPT")
+        if status.rollover_required:
+            raise RuntimeError("attached conversation is already at the maximum length; use the emergency rollover path")
+        if not chat.project_context_present(args.project_name):
+            raise RuntimeError(f"required ChatGPT Project context not detected: {args.project_name}")
+        state_dir_path=Path(args.state_dir) if args.state_dir else Path("state") / args.project_name
+        before_url=page.url
+        print(f"Current URL: {before_url}")
+        print("Generating a real handoff from the current conversation.")
+        project=type("Project", (), {
+            "project_name": args.project_name,
+            "project_url": None,
+            "new_chat_selector": None,
+        })()
+        _,path,response=rollover(
+            chat,
+            project,
+            state_dir_path,
+            timeout_seconds=300,
+            quiet_seconds=3,
+        )
+        print("Real handoff rollover completed.")
+        print(f"Handoff path: {path}")
+        print(f"New URL: {page.url}")
+        print(f"Project context present: {chat.project_context_present(args.project_name)}")
+        print(f"Conversation changed: {page.url != before_url}")
+        print("Resume prompt sent: True")
+        print("Resume assistant response:")
+        print(response)
+    finally:
+        session.close()
+
 def browser_attach_command(args):
     print(f"Attaching to existing Chromium: {args.cdp}")
     print("LabOS-Agent will not launch the remote Chromium.")
@@ -280,5 +332,6 @@ def main():
     elif args.command=="browser-project-diagnose": browser_project_diagnose_command(args)
     elif args.command=="browser-project-new-chat-test": browser_project_new_chat_test_command(args)
     elif args.command=="browser-project-rollover-test": browser_project_rollover_test_command(args)
+    elif args.command=="browser-project-handoff-rollover-test": browser_project_handoff_rollover_test_command(args)
     elif args.command=="browser-attach": browser_attach_command(args)
     elif args.command=="browser-smoke": browser_smoke_command(args)
