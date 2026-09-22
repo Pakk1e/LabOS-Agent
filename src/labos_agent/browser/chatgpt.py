@@ -98,15 +98,17 @@ class ChatGPTPage:
         return project_name.casefold() in body.casefold()
 
     def project_chat_composer(self,project_name:str):
-        """Return the visible composer belonging to the Project home."""
+        """Return the visible Project-home composer, identified by its rendered placeholder."""
         if not project_name:
             return None
         expected=f"new chat in {project_name}".casefold()
+        # The live Project home uses a ProseMirror contenteditable with the
+        # Project text rendered as a data-placeholder child, not necessarily
+        # on the input element itself.
         selectors=(
-            '[contenteditable="true"][role="textbox"]',
             '#prompt-textarea[contenteditable="true"]',
+            '[contenteditable="true"][role="textbox"]',
             '[contenteditable="true"]',
-            'textarea',
         )
         for selector in selectors:
             loc=self.page.locator(selector)
@@ -115,14 +117,26 @@ class ChatGPTPage:
                 try:
                     if not item.is_visible():
                         continue
-                    attrs=" ".join(
-                        (item.get_attribute(x) or "")
-                        for x in ("aria-label","placeholder","data-placeholder")
-                    ).casefold()
-                    surrounding=item.evaluate(
-                        "(el)=>{let n=el;for(let i=0;n&&i<8;i++,n=n.parentElement){const t=(n.innerText||'').trim();if(t)return t}return ''}"
-                    ).casefold()
-                    if expected in attrs or expected in surrounding:
+                    found=item.evaluate(
+                        """(el, expected) => {
+                            const values = [
+                                el.getAttribute('aria-label') || '',
+                                el.getAttribute('placeholder') || '',
+                                el.getAttribute('data-placeholder') || ''
+                            ];
+                            for (const child of el.querySelectorAll('[data-placeholder],[placeholder]')) {
+                                values.push(child.getAttribute('data-placeholder') || '');
+                                values.push(child.getAttribute('placeholder') || '');
+                            }
+                            let n = el;
+                            for (let i = 0; n && i < 8; i++, n = n.parentElement) {
+                                values.push((n.innerText || '').trim());
+                            }
+                            return values.some(v => v.toLowerCase().includes(expected));
+                        }""",
+                        expected,
+                    )
+                    if found:
                         return item
                 except Exception:
                     continue
