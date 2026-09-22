@@ -97,28 +97,39 @@ class ChatGPTPage:
         except Exception: return False
         return project_name.casefold() in body.casefold()
 
-    def project_chat_composer_present(self,project_name:str)->bool:
-        """Return whether the Project home shows its fresh-chat composer."""
+    def project_chat_composer(self,project_name:str):
+        """Return the visible composer belonging to the Project home."""
         if not project_name:
-            return False
+            return None
         expected=f"new chat in {project_name}".casefold()
-        try:
-            body=self.page.locator("body").inner_text(timeout=3000).casefold()
-            if expected in body:
-                selectors=(
-                    '[contenteditable="true"][role="textbox"]',
-                    '#prompt-textarea[contenteditable="true"]',
-                    '[contenteditable="true"]',
-                    'textarea',
-                )
-                return any(
-                    self.page.locator(selector).first.count()>0
-                    and self.page.locator(selector).first.is_visible()
-                    for selector in selectors
-                )
-        except Exception:
-            pass
-        return False
+        selectors=(
+            '[contenteditable="true"][role="textbox"]',
+            '#prompt-textarea[contenteditable="true"]',
+            '[contenteditable="true"]',
+            'textarea',
+        )
+        for selector in selectors:
+            loc=self.page.locator(selector)
+            for i in range(loc.count()):
+                item=loc.nth(i)
+                try:
+                    if not item.is_visible():
+                        continue
+                    attrs=" ".join(
+                        (item.get_attribute(x) or "")
+                        for x in ("aria-label","placeholder","data-placeholder")
+                    ).casefold()
+                    surrounding=item.evaluate(
+                        "(el)=>{let n=el;for(let i=0;n&&i<8;i++,n=n.parentElement){const t=(n.innerText||'').trim();if(t)return t}return ''}"
+                    ).casefold()
+                    if expected in attrs or expected in surrounding:
+                        return item
+                except Exception:
+                    continue
+        return None
+
+    def project_chat_composer_present(self,project_name:str)->bool:
+        return self.project_chat_composer(project_name) is not None
 
     def _project_home_button(self, project_name: str):
         """Find the Project-home button belonging to the named Project."""
@@ -178,7 +189,10 @@ class ChatGPTPage:
         # are classified as ready.
         if project_name and not self.project_context_present(project_name):
             raise RuntimeError(f"required ChatGPT Project context not detected: {project_name}")
-        if project_name and not self.project_chat_composer_present(project_name):
-            raise RuntimeError(f"Project composer does not identify a new chat for: {project_name}")
+        if project_name:
+            if self.project_chat_composer(project_name) is None:
+                raise RuntimeError(f"Project composer does not identify a new chat for: {project_name}")
+        else:
+            self.assert_ready()
         if not project_name:
             self.assert_ready()
