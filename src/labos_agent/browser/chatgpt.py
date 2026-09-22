@@ -98,25 +98,26 @@ class ChatGPTPage:
         return project_name.casefold() in body.casefold()
 
     def project_chat_composer_present(self,project_name:str)->bool:
-        """Return whether the visible composer explicitly belongs to the Project."""
+        """Return whether the Project home shows its fresh-chat composer."""
         if not project_name:
             return False
         expected=f"new chat in {project_name}".casefold()
-        selectors=(
-            '[contenteditable="true"][role="textbox"]',
-            '#prompt-textarea[contenteditable="true"]',
-        )
-        for selector in selectors:
-            loc=self.page.locator(selector).first
-            try:
-                if not loc.count() or not loc.is_visible():
-                    continue
-                label=(loc.get_attribute("aria-label") or "").casefold()
-                placeholder=(loc.get_attribute("placeholder") or "").casefold()
-                if expected in label or expected in placeholder:
-                    return True
-            except Exception:
-                continue
+        try:
+            body=self.page.locator("body").inner_text(timeout=3000).casefold()
+            if expected in body:
+                selectors=(
+                    '[contenteditable="true"][role="textbox"]',
+                    '#prompt-textarea[contenteditable="true"]',
+                    '[contenteditable="true"]',
+                    'textarea',
+                )
+                return any(
+                    self.page.locator(selector).first.count()>0
+                    and self.page.locator(selector).first.is_visible()
+                    for selector in selectors
+                )
+        except Exception:
+            pass
         return False
 
     def _project_home_button(self, project_name: str):
