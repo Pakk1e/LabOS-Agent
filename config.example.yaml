@@ -11,9 +11,9 @@ projects:
     repository: "Pakk1e/VilaPro-Weather"
     project_root: "/home/park-pro/VilaPro/VilaPro-Weather"
     continuation_message: "Continue Weather"
-    # These identify the ChatGPT Project used for the Weather development chats.
-    # Set them before enabling rollover/autonomous mode.
-    project_name: "REPLACE_WITH_CHATGPT_PROJECT_NAME"
+    # Weather development must stay inside this exact ChatGPT Project.
+    project_name: "Vadovsky Tech — Weather"
+    project_url: "https://chatgpt.com/g/g-p-6ab2a81b723081918c9e1052acf0af9c-vadovsky-tech-weather/project"
     # Current ChatGPT UI exposes the Project home through the visible
     # "Open project home" button. Leave this empty unless a different,
     # independently verified UI action is required.
