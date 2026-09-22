@@ -1,6 +1,6 @@
 """Single-iteration and autonomous project loops."""
 from __future__ import annotations
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 import time
@@ -8,7 +8,7 @@ import uuid
 
 from .browser.chatgpt import ChatGPTPage
 from .browser.session import BrowserSession
-from .config import AppConfig,ProjectConfig
+from .config import AppConfig
 from .controller import Controller
 from .project import build_continuation_prompt,inspect_project
 from .rollover import rollover
@@ -94,9 +94,16 @@ def run_loop(config:AppConfig,project_name:str,*,deadline:datetime|None,max_iter
             if (state.iteration-state.iteration_at_last_rollover)>=project.rollover_after_iterations or len(response)>=project.rollover_after_response_chars:
                 controller.rollover(); save_state(state_path(project_name),state)
                 try:
-                    continuation, _=rollover(chat,project,state_dir(project_name),
-                        timeout_seconds=config.browser.response_timeout_seconds,quiet_seconds=config.browser.quiet_seconds)
-                    state.reason="conversation rolled over"; save_state(state_path(project_name),state)
+                    continuation, _, resume_response=rollover(
+                        chat,
+                        project,
+                        state_dir(project_name),
+                        timeout_seconds=config.browser.response_timeout_seconds,
+                        quiet_seconds=config.browser.quiet_seconds,
+                    )
+                    save_response(project_name,resume_response)
+                    state.reason="conversation rolled over and resumed"
+                    save_state(state_path(project_name),state)
                 except Exception as exc:
                     controller.block(f"conversation rollover failed: {exc}")
                     save_state(state_path(project_name),state); return RunResult(state)
