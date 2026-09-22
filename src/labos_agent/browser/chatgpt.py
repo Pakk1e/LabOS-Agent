@@ -94,6 +94,17 @@ class ChatGPTPage:
         self.send_message(message)
         return self.wait_for_response(before=before,**kwargs)
 
+    def send_project_message_and_wait_for_response(self,project_name:str,message:str,**kwargs)->str:
+        """Send through the visible Project-home composer without requiring generic chat readiness."""
+        if not message.strip(): raise ValueError("message must not be empty")
+        composer=self.project_chat_composer(project_name)
+        if composer is None:
+            raise RuntimeError(f"Project composer is unavailable for: {project_name}")
+        before=self._assistant_texts()
+        composer.fill(message)
+        composer.press("Enter")
+        return self.wait_for_response(before=before,**kwargs)
+
     def project_context_present(self,project_name:str)->bool:
         if not project_name: return True
         try: body=self.page.locator("body").inner_text(timeout=3000)
@@ -105,9 +116,6 @@ class ChatGPTPage:
         if not project_name:
             return None
         expected=f"new chat in {project_name}".casefold()
-        # The live Project home uses a ProseMirror contenteditable with the
-        # Project text rendered as a data-placeholder child, not necessarily
-        # on the input element itself.
         selectors=(
             '#prompt-textarea[contenteditable="true"]',
             '[contenteditable="true"][role="textbox"]',
@@ -231,14 +239,7 @@ class ChatGPTPage:
         return None
 
     def start_new_project_chat(self,*,project_name:str|None,project_url:str|None,selector:str|None)->None:
-        """Navigate to a fresh Project composer using the visible Project UI.
-
-        Current ChatGPT exposes Project navigation through the sidebar's
-        "Open project home" control. The Project home then exposes a composer
-        labelled "New chat in <Project>". We prefer this UI flow over direct
-        URL navigation so the agent follows the same user-visible path and
-        does not need to know or persist a Project URL.
-        """
+        """Navigate to a fresh Project composer using the visible Project UI."""
         if project_name:
             home=self._project_home_button(project_name)
             if home is None:
@@ -258,10 +259,6 @@ class ChatGPTPage:
         else:
             raise RuntimeError("Project rollover requires a Project name, URL, or verified selector")
 
-        # Project-home navigation has its own stronger readiness check.
-        # Do not require generic composer detection here because the live
-        # ChatGPT UI can expose the Project composer before generic selectors
-        # are classified as ready.
         if project_name and not self.project_context_present(project_name):
             raise RuntimeError(f"required ChatGPT Project context not detected: {project_name}")
         if project_name:
