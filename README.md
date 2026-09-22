@@ -39,6 +39,21 @@ lab-agent run weather --until 10:00 --max-iterations 50 --max-rollovers 10
 
 The autonomous command stops at the deadline, safety limits, repeated failures, authentication/challenge blockers, or rollover failures.
 
+## Controlled rollover smoke test
+
+To validate same-Project rollover without waiting for the autonomous loop, send a supplied handoff into a fresh Project chat:
+
+```bash
+lab-agent browser-project-rollover-test \\
+  --cdp http://127.0.0.1:9222 \\
+  --project-name "Vadovsky Tech — Lab OS" \\
+  --handoff-message "LABOS_ROLLOVER_TEST"
+```
+
+Use `--require-rollover` when testing against ChatGPT's explicit maximum-length UI. The test never launches a second Chromium instance and requires the target Project context.
+
+The maximum-length detector is a fail-closed signal. Automatic handoff generation must happen before ChatGPT reaches the hard limit; once the hard-limit banner is displayed, the controller must not assume it can still send a handoff request in the exhausted conversation.
+
 ## State
 
 The repository is authoritative. The controller records its own state separately:
