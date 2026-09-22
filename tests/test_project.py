@@ -10,3 +10,6 @@ def test_project_snapshot_reads_state(tmp_path:Path):
     prompt=build_continuation_prompt(snap,"Continue")
     assert "Pakk1e/example" in prompt
     assert "rules" in prompt
+    assert "may not have access to that controller-side path" in prompt
+    assert "Do not treat inability to access the local project path as a blocker" in prompt
+    assert "configured repository as the authoritative source" in prompt
