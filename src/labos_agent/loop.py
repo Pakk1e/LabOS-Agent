@@ -46,8 +46,8 @@ def run_once(config:AppConfig,project_name:str)->RunResult:
     controller.start(); controller.begin_iteration(datetime.now().astimezone())
     save_state(state_path(project_name),state)
     snapshot=inspect_project(project.project_root,project.repository,project.state_files)
-    with BrowserSession(config.browser.profile_dir) as session:
-        context=session.connect_over_cdp(config.browser.cdp_url)
+    with BrowserSession(config.browser.profile_dir,cdp_url=config.browser.cdp_url) as session:
+        context=session.context
         chat=ChatGPTPage(_select_chat_page(context)); chat.assert_ready()
         if project.project_name and not chat.project_context_present(project.project_name):
             controller.block(f"ChatGPT Project context not detected: {project.project_name}")
@@ -67,8 +67,8 @@ def run_loop(config:AppConfig,project_name:str,*,deadline:datetime|None,max_iter
     state=_prepare_state(project_name)
     controller=Controller(state=state,limits=SafetyLimits(deadline=deadline,max_iterations=max_iterations,max_rollovers=max_rollovers))
     controller.start(); save_state(state_path(project_name),state)
-    with BrowserSession(config.browser.profile_dir) as session:
-        context=session.connect_over_cdp(config.browser.cdp_url)
+    with BrowserSession(config.browser.profile_dir,cdp_url=config.browser.cdp_url) as session:
+        context=session.context
         chat=ChatGPTPage(_select_chat_page(context)); chat.assert_ready()
         if project.project_name and not chat.project_context_present(project.project_name):
             controller.block(f"ChatGPT Project context not detected: {project.project_name}")

@@ -7,9 +7,16 @@ from playwright.sync_api import Browser, BrowserContext, Playwright, sync_playwr
 
 
 class BrowserSession:
-    def __init__(self, profile_dir: Path, *, headless: bool = False) -> None:
+    def __init__(
+        self,
+        profile_dir: Path,
+        *,
+        headless: bool = False,
+        cdp_url: str | None = None,
+    ) -> None:
         self.profile_dir = profile_dir
         self.headless = headless
+        self.cdp_url = cdp_url
         self._playwright: Playwright | None = None
         self._context: BrowserContext | None = None
         self._browser: Browser | None = None
@@ -69,7 +76,10 @@ class BrowserSession:
 
     def __enter__(self) -> "BrowserSession":
         if self._context is None:
-            self.start()
+            if self.cdp_url is not None:
+                self.connect_over_cdp(self.cdp_url)
+            else:
+                self.start()
         return self
 
     def __exit__(self, *_: object) -> None:
