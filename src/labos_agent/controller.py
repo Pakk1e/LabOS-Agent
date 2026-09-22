@@ -19,7 +19,9 @@ class Controller:
     def mark_success(self)->None:
         self.state.consecutive_failures=0; self.state.transition(RunState.WAITING,reason="response completed")
     def mark_failure(self,reason:str)->None:
-        self.state.consecutive_failures+=1; self.state.transition(RunState.ERROR,reason=reason)
+        self.state.consecutive_failures+=1
+        self.state.record_failure(reason)
+        self.state.transition(RunState.ERROR,reason=reason)
     def rollover(self)->None:
         self.state.rollover_count+=1
         self.state.iteration_at_last_rollover=self.state.iteration
