@@ -29,7 +29,7 @@ def build_parser():
     diag=sub.add_parser("browser-project-diagnose",help="inspect Project/new-chat UI without clicking")
     diag.add_argument("--cdp",default="http://127.0.0.1:9222")
     diag.add_argument("--project-name",default="")
-    newchat=sub.add_parser("browser-project-new-chat-test",help="open a new chat from a ChatGPT Project without sending a message")
+    newchat=sub.add_parser("browser-project-new-chat-test",help="prepare the Project home composer for a new chat without sending a message")
     newchat.add_argument("--cdp",default="http://127.0.0.1:9222")
     newchat.add_argument("--project-name",required=True)
     newchat.add_argument("--project-url",default="")
@@ -149,13 +149,14 @@ def browser_project_new_chat_test_command(args):
             project_url=args.project_url or None,
             selector=args.selector or None,
         )
-        print("Project new-chat navigation completed.")
+        print("Project new-chat preparation completed.")
         print(f"Previous URL: {before_url}")
         print(f"New URL: {page.url}")
         print(f"Title: {page.title()}")
         print(f"Message input detected: {chat.status().has_input}")
         print(f"Project context present: {chat.project_context_present(args.project_name)}")
-        print("No message was sent.")
+        print(f"Project composer detected: {chat.project_chat_composer_present(args.project_name)}")
+        print("No message was sent; the next send will create the Project chat.")
     finally:
         session.close()
 
