@@ -145,6 +145,66 @@ class ChatGPTPage:
     def project_chat_composer_present(self,project_name:str)->bool:
         return self.project_chat_composer(project_name) is not None
 
+    def navigate_to_project_home(self,*,project_name:str)->None:
+        home=self._project_home_button(project_name)
+        if home is None:
+            raise RuntimeError(f"visible Project home button not found for: {project_name}")
+        home.click()
+        self.page.wait_for_timeout(1500)
+
+    def print_project_home_composer_diagnostic(self,project_name:str)->None:
+        print(f"URL: {self.page.url}")
+        print(f"Title: {self.page.title()}")
+        body=self.page.locator("body").inner_text(timeout=5000)
+        print("--- body-text ---")
+        print(body[:12000])
+        print("--- editable-diagnostic ---")
+        selectors=(
+            '[contenteditable="true"]',
+            '[role="textbox"]',
+            'textarea',
+            'input',
+            'button',
+        )
+        for selector in selectors:
+            loc=self.page.locator(selector)
+            print(f"selector: {selector} count={loc.count()}")
+            for i in range(min(loc.count(),40)):
+                item=loc.nth(i)
+                try:
+                    if not item.is_visible():
+                        continue
+                    print(
+                        f"[{i}] tag={item.evaluate('(el)=>el.tagName.toLowerCase()')} "
+                        f"aria={item.get_attribute('aria-label')!r} "
+                        f"placeholder={item.get_attribute('placeholder')!r} "
+                        f"data-placeholder={item.get_attribute('data-placeholder')!r} "
+                        f"role={item.get_attribute('role')!r} "
+                        f"testid={item.get_attribute('data-testid')!r}"
+                    )
+                    print(item.evaluate("(el)=>el.outerHTML.slice(0,4000)"))
+                except Exception:
+                    continue
+        print("--- project-related-buttons ---")
+        buttons=self.page.locator("button")
+        for i in range(min(buttons.count(),250)):
+            b=buttons.nth(i)
+            try:
+                if not b.is_visible():
+                    continue
+                combined=" | ".join(
+                    x for x in (
+                        b.inner_text(timeout=300),
+                        b.get_attribute("aria-label"),
+                        b.get_attribute("title"),
+                        b.get_attribute("data-testid"),
+                    ) if x
+                ).replace("\n"," ")
+                if any(k in combined.casefold() for k in ("project","new chat","send","submit")):
+                    print(f"{i}: {combined[:500]}")
+            except Exception:
+                continue
+
     def _project_home_button(self, project_name: str):
         """Find the Project-home button belonging to the named Project."""
         buttons=self.page.locator('button[aria-label="Open project home"]')
