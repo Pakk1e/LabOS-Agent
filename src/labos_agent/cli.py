@@ -228,6 +228,8 @@ def browser_project_rollover_test_command(args):
         print(f"Project context present: {chat.project_context_present(args.project_name)}")
         print("Assistant response:")
         print(response)
+    finally:
+        session.close()
 
 def browser_attach_command(args):
     print(f"Attaching to existing Chromium: {args.cdp}")
