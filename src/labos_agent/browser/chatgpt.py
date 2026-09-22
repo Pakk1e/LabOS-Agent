@@ -206,27 +206,25 @@ class ChatGPTPage:
                 continue
 
     def _project_home_button(self, project_name: str):
-        """Find the Project-home button belonging to the named Project."""
-        buttons=self.page.locator('button[aria-label="Open project home"]')
-        for i in range(buttons.count()):
-            button=buttons.nth(i)
-            try:
-                if not button.is_visible():
-                    continue
-                if button.evaluate(
-                    """(el, name) => {
-                        let node = el;
-                        for (let depth = 0; node && depth < 8; depth++, node = node.parentElement) {
-                            const text = (node.innerText || '').trim();
-                            if (text.toLowerCase().includes(name.toLowerCase())) return true;
-                        }
-                        return false;
-                    }""",
-                    project_name,
-                ):
-                    return button
-            except Exception:
-                continue
+        """Find the Project-home button in the exact named Project row."""
+        if not project_name:
+            return None
+        option=self.page.locator(
+            f'button[aria-label="Open project options for {project_name}"]'
+        ).first
+        try:
+            if option.count() == 0 or not option.is_visible():
+                return None
+            row=option
+            for _ in range(10):
+                row=row.locator("xpath=..")
+                home=row.locator('button[aria-label="Open project home"]')
+                if home.count():
+                    text=row.inner_text().strip()
+                    if any(line.strip() == project_name for line in text.splitlines()):
+                        return home.first
+        except Exception:
+            return None
         return None
 
     def start_new_project_chat(self,*,project_name:str|None,project_url:str|None,selector:str|None)->None:
