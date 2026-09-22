@@ -23,3 +23,26 @@ def test_old_state_defaults_rollover_position(tmp_path:Path):
     path.write_text('{"project":"weather","run_id":"x","state":"WAITING","iteration":3,"rollover_count":1,"consecutive_failures":0}',encoding="utf-8")
     state=load_state(path)
     assert state is not None and state.iteration_at_last_rollover==0
+
+def test_failure_history_round_trip(tmp_path:Path):
+    path=tmp_path/"state.json"
+    state=AgentState(project="weather",run_id="x",iteration=4)
+    state.record_failure("browser timeout")
+    save_state(path,state); restored=load_state(path)
+    assert restored is not None and restored.failure_history[0]["iteration"]==4
+    assert restored.failure_history[0]["reason"]=="browser timeout"
+
+def test_old_state_defaults_failure_history(tmp_path:Path):
+    path=tmp_path/"state.json"
+    path.write_text('{"project":"weather","run_id":"x","state":"WAITING","iteration":3,"rollover_count":1,"consecutive_failures":0}',encoding="utf-8")
+    state=load_state(path)
+    assert state is not None and state.failure_history==[]
+
+def test_failure_history_is_bounded():
+    state=AgentState(project="weather",run_id="x")
+    for i in range(25):
+        state.iteration=i
+        state.record_failure(f"failure {i}")
+    assert len(state.failure_history)==20
+    assert state.failure_history[0]["reason"]=="failure 5"
+    assert state.failure_history[-1]["reason"]=="failure 24"
