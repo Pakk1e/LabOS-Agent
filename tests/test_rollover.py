@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from labos_agent.config import ProjectConfig
 from labos_agent.rollover import handoff_prompt, persist_handoff, resume_prompt, rollover
 
@@ -31,7 +33,8 @@ def test_rollover_persists_and_resumes(tmp_path):
         repository="Pakk1e/VilaPro-Weather",
         project_root=tmp_path,
         continuation_message="Continue Weather",
-        project_name="Vadovsky Tech — Lab OS",
+        project_name="Vadovsky Tech — Weather",
+        project_url="https://chatgpt.com/g/g-p-weather/project",
     )
     chat = FakeChat()
     continuation, path, response = rollover(
@@ -46,9 +49,27 @@ def test_rollover_persists_and_resumes(tmp_path):
     assert chat.page.url.endswith("/new")
     assert path.read_text(encoding="utf-8") == "HANDOFF CONTENT\n"
     assert handoff_prompt(project) in chat.messages
-    assert continuation == resume_prompt("HANDOFF CONTENT")
+    assert continuation == resume_prompt(project, "HANDOFF CONTENT")
     assert continuation in chat.messages
     assert response == "RESUME RESPONSE"
+
+
+def test_handoff_is_project_scoped():
+    project = ProjectConfig(
+        name="weather",
+        repository="Pakk1e/VilaPro-Weather",
+        project_root=Path("."),
+        continuation_message="Continue Weather",
+        project_name="Vadovsky Tech — Weather",
+    )
+    handoff = handoff_prompt(project)
+    resume = resume_prompt(project, "HANDOFF CONTENT")
+    for text in (handoff, resume):
+        assert "weather project" in text.lower()
+        assert "Vadovsky Tech — Weather" in text
+        assert "Worlds" in text
+        assert "LabOS-Agent" in text
+        assert "repository" in text.lower()
 
 
 def test_persist_handoff_is_newline_terminated(tmp_path):

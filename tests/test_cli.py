@@ -27,15 +27,16 @@ def test_project_rollover_test_command_parser():
     assert args.require_rollover is True
 
 
-
 def test_project_handoff_rollover_test_command_parser():
     parser = build_parser()
     args = parser.parse_args([
         "browser-project-handoff-rollover-test",
         "--cdp", "http://127.0.0.1:9222",
-        "--project-name", "Vadovsky Tech — Lab OS",
+        "--project-name", "Vadovsky Tech — Weather",
+        "--project-url", "https://chatgpt.com/g/g-p-6ab2a81b723081918c9e1052acf0af9c-vadovsky-tech-weather/project",
         "--state-dir", "state/test-rollover",
     ])
     assert args.command == "browser-project-handoff-rollover-test"
-    assert args.project_name == "Vadovsky Tech — Lab OS"
+    assert args.project_name == "Vadovsky Tech — Weather"
+    assert args.project_url == "https://chatgpt.com/g/g-p-6ab2a81b723081918c9e1052acf0af9c-vadovsky-tech-weather/project"
     assert args.state_dir == "state/test-rollover"

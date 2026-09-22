@@ -45,6 +45,7 @@ def build_parser():
     handoff=sub.add_parser("browser-project-handoff-rollover-test",help="generate a real handoff, open a fresh Project chat, and resume from it")
     handoff.add_argument("--cdp",default="http://127.0.0.1:9222")
     handoff.add_argument("--project-name",required=True)
+    handoff.add_argument("--project-url",default="")
     handoff.add_argument("--state-dir",default="")
     attach=sub.add_parser("browser-attach",help="attach to an existing Chromium over CDP")
     attach.add_argument("--cdp",default="http://127.0.0.1:9222"); attach.add_argument("--test-message"); attach.add_argument("--keep-open",action="store_true")
@@ -261,8 +262,12 @@ def browser_project_handoff_rollover_test_command(args):
         print(f"Current URL: {before_url}")
         print("Generating a real handoff from the current conversation.")
         project=type("Project", (), {
+            "name": args.project_name,
+            "repository": "",
+            "project_root": Path("."),
+            "continuation_message": "",
             "project_name": args.project_name,
-            "project_url": None,
+            "project_url": args.project_url or None,
             "new_chat_selector": None,
         })()
         _,path,response=rollover(
