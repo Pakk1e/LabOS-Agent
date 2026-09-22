@@ -206,27 +206,54 @@ class ChatGPTPage:
                 continue
 
     def _project_home_button(self, project_name: str):
-        """Find the Project-home button belonging to the named Project."""
-        buttons=self.page.locator('button[aria-label="Open project home"]')
-        for i in range(buttons.count()):
-            button=buttons.nth(i)
+        """Find the Project-home button in the exact named Project row."""
+        if not project_name:
+            return None
+        options=self.page.locator(
+            f'button[aria-label="Open project options for {project_name}"]'
+        )
+        for i in range(options.count()):
+            option=options.nth(i)
             try:
-                if not button.is_visible():
+                if not option.is_visible():
                     continue
-                if button.evaluate(
-                    """(el, name) => {
+                button=option.evaluate_handle(
+                    """(el) => {
                         let node = el;
-                        for (let depth = 0; node && depth < 8; depth++, node = node.parentElement) {
+                        for (let depth = 0; node && depth < 10; depth++, node = node.parentElement) {
+                            const home = node.querySelector('button[aria-label="Open project home"]');
                             const text = (node.innerText || '').trim();
-                            if (text.toLowerCase().includes(name.toLowerCase())) return true;
+                            if (home && text.split(/\\n+/).some(line => line.trim() === arguments[0])) {
+                                return home;
+                            }
                         }
-                        return false;
+                        return null;
                     }""",
                     project_name,
-                ):
-                    return button
+                )
+                if button:
+                    return self.page.locator('button[aria-label="Open project home"]').filter(
+                        has=self.page.locator("svg")
+                    ).locator("xpath=..").first if False else self.page.locator(
+                        'button[aria-label="Open project home"]'
+                    ).filter(
+                        has_text=""
+                    ).nth(0)
             except Exception:
                 continue
+        # Fallback: use the exact Project options button's row and return its
+        # sibling Project-home button through DOM evaluation with a unique marker.
+        option=self.page.locator(
+            f'button[aria-label="Open project options for {project_name}"]'
+        ).first
+        if option.count() and option.is_visible():
+            for depth in range(1,9):
+                row=option.locator("xpath=" + "/.."*depth)
+                try:
+                    if row.count() and row.locator('button[aria-label="Open project home"]').count():
+                        return row.locator('button[aria-label="Open project home"]').first
+                except Exception:
+                    continue
         return None
 
     def start_new_project_chat(self,*,project_name:str|None,project_url:str|None,selector:str|None)->None:
