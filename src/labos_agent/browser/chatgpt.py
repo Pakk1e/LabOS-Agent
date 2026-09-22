@@ -101,6 +101,16 @@ class ChatGPTPage:
         if composer is None:
             raise RuntimeError(f"Project composer is unavailable for: {project_name}")
         before=self._assistant_texts()
+        deadline=time.monotonic()+10
+        while time.monotonic()<deadline:
+            try:
+                if composer.is_editable():
+                    break
+            except Exception:
+                pass
+            self.page.wait_for_timeout(250)
+        else:
+            raise RuntimeError(f"Project composer is not editable for: {project_name}")
         composer.fill(message)
         composer.press("Enter")
         return self.wait_for_response(before=before,**kwargs)
@@ -138,10 +148,6 @@ class ChatGPTPage:
                             for (const child of el.querySelectorAll('[data-placeholder],[placeholder]')) {
                                 values.push(child.getAttribute('data-placeholder') || '');
                                 values.push(child.getAttribute('placeholder') || '');
-                            }
-                            let n = el;
-                            for (let i = 0; n && i < 8; i++, n = n.parentElement) {
-                                values.push((n.innerText || '').trim());
                             }
                             return values.some(v => v.toLowerCase().includes(expected));
                         }""",
@@ -247,7 +253,20 @@ class ChatGPTPage:
                     f"visible Project home button not found for: {project_name}"
                 )
             home.click()
-            self.page.wait_for_timeout(1000)
+            deadline=time.monotonic()+10
+            while time.monotonic()<deadline:
+                composer=self.project_chat_composer(project_name)
+                if composer is not None:
+                    try:
+                        if composer.is_editable():
+                            break
+                    except Exception:
+                        pass
+                self.page.wait_for_timeout(250)
+            else:
+                raise RuntimeError(
+                    f"Project composer did not become editable for: {project_name}"
+                )
         elif project_url:
             self.page.goto(project_url,wait_until="domcontentloaded",timeout=60000)
         elif selector:
