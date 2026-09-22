@@ -18,13 +18,35 @@ def persist_handoff(state_dir: Path, handoff: str) -> Path:
     path.write_text(handoff.rstrip()+"\n",encoding="utf-8")
     return path
 
+def resume_prompt(handoff: str) -> str:
+    return (
+        "Continue the project from this handoff. Treat repository state as authoritative, "
+        "verify it before making changes, and continue with the smallest useful next action.\n\n"
+        + handoff
+    )
+
 def rollover(chat: ChatGPTPage, project: ProjectConfig, state_dir: Path, *,
-             timeout_seconds: float, quiet_seconds: float) -> tuple[str,Path]:
-    handoff=chat.send_and_wait_for_response(handoff_prompt(project),
-        timeout_seconds=timeout_seconds,quiet_seconds=quiet_seconds)
+             timeout_seconds: float, quiet_seconds: float) -> tuple[str,Path,str]:
+    """Generate, persist, and resume from a handoff in a fresh Project chat."""
+    handoff=chat.send_and_wait_for_response(
+        handoff_prompt(project),
+        timeout_seconds=timeout_seconds,
+        quiet_seconds=quiet_seconds,
+    )
     path=persist_handoff(state_dir,handoff)
-    chat.start_new_project_chat(project_name=project.project_name,
-        project_url=project.project_url,selector=project.new_chat_selector)
-    resume=("Continue the project from this handoff. Treat repository state as authoritative, "
-            "verify it before making changes, and continue with the smallest useful next action.\n\n"+handoff)
-    return resume,path
+    before_url=chat.page.url
+    chat.start_new_project_chat(
+        project_name=project.project_name,
+        project_url=project.project_url,
+        selector=project.new_chat_selector,
+    )
+    continuation=resume_prompt(handoff)
+    response=chat.send_project_message_and_wait_for_response(
+        project.project_name or "",
+        continuation,
+        timeout_seconds=timeout_seconds,
+        quiet_seconds=quiet_seconds,
+    )
+    if chat.page.url == before_url:
+        raise RuntimeError("Project rollover did not create a new conversation")
+    return continuation,path,response
