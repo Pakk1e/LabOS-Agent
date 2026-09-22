@@ -34,6 +34,7 @@ def build_parser():
     newchat.add_argument("--project-name",required=True)
     newchat.add_argument("--project-url",default="")
     newchat.add_argument("--selector",default="")
+    newchat.add_argument("--diagnose",action="store_true",help="click Project Home and print post-navigation composer diagnostics")
     attach=sub.add_parser("browser-attach",help="attach to an existing Chromium over CDP")
     attach.add_argument("--cdp",default="http://127.0.0.1:9222"); attach.add_argument("--test-message"); attach.add_argument("--keep-open",action="store_true")
     return parser
@@ -144,6 +145,10 @@ def browser_project_new_chat_test_command(args):
         if not chat.project_context_present(args.project_name):
             raise RuntimeError(f"required ChatGPT Project context not detected: {args.project_name}")
         before_url=page.url
+        if args.diagnose:
+            chat.navigate_to_project_home(project_name=args.project_name)
+            chat.print_project_home_composer_diagnostic(args.project_name)
+            return
         chat.start_new_project_chat(
             project_name=args.project_name,
             project_url=args.project_url or None,
