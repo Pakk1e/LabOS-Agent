@@ -33,7 +33,8 @@ def test_project_handoff_rollover_test_command_parser():
     args = parser.parse_args([
         "browser-project-handoff-rollover-test",
         "--cdp", "http://127.0.0.1:9222",
-        "--project-name", "Vadovsky Tech — Lab OS",
+        "--project-name", "Vadovsky Tech — Weather",
+        "--project-url", "https://chatgpt.com/g/g-p-6ab2a81b723081918c9e1052acf0af9c-vadovsky-tech-weather/project",
         "--state-dir", "state/test-rollover",
     ])
     assert args.command == "browser-project-handoff-rollover-test"
