@@ -25,3 +25,17 @@ def test_project_rollover_test_command_parser():
     assert args.project_name == "Vadovsky Tech — Lab OS"
     assert args.handoff_message == "LABOS_ROLLOVER_TEST"
     assert args.require_rollover is True
+
+
+
+def test_project_handoff_rollover_test_command_parser():
+    parser = build_parser()
+    args = parser.parse_args([
+        "browser-project-handoff-rollover-test",
+        "--cdp", "http://127.0.0.1:9222",
+        "--project-name", "Vadovsky Tech — Lab OS",
+        "--state-dir", "state/test-rollover",
+    ])
+    assert args.command == "browser-project-handoff-rollover-test"
+    assert args.project_name == "Vadovsky Tech — Lab OS"
+    assert args.state_dir == "state/test-rollover"
