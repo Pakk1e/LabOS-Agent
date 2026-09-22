@@ -35,6 +35,7 @@ def build_parser():
     newchat.add_argument("--project-url",default="")
     newchat.add_argument("--selector",default="")
     newchat.add_argument("--diagnose",action="store_true",help="click Project Home and print post-navigation composer diagnostics")
+    newchat.add_argument("--test-message",default="",help="send one controlled message after reaching the Project composer and wait for the assistant response")
     attach=sub.add_parser("browser-attach",help="attach to an existing Chromium over CDP")
     attach.add_argument("--cdp",default="http://127.0.0.1:9222"); attach.add_argument("--test-message"); attach.add_argument("--keep-open",action="store_true")
     return parser
@@ -161,7 +162,21 @@ def browser_project_new_chat_test_command(args):
         composer=chat.project_chat_composer(args.project_name)
         print(f"Project context present: {chat.project_context_present(args.project_name)}")
         print(f"Project composer detected: {composer is not None}")
-        print("No message was sent.")
+        if not args.test_message:
+            print("No message was sent.")
+            return
+        if composer is None:
+            raise RuntimeError("Project composer is unavailable for the requested test message")
+        print("Sending one controlled Project chat test message.")
+        before=chat._assistant_texts()
+        composer.fill(args.test_message)
+        composer.press("Enter")
+        response=chat.wait_for_response(before=before)
+        print("Project chat test completed.")
+        print(f"Result URL: {page.url}")
+        print(f"Result title: {page.title()}")
+        print("Assistant response:")
+        print(response)
     finally:
         session.close()
 
