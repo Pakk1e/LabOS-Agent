@@ -74,6 +74,169 @@ def continue_command(args):
     if result.state.reason: print(f"Reason: {result.state.reason}")
     if result.response: print(result.response)
 
+def browser_project_diagnose_command(args):
+    session=BrowserSession(Path("."))
+    try:
+        context=session.connect_over_cdp(args.cdp)
+        page=next((p for p in context.pages if p.url.startswith("https://chatgpt.com/")),None)
+        if page is None: raise RuntimeError("No ChatGPT page is attached")
+        print(f"URL: {page.url}")
+        print(f"Title: {page.title()}")
+        if args.project_name:
+            needle=f"Open project options for {args.project_name}"
+            loc=page.locator(f'button[aria-label="{needle}"]')
+            if loc.count():
+                print("--- project-options-html ---")
+                print(loc.first.evaluate("(el) => el.outerHTML"))
+                print("--- project-menu-diagnostic ---")
+                try:
+                    loc.first.click()
+                    page.wait_for_timeout(300)
+                    menus=page.locator('[role="menu"]')
+                    print(f"menu count={menus.count()}")
+                    for i in range(min(menus.count(),10)):
+                        menu=menus.nth(i)
+                        if not menu.is_visible():
+                            continue
+                        print(f"menu[{i}] text={menu.inner_text()!r}")
+                        print(f"menu[{i}] html={menu.evaluate('(el) => el.outerHTML.slice(0,5000)')}")
+                except Exception as exc:
+                    print(f"menu diagnostic error: {exc}")
+            else:
+                print(f"Project options button not found: {needle}")
+        print("--- composer-diagnostic ---")
+        selectors=("textarea", '[contenteditable="true"]', '[role="textbox"]')
+        seen=set()
+        for selector in selectors:
+            loc=page.locator(selector)
+            print(f"selector: {selector} count={loc.count()}")
+            for i in range(min(loc.count(),20)):
+                item=loc.nth(i)
+                try:
+                    outer=item.evaluate("(el) => el.outerHTML.slice(0,1200)")
+                    if outer in seen:
+                        continue
+                    seen.add(outer)
+                    disabled=item.is_disabled() if selector == "textarea" else False
+                    print(f"  [{i}] visible={item.is_visible()} hidden={item.is_hidden()} disabled={disabled}")
+                    print(f"  [{i}] aria-label={item.get_attribute('aria-label')!r} placeholder={item.get_attribute('placeholder')!r} role={item.get_attribute('role')!r} contenteditable={item.get_attribute('contenteditable')!r} data-testid={item.get_attribute('data-testid')!r}")
+                    print(f"  [{i}] outerHTML={outer}")
+                except Exception as exc:
+                    print(f"  [{i}] diagnostic error: {exc}")
+        for selector in ("button","a"):
+            loc=page.locator(selector)
+            print(f"--- {selector} ---")
+            for i in range(min(loc.count(),200)):
+                item=loc.nth(i)
+                try:
+                    text=item.inner_text(timeout=500).strip().replace("\\n"," ")
+                    aria=item.get_attribute("aria-label") or ""
+                    title=item.get_attribute("title") or ""
+                    testid=item.get_attribute("data-testid") or ""
+                    href=item.get_attribute("href") or ""
+                    combined=" | ".join(x for x in (text,aria,title,testid,href) if x)
+                    if combined and any(k in combined.casefold() for k in ("project","new chat","chat")):
+                        print(f"{i}: {combined[:300]}")
+                except Exception:
+                    continue
+    finally:
+        session.close()
+
+def browser_project_new_chat_test_command(args):
+    print(f"Attaching to existing Chromium: {args.cdp}")
+    print("LabOS-Agent will not launch the remote Chromium.")
+    session=BrowserSession(Path("."))
+    try:
+        context=session.connect_over_cdp(args.cdp)
+        pages=[p for p in context.pages if p.url.startswith("https://chatgpt.com/")]
+        page=pages[0] if pages else None
+        if page is None:
+            raise RuntimeError("No ChatGPT page is attached")
+        chat=ChatGPTPage(page)
+        chat.assert_ready()
+        if not chat.project_context_present(args.project_name):
+            raise RuntimeError(f"required ChatGPT Project context not detected: {args.project_name}")
+        before_url=page.url
+        if args.diagnose:
+            chat.navigate_to_project_home(project_name=args.project_name)
+            chat.print_project_home_composer_diagnostic(args.project_name)
+            return
+        chat.start_new_project_chat(
+            project_name=args.project_name,
+            project_url=args.project_url or None,
+            selector=args.selector or None,
+        )
+        print("Project home navigation completed.")
+        print(f"Previous URL: {before_url}")
+        print(f"New URL: {page.url}")
+        print(f"Title: {page.title()}")
+        composer=chat.project_chat_composer(args.project_name)
+        print(f"Project context present: {chat.project_context_present(args.project_name)}")
+        print(f"Project composer detected: {composer is not None}")
+        if not args.test_message:
+            print("No message was sent.")
+            return
+        if composer is None:
+            raise RuntimeError("Project composer is unavailable for the requested test message")
+        print("Sending one controlled Project chat test message.")
+        before=chat._assistant_texts()
+        composer.fill(args.test_message)
+        composer.press("Enter")
+        response=chat.wait_for_response(before=before)
+        print("Project chat test completed.")
+        print(f"Result URL: {page.url}")
+        print(f"Result title: {page.title()}")
+        print("Assistant response:")
+        print(response)
+    finally:
+        session.close()
+
+
+def browser_project_rollover_test_command(args):
+    print(f"Attaching to existing Chromium: {args.cdp}")
+    print("LabOS-Agent will not launch the remote Chromium.")
+    if not args.handoff_message.strip():
+        raise ValueError("--handoff-message must not be empty")
+    session=BrowserSession(Path("."))
+    try:
+        context=session.connect_over_cdp(args.cdp)
+        pages=[p for p in context.pages if p.url.startswith("https://chatgpt.com/")]
+        page=pages[0] if pages else None
+        if page is None:
+            raise RuntimeError("No ChatGPT page is attached")
+        chat=ChatGPTPage(page)
+        status=chat.status()
+        if status.is_challenge:
+            raise RuntimeError("ChatGPT verification challenge is active")
+        if not status.is_chatgpt:
+            raise RuntimeError("attached page is not ChatGPT")
+        if not chat.project_context_present(args.project_name):
+            raise RuntimeError(f"required ChatGPT Project context not detected: {args.project_name}")
+        print(f"Current URL: {page.url}")
+        print(f"Rollover required: {status.rollover_required}")
+        if args.require_rollover and not status.rollover_required:
+            raise RuntimeError("controlled rollover test requires the explicit maximum-length UI")
+        before_url=page.url
+        chat.start_new_project_chat(project_name=args.project_name,project_url=None,selector=None)
+        composer=chat.project_chat_composer(args.project_name)
+        if composer is None:
+            raise RuntimeError("Project composer is unavailable after rollover navigation")
+        before=chat._assistant_texts()
+        print("Sending supplied handoff to the fresh Project chat.")
+        composer.fill(args.handoff_message)
+        composer.press("Enter")
+        response=chat.wait_for_response(before=before)
+        if page.url == before_url:
+            raise RuntimeError("rollover did not produce a new conversation URL")
+        print("Controlled Project rollover completed.")
+        print(f"Previous URL: {before_url}")
+        print(f"New URL: {page.url}")
+        print(f"Project context present: {chat.project_context_present(args.project_name)}")
+        print("Assistant response:")
+        print(response)
+    finally:
+        session.close()
+
 def browser_project_handoff_rollover_test_command(args):
     print(f"Attaching to existing Chromium: {args.cdp}")
     print("LabOS-Agent will not launch the remote Chromium.")
@@ -125,23 +288,55 @@ def browser_project_handoff_rollover_test_command(args):
     finally:
         session.close()
 
-def browser_project_diagnose_command(args):
-    raise NotImplementedError("browser-project-diagnose remains available in the previous release")
-
-def browser_project_new_chat_test_command(args):
-    raise NotImplementedError("browser-project-new-chat-test remains available in the previous release")
-
-def browser_project_rollover_test_command(args):
-    raise NotImplementedError("browser-project-rollover-test remains available in the previous release")
-
 def browser_attach_command(args):
-    raise NotImplementedError("browser-attach remains available in the previous release")
+    print(f"Attaching to existing Chromium: {args.cdp}")
+    print("LabOS-Agent will not launch the remote Chromium.")
+    session=BrowserSession(Path("."))
+    try:
+        context=session.connect_over_cdp(args.cdp)
+        pages=context.pages
+        chat_pages=[p for p in pages if p.url.startswith("https://chatgpt.com/")]
+        page=chat_pages[0] if chat_pages else (pages[0] if pages else context.new_page())
+        chat=ChatGPTPage(page); status=chat.status()
+        print(f"URL: {status.url}"); print(f"Title: {status.title}"); print(f"Message input detected: {status.has_input}")
+        if status.is_challenge: print("Browser is showing a verification challenge. Stop here and complete it manually."); return
+        if not status.is_chatgpt: print("No ChatGPT page is currently attached. Open ChatGPT in the existing Chromium first."); return
+        if not status.has_input: print("ChatGPT message input was not detected. Do not enable autonomous mode."); return
+        if args.test_message:
+            print("Sending one controlled test message.")
+            response=chat.send_and_wait_for_response(args.test_message)
+            print("Test message completed."); print("Assistant response:"); print(response)
+        if args.keep_open:
+            print("Attached session kept alive. Press Ctrl+C to detach.")
+            try:
+                import time
+                while True: time.sleep(1)
+            except KeyboardInterrupt: print("Detaching from Chromium.")
+    finally: session.close()
 
 def browser_smoke_command(args):
-    raise NotImplementedError("browser-smoke remains available in the previous release")
+    import os,time
+    from .browser.session import BrowserSession
+    profile=Path(args.profile_dir).expanduser().resolve()
+    if args.display: os.environ["DISPLAY"]=args.display
+    with BrowserSession(profile,headless=args.headless) as session:
+        page=session.context.pages[0] if session.context.pages else session.context.new_page()
+        chat=ChatGPTPage(page); status=chat.open()
+        print(f"URL: {status.url}"); print(f"Title: {status.title}"); print(f"Message input detected: {status.has_input}")
+        if args.test_message and status.has_input:
+            print("Sending one controlled test message."); print(chat.send_and_wait_for_response(args.test_message))
+        if args.keep_open:
+            try:
+                while True: time.sleep(1)
+            except KeyboardInterrupt: pass
 
 def main():
     args=build_parser().parse_args()
     if args.command=="run": run_command(args)
     elif args.command=="continue": continue_command(args)
+    elif args.command=="browser-project-diagnose": browser_project_diagnose_command(args)
+    elif args.command=="browser-project-new-chat-test": browser_project_new_chat_test_command(args)
+    elif args.command=="browser-project-rollover-test": browser_project_rollover_test_command(args)
     elif args.command=="browser-project-handoff-rollover-test": browser_project_handoff_rollover_test_command(args)
+    elif args.command=="browser-attach": browser_attach_command(args)
+    elif args.command=="browser-smoke": browser_smoke_command(args)
