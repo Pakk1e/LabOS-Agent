@@ -13,3 +13,5 @@ def test_project_snapshot_reads_state(tmp_path:Path):
     assert "may not have access to that controller-side path" in prompt
     assert "Do not treat inability to access the local project path as a blocker" in prompt
     assert "configured repository as the authoritative source" in prompt
+    assert "do not rely solely on a commit-workflow endpoint" in prompt
+    assert "match the target commit SHA" in prompt
