@@ -149,14 +149,14 @@ def browser_project_new_chat_test_command(args):
             project_url=args.project_url or None,
             selector=args.selector or None,
         )
-        print("Project new-chat preparation completed.")
+        print("Project home navigation completed.")
         print(f"Previous URL: {before_url}")
         print(f"New URL: {page.url}")
         print(f"Title: {page.title()}")
-        print(f"Message input detected: {chat.status().has_input}")
+        composer=chat.project_chat_composer(args.project_name)
         print(f"Project context present: {chat.project_context_present(args.project_name)}")
-        print(f"Project composer detected: {chat.project_chat_composer_present(args.project_name)}")
-        print("No message was sent; the next send will create the Project chat.")
+        print(f"Project composer detected: {composer is not None}")
+        print("No message was sent.")
     finally:
         session.close()
 
