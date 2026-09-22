@@ -97,9 +97,42 @@ class ChatGPTPage:
         except Exception: return False
         return project_name.casefold() in body.casefold()
 
+    def project_chat_composer_present(self,project_name:str)->bool:
+        """Return whether the visible composer explicitly belongs to the Project."""
+        if not project_name:
+            return False
+        expected=f"new chat in {project_name}".casefold()
+        selectors=(
+            '[contenteditable="true"][role="textbox"]',
+            '#prompt-textarea[contenteditable="true"]',
+        )
+        for selector in selectors:
+            loc=self.page.locator(selector).first
+            try:
+                if not loc.count() or not loc.is_visible():
+                    continue
+                label=(loc.get_attribute("aria-label") or "").casefold()
+                placeholder=(loc.get_attribute("placeholder") or "").casefold()
+                if expected in label or expected in placeholder:
+                    return True
+            except Exception:
+                continue
+        return False
+
     def start_new_project_chat(self,*,project_name:str|None,project_url:str|None,selector:str|None)->None:
+        """Prepare the Project home so the next send creates a new Project chat.
+
+        Current ChatGPT UI exposes the Project composer as "New chat in <Project>".
+        The Project options menu does not contain a New chat action. Therefore a
+        verified Project URL is the safe default navigation mechanism: opening the
+        Project home gives us a fresh Project composer, and the subsequent
+        send_message() creates the new chat. A configured selector is still
+        supported for a UI flow that has been independently verified.
+        """
         if project_url:
             self.page.goto(project_url,wait_until="domcontentloaded",timeout=60000)
+        elif not selector:
+            raise RuntimeError("Project rollover requires a verified project_url or new_chat_selector")
         if project_name and not self.project_context_present(project_name):
             raise RuntimeError(f"required ChatGPT Project context not detected: {project_name}")
         if selector:
@@ -107,20 +140,9 @@ class ChatGPTPage:
             if loc.count()==0 or not loc.is_visible():
                 raise RuntimeError("configured Project new-chat selector not found")
             loc.click()
-        else:
-            project_options=f'button[aria-label="Open project options for {project_name}"]' if project_name else ""
-            options=self.page.locator(project_options).first if project_options else None
-            if options is None or options.count()==0 or not options.is_visible():
-                raise RuntimeError("Project new-chat navigation requires a selector or a visible Project options control")
-            options.click()
-            menu=self.page.locator('[role="menu"]').first
-            if menu.count()==0 or not menu.is_visible():
-                raise RuntimeError("Project options menu did not open")
-            new_chat=menu.get_by_text("New chat",exact=True).first
-            if new_chat.count()==0 or not new_chat.is_visible():
-                raise RuntimeError("Project options menu has no visible New chat action")
-            new_chat.click()
-        self.page.wait_for_timeout(1000)
+            self.page.wait_for_timeout(1000)
         self.assert_ready()
         if project_name and not self.project_context_present(project_name):
-            raise RuntimeError("Project context disappeared after starting the new chat")
+            raise RuntimeError("Project context disappeared after preparing the new chat")
+        if project_name and project_url and not selector and not self.project_chat_composer_present(project_name):
+            raise RuntimeError(f"Project composer does not identify a new chat for: {project_name}")
