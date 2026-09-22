@@ -1,6 +1,7 @@
 """Conservative ChatGPT response lifecycle detection."""
 from __future__ import annotations
 from dataclasses import dataclass
+import re
 from playwright.sync_api import Page
 
 @dataclass(frozen=True)
@@ -9,6 +10,28 @@ class ResponseObservation:
     input_available: bool
     stop_control_visible: bool = False
     assistant_count: int = 0
+
+
+def _has_max_length_notice(text: str) -> bool:
+    normalized = re.sub(r"\s+", " ", text).strip().casefold()
+    return (
+        "you've reached the maximum length for this conversation" in normalized
+        and "you can keep talking by starting a new chat" in normalized
+    )
+
+def rollover_required(page: Page) -> bool:
+    """Return True only for ChatGPT's explicit maximum-length rollover UI."""
+    try:
+        body = page.locator("body").inner_text(timeout=3000)
+    except Exception:
+        return False
+    if not _has_max_length_notice(body):
+        return False
+    try:
+        button = page.get_by_role("button", name=re.compile(r"^start new chat$", re.I)).first
+        return button.count() > 0 and button.is_visible()
+    except Exception:
+        return False
 
 _STOP_SELECTORS=(
     'button[aria-label*="Stop" i]',

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import time
 from urllib.parse import urlparse
 from playwright.sync_api import Page
-from .detection import observe
+from .detection import observe, rollover_required
 
 @dataclass(frozen=True)
 class ChatStatus:
@@ -15,6 +15,7 @@ class ChatStatus:
     is_chatgpt: bool
     generating: bool
     assistant_count: int
+    rollover_required: bool
 
 class ChatGPTPage:
     def __init__(self,page:Page)->None: self.page=page
@@ -28,7 +29,8 @@ class ChatGPTPage:
         obs=observe(self.page)
         return ChatStatus(url,self.page.title(),obs.input_available,
                           "__cf_chl_" in url or "challenge" in url.lower(),
-                          self._is_chatgpt_url(url),obs.generating,obs.assistant_count)
+                          self._is_chatgpt_url(url),obs.generating,obs.assistant_count,
+                          rollover_required(self.page))
 
     @staticmethod
     def _is_chatgpt_url(url:str)->bool:
@@ -46,6 +48,7 @@ class ChatGPTPage:
         status=self.status()
         if status.is_challenge: raise RuntimeError("ChatGPT verification challenge is active")
         if not status.is_chatgpt: raise RuntimeError("attached page is not ChatGPT")
+        if status.rollover_required: raise RuntimeError("ChatGPT conversation has reached maximum length; rollover is required")
         if not status.has_input: raise RuntimeError("ChatGPT composer is unavailable; authentication may be required")
 
     def is_authenticated(self)->bool:
