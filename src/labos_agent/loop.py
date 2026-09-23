@@ -72,6 +72,7 @@ def run_once(config:AppConfig,project_name:str)->RunResult:
     controller.start(); controller.begin_iteration(datetime.now().astimezone())
     save_state(state_path(project_name),state)
     snapshot=inspect_project(project.project_root,project.repository,project.state_files)
+    before_git = git_snapshot(project.project_root)
     with BrowserSession(config.browser.profile_dir,cdp_url=config.browser.cdp_url) as session:
         context=session.context
         chat=ChatGPTPage(_select_chat_page(context)); chat.assert_ready()
