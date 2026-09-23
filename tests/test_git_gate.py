@@ -61,6 +61,7 @@ def test_prepare_repository_syncs_remote_ahead_and_rejects_unsafe_history(tmp_pa
     _git(root, "push", "-u", "origin", "main")
 
     subprocess.run(["git", "clone", str(remote), str(peer)], check=True, capture_output=True)
+    _git(peer, "branch", "-M", "main")
     _git(peer, "config", "user.name", "LabOS Peer")
     _git(peer, "config", "user.email", "peer@example.invalid")
     (peer / "remote.txt").write_text("remote\n", encoding="utf-8")
