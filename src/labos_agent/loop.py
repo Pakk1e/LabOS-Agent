@@ -168,10 +168,18 @@ def run_loop(config:AppConfig,project_name:str,*,deadline:datetime|None,max_iter
             try:
                 prepare_repository(project.project_root)
                 snapshot=inspect_project(project.project_root,project.repository,project.state_files)
-                prompt=build_continuation_prompt(snapshot,continuation,state.last_ci_result,state.last_progress_result)
+                prompt=build_continuation_prompt(snapshot,continuation,state.last_ci_result,state.last_progress_result,project.execution_enabled)
                 before_git = git_snapshot(project.project_root)
                 response=chat.send_and_wait_for_response(prompt,timeout_seconds=config.browser.response_timeout_seconds,quiet_seconds=config.browser.quiet_seconds)
                 save_response(project_name,response)
+                execution_feedback, requested_execution = _execute_agent_requests(response, project)
+                if requested_execution:
+                    response = chat.send_and_wait_for_response(
+                        "The LabOS controller executed your requested server operations. Use these real results and continue the implementation; do not claim execution that is not shown here.\n\n" + execution_feedback,
+                        timeout_seconds=config.browser.response_timeout_seconds,
+                        quiet_seconds=config.browser.quiet_seconds,
+                    )
+                    save_response(project_name,response)
                 assert_unchanged_before_ci(project.project_root, before_git)
                 after_git=git_snapshot(project.project_root)
                 if after_git.status == before_git.status:
