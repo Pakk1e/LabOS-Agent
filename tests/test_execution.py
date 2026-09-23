@@ -26,3 +26,8 @@ def test_format_results():
     result = execute_request(Path("."), {"action":"run_command","command":["python3","-c","print('ok')"]}, policy(Path(".")))
     text = format_execution_results([result])
     assert "LabOS server execution results:" in text and "success=True" in text
+
+
+def test_controller_commands_are_blocked(tmp_path: Path):
+    with pytest.raises(PermissionError):
+        execute_request(tmp_path, {"action":"run_command","command":["git","push"]}, policy(tmp_path))
