@@ -30,3 +30,16 @@ def test_continuation_prompt_without_ci_feedback_has_no_ci_handoff():
     prompt = build_continuation_prompt(snapshot, "Continue")
     assert "Previous iteration LocalCI result:" not in prompt
     assert "LocalCI handoff:" not in prompt
+
+
+def test_continuation_prompt_corrects_no_progress():
+    snapshot = inspect_project(Path("."), "Pakk1e/example", ())
+    prompt = build_continuation_prompt(
+        snapshot,
+        "Continue",
+        progress_feedback="assistant response completed but repository working tree did not change",
+    )
+    assert "Previous iteration progress result:" in prompt
+    assert "Do not repeat a baseline test-only iteration" in prompt
+    assert "implement the smallest concrete source/documentation change now" in prompt
+    assert "A passing LocalCI run without a corresponding repository change is not progress." in prompt
