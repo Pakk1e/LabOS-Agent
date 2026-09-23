@@ -12,12 +12,22 @@ class Controller:
     def start(self)->None: self.state.transition(RunState.STARTING)
     def begin_iteration(self,now:datetime)->None:
         decision=check_limits(iteration=self.state.iteration,rollover_count=self.state.rollover_count,
-            consecutive_failures=self.state.consecutive_failures,limits=self.limits,now=now)
+            consecutive_failures=self.state.consecutive_failures,
+            consecutive_no_progress=self.state.consecutive_no_progress,
+            limits=self.limits,now=now)
         if not decision.allowed: self.stop(decision.reason or "safety limit reached"); return
         self.state.iteration+=1; self.state.transition(RunState.WORKING)
     def mark_waiting(self)->None: self.state.transition(RunState.WAITING)
     def mark_success(self)->None:
-        self.state.consecutive_failures=0; self.state.transition(RunState.WAITING,reason="response completed")
+        self.state.consecutive_failures=0
+        self.state.consecutive_no_progress=0
+        self.state.last_progress_result="progress confirmed"
+        self.state.transition(RunState.WAITING,reason="response completed")
+    def mark_no_progress(self,reason:str)->None:
+        self.state.consecutive_no_progress+=1
+        self.state.record_failure(reason)
+        self.state.last_progress_result=reason
+        self.state.transition(RunState.ERROR,reason=reason)
     def mark_failure(self,reason:str)->None:
         self.state.consecutive_failures+=1
         self.state.record_failure(reason)
