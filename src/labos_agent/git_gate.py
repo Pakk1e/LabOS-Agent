@@ -1,0 +1,89 @@
+"""Controller-owned Git gate for validated autonomous iterations."""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+import subprocess
+
+
+@dataclass(frozen=True)
+class GitSnapshot:
+    head: str
+    upstream: str
+    status: str
+
+
+def _git(root: Path, *args: str, check: bool = True) -> str:
+    result = subprocess.run(
+        ["git", "-C", str(root), *args],
+        check=check,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if not check and result.returncode:
+        return ""
+    return result.stdout.strip()
+
+
+def snapshot(root: Path) -> GitSnapshot:
+    return GitSnapshot(
+        head=_git(root, "rev-parse", "HEAD"),
+        upstream=_git(root, "rev-parse", "--verify", "@{upstream}"),
+        status=_git(root, "status", "--short"),
+    )
+
+
+def assert_unchanged_before_ci(root: Path, before: GitSnapshot) -> None:
+    after = snapshot(root)
+    if after.head != before.head:
+        raise RuntimeError(
+            "LocalCI gate refused: HEAD changed before LocalCI ran; "
+            "the implementation iteration committed changes early"
+        )
+    if after.upstream != before.upstream:
+        raise RuntimeError(
+            "LocalCI gate refused: upstream changed before LocalCI ran; "
+            "the implementation iteration pushed changes early"
+        )
+
+
+def _parse_untracked(status: str) -> set[str]:
+    return {
+        line[3:]
+        for line in status.splitlines()
+        if line.startswith("?? ")
+    }
+
+
+def commit_and_push(root: Path, before: GitSnapshot, message: str) -> str | None:
+    assert_unchanged_before_ci(root, before)
+    current = snapshot(root)
+    baseline_untracked = _parse_untracked(before.status)
+
+    # Never absorb machine-local files that existed before this iteration.
+    new_untracked = _parse_untracked(current.status) - baseline_untracked
+    if new_untracked:
+        subprocess.run(
+            ["git", "-C", str(root), "add", "--", *sorted(new_untracked)],
+            check=True,
+            timeout=30,
+        )
+    subprocess.run(["git", "-C", str(root), "add", "-u"], check=True, timeout=30)
+
+    staged = _git(root, "diff", "--cached", "--name-only")
+    if not staged:
+        return None
+
+    subprocess.run(
+        ["git", "-C", str(root), "commit", "-m", message],
+        check=True,
+        timeout=60,
+    )
+    sha = _git(root, "rev-parse", "HEAD")
+    subprocess.run(
+        ["git", "-C", str(root), "push", "origin", "HEAD:refs/heads/main"],
+        check=True,
+        timeout=120,
+    )
+    return sha
