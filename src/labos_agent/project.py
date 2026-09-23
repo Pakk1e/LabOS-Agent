@@ -25,7 +25,7 @@ def inspect_project(root: Path, repository: str, state_files: tuple[str,...]) ->
         raise RuntimeError(f"could not inspect git state: {exc}") from exc
     return ProjectSnapshot(root,repository,files,result.stdout.strip())
 
-def build_continuation_prompt(snapshot: ProjectSnapshot, message: str, ci_feedback: str|None = None) -> str:
+def build_continuation_prompt(snapshot: ProjectSnapshot, message: str, ci_feedback: str|None = None, progress_feedback: str|None = None) -> str:
     parts=[message,"","LabOS-Agent controller context:",
            f"- Repository: {snapshot.repository}",
            f"- Project root: {snapshot.root}",
@@ -34,9 +34,13 @@ def build_continuation_prompt(snapshot: ProjectSnapshot, message: str, ci_feedba
         parts += ["","Current git working-tree status:",snapshot.git_status]
     if ci_feedback:
         parts += ["","Previous iteration LocalCI result:",ci_feedback]
+    if progress_feedback:
+        parts += ["","Previous iteration progress result:",progress_feedback,
+                  "","Progress correction: the previous iteration produced no repository change. Do not repeat a baseline test-only iteration. Inspect the requested task and implement the smallest concrete source/documentation change now. A passing LocalCI run without a corresponding repository change is not progress."]
     for name,content in snapshot.files.items():
         parts += ["",f"--- {name} ---",content]
     parts += ["","Execution boundary: the LabOS controller inspected the local project filesystem before sending this prompt. The ChatGPT execution environment may not have access to that controller-side path. Do not treat inability to access the local project path as a blocker, and do not claim local commands were run unless your execution environment actually ran them. Use the configured repository as the authoritative source for source-code inspection and changes. Treat the reported local git status as controller-provided context; it may contain deployment-only or machine-local changes that must not be overwritten blindly.","","Work autonomously within the project rules. Make the smallest useful next change using the authoritative repository, test it with the available repository/CI mechanisms, and report exactly what changed, what was tested, blockers, and the precise next action. For CI verification, do not rely solely on a commit-workflow endpoint that may omit push-triggered runs; when available, inspect the repository Actions/workflow runs and match the target commit SHA. A successful push-triggered CI run for that exact SHA is valid evidence even if a narrower commit-status wrapper returns no result."]
     if ci_feedback:
-        parts += ["","LocalCI handoff: the result above belongs to the previous controller iteration. If it passed, treat the previously reported working-tree changes as locally validated; the LabOS controller will commit/push them before the next implementation iteration. If it failed, fix that failure and leave the changes uncommitted for another LocalCI run.","","Controller Git gate: when a local CI stage is configured, do not commit or push changes yourself. Leave source changes in the working tree. LabOS will commit/push only after the controller has verified that LocalCI passed."]
+        parts += ["","LocalCI handoff: the result above belongs to the previous controller iteration. If it passed, treat the previously reported working-tree changes as locally validated; the LabOS controller will commit/push them before the next implementation iteration. If it failed, fix that failure and leave the changes uncommitted for another LocalCI run."]
+    parts += ["","Controller Git gate: when a local CI stage is configured, do not commit or push changes yourself. Leave source changes in the working tree. LabOS will commit/push only after the controller has verified that LocalCI passed."]
     return "\n".join(parts)
