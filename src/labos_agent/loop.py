@@ -56,12 +56,20 @@ def _prepare_state(project_name:str)->AgentState:
     if state is None:
         return AgentState(project=project_name,run_id=uuid.uuid4().hex)
     if state.state in {RunState.STOPPED,RunState.COMPLETED,RunState.ERROR,RunState.BLOCKED}:
+        # A new run is a new execution, not a recovery of the previous run.
+        # Keep failure_history for diagnostics, but reset execution counters and
+        # per-run results so stale failures cannot immediately stop the new run.
         state.run_id=uuid.uuid4().hex
         state.state=RunState.IDLE
+        state.iteration=0
+        state.rollover_count=0
+        state.consecutive_failures=0
+        state.iteration_at_last_rollover=0
         state.started_at=None
         state.stopped_at=None
         state.last_action=None
         state.reason=None
+        state.last_ci_result=None
     return state
 
 def run_once(config:AppConfig,project_name:str)->RunResult:
