@@ -4,30 +4,6 @@ import labos_agent.loop as loop
 from labos_agent.state import AgentState, RunState, save_state
 
 
-def test_prepare_state_preserves_ci_failure_for_recovery(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr(loop, "state_path", lambda project: tmp_path / project / "current.json")
-    path = tmp_path / "agent" / "current.json"
-    state = AgentState(
-        project="agent",
-        run_id="old",
-        state=RunState.ERROR,
-        iteration=2,
-        consecutive_failures=1,
-        last_ci_result="stage=test success=False\nexit_code=7",
-    )
-    save_state(path, state)
-
-    recovered = loop._prepare_state("agent")
-
-    assert recovered.state == RunState.IDLE
-    assert recovered.run_id != "old"
-    assert recovered.last_ci_result == "stage=test success=False\nexit_code=7"
-    assert recovered.consecutive_failures == 1
-    assert recovered.iteration == 2
-    assert recovered.stopped_at is None
-    assert recovered.reason is None
-
-
 def test_prepare_state_resets_execution_counters_but_preserves_failure_history(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(loop, "state_path", lambda project: tmp_path / project / "current.json")
     path = tmp_path / "weather" / "current.json"
@@ -64,3 +40,29 @@ def test_prepare_state_resets_execution_counters_but_preserves_failure_history(t
     assert fresh.stopped_at is None
     assert fresh.last_action is None
     assert fresh.reason is None
+
+
+def test_prepare_state_preserves_active_run_state(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(loop, "state_path", lambda project: tmp_path / project / "current.json")
+    path = tmp_path / "weather" / "current.json"
+    state = AgentState(
+        project="weather",
+        run_id="active",
+        state=RunState.WORKING,
+        iteration=4,
+        rollover_count=1,
+        consecutive_failures=1,
+        iteration_at_last_rollover=3,
+        last_ci_result="stage=test success=False",
+    )
+    save_state(path, state)
+
+    prepared = loop._prepare_state("weather")
+
+    assert prepared.run_id == "active"
+    assert prepared.state == RunState.WORKING
+    assert prepared.iteration == 4
+    assert prepared.rollover_count == 1
+    assert prepared.consecutive_failures == 1
+    assert prepared.iteration_at_last_rollover == 3
+    assert prepared.last_ci_result == "stage=test success=False"
