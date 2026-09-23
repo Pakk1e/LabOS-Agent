@@ -40,3 +40,12 @@ def test_project_handoff_rollover_test_command_parser():
     assert args.project_name == "Vadovsky Tech — Weather"
     assert args.project_url == "https://chatgpt.com/g/g-p-6ab2a81b723081918c9e1052acf0af9c-vadovsky-tech-weather/project"
     assert args.state_dir == "state/test-rollover"
+
+
+def test_ci_command_parser():
+    parser = build_parser()
+    args = parser.parse_args(["ci", "weather", "--stage", "build", "--config", "config.yaml"])
+    assert args.command == "ci"
+    assert args.project == "weather"
+    assert args.stage == "build"
+    assert args.config == "config.yaml"
