@@ -10,7 +10,7 @@ from .browser.chatgpt import ChatGPTPage
 from .browser.session import BrowserSession
 from .config import AppConfig
 from .ci.local import LocalCI
-from .git_gate import snapshot as git_snapshot, assert_unchanged_before_ci, commit_and_push
+from .git_gate import snapshot as git_snapshot, assert_unchanged_before_ci, commit_and_push, prepare_repository
 from .controller import Controller
 from .project import build_continuation_prompt,inspect_project
 from .rollover import rollover
@@ -71,6 +71,7 @@ def run_once(config:AppConfig,project_name:str)->RunResult:
     controller=Controller(state=state,limits=SafetyLimits(max_iterations=state.iteration+1))
     controller.start(); controller.begin_iteration(datetime.now().astimezone())
     save_state(state_path(project_name),state)
+    prepare_repository(project.project_root)
     snapshot=inspect_project(project.project_root,project.repository,project.state_files)
     before_git = git_snapshot(project.project_root)
     with BrowserSession(config.browser.profile_dir,cdp_url=config.browser.cdp_url) as session:
@@ -125,6 +126,7 @@ def run_loop(config:AppConfig,project_name:str,*,deadline:datetime|None,max_iter
             if state.state==RunState.STOPPED:
                 save_state(state_path(project_name),state); return RunResult(state)
             try:
+                prepare_repository(project.project_root)
                 snapshot=inspect_project(project.project_root,project.repository,project.state_files)
                 prompt=build_continuation_prompt(snapshot,continuation,state.last_ci_result)
                 before_git = git_snapshot(project.project_root)
