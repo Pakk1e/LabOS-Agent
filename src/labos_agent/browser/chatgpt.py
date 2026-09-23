@@ -97,19 +97,23 @@ class ChatGPTPage:
     def send_project_message_and_wait_for_response(self,project_name:str,message:str,**kwargs)->str:
         """Send through the visible Project-home composer without requiring generic chat readiness."""
         if not message.strip(): raise ValueError("message must not be empty")
-        composer=self.project_chat_composer(project_name)
-        if composer is None:
-            raise RuntimeError(f"Project composer is unavailable for: {project_name}")
         before=self._assistant_texts()
         deadline=time.monotonic()+10
+        composer=None
         while time.monotonic()<deadline:
             try:
-                if composer.is_editable():
+                composer=self.project_chat_composer(project_name)
+                if composer is not None and composer.is_editable():
                     break
             except Exception:
-                pass
+                composer=None
             self.page.wait_for_timeout(250)
         else:
+            raise RuntimeError(f"Project composer is not editable for: {project_name}")
+        # Re-resolve immediately before typing because ChatGPT may replace the
+        # ProseMirror node while the Project Home transition settles.
+        composer=self.project_chat_composer(project_name)
+        if composer is None or not composer.is_editable():
             raise RuntimeError(f"Project composer is not editable for: {project_name}")
         composer.fill(message)
         composer.press("Enter")
@@ -145,10 +149,6 @@ class ChatGPTPage:
                                 el.getAttribute('placeholder') || '',
                                 el.getAttribute('data-placeholder') || ''
                             ];
-                            for (const child of el.querySelectorAll('[data-placeholder],[placeholder]')) {
-                                values.push(child.getAttribute('data-placeholder') || '');
-                                values.push(child.getAttribute('placeholder') || '');
-                            }
                             return values.some(v => v.toLowerCase().includes(expected));
                         }""",
                         expected,
