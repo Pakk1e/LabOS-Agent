@@ -22,7 +22,7 @@ def test_continuation_prompt_marks_ci_as_previous_iteration():
     prompt = build_continuation_prompt(snapshot, "Continue", "stage=test success=True")
     assert "Previous iteration LocalCI result:" in prompt
     assert "previous controller iteration" in prompt
-    assert "commit/push those changes before starting unrelated implementation work" in prompt
+    assert "controller will commit/push them" in prompt
 
 
 def test_continuation_prompt_without_ci_feedback_has_no_ci_handoff():

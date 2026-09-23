@@ -10,6 +10,7 @@ from .browser.chatgpt import ChatGPTPage
 from .browser.session import BrowserSession
 from .config import AppConfig
 from .ci.local import LocalCI
+from .git_gate import snapshot as git_snapshot, assert_unchanged_before_ci, commit_and_push
 from .controller import Controller
 from .project import build_continuation_prompt,inspect_project
 from .rollover import rollover
@@ -71,6 +72,7 @@ def run_once(config:AppConfig,project_name:str)->RunResult:
     controller.start(); controller.begin_iteration(datetime.now().astimezone())
     save_state(state_path(project_name),state)
     snapshot=inspect_project(project.project_root,project.repository,project.state_files)
+    before_git = git_snapshot(project.project_root)
     with BrowserSession(config.browser.profile_dir,cdp_url=config.browser.cdp_url) as session:
         context=session.context
         chat=ChatGPTPage(_select_chat_page(context)); chat.assert_ready()
@@ -91,6 +93,14 @@ def run_once(config:AppConfig,project_name:str)->RunResult:
             return RunResult(state,response)
         if not ci_ok:
             controller.mark_failure("local CI failed")
+            save_state(state_path(project_name),state)
+            return RunResult(state,response)
+        try:
+            committed_sha = commit_and_push(project.project_root, before_git, f"lab-agent: validated iteration {state.iteration}")
+            if committed_sha:
+                state.last_action=f"committed and pushed {committed_sha}"
+        except Exception as exc:
+            controller.mark_failure(f"validated changes could not be committed/pushed: {exc}")
             save_state(state_path(project_name),state)
             return RunResult(state,response)
         controller.mark_success()
@@ -117,8 +127,10 @@ def run_loop(config:AppConfig,project_name:str,*,deadline:datetime|None,max_iter
             try:
                 snapshot=inspect_project(project.project_root,project.repository,project.state_files)
                 prompt=build_continuation_prompt(snapshot,continuation,state.last_ci_result)
+                before_git = git_snapshot(project.project_root)
                 response=chat.send_and_wait_for_response(prompt,timeout_seconds=config.browser.response_timeout_seconds,quiet_seconds=config.browser.quiet_seconds)
                 save_response(project_name,response)
+                assert_unchanged_before_ci(project.project_root, before_git)
                 ci_ok = _run_local_ci(project, state)
                 if not ci_ok:
                     controller.mark_failure("local CI failed")
@@ -127,6 +139,9 @@ def run_loop(config:AppConfig,project_name:str,*,deadline:datetime|None,max_iter
                         controller.stop("maximum consecutive failures reached")
                         save_state(state_path(project_name),state); return RunResult(state)
                     time.sleep(2); continue
+                committed_sha = commit_and_push(project.project_root, before_git, f"lab-agent: validated iteration {state.iteration}")
+                if committed_sha:
+                    state.last_action=f"committed and pushed {committed_sha}"
                 controller.mark_success()
             except Exception as exc:
                 controller.mark_failure(str(exc))
