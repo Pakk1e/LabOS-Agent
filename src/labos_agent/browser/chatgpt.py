@@ -67,7 +67,7 @@ class ChatGPTPage:
         loc=self.page.locator('[data-message-author-role="assistant"]')
         return [t.strip() for t in loc.all_text_contents() if t.strip()]
 
-    def wait_for_response(self,*,before:list[str],timeout_seconds=300,quiet_seconds=3,poll_seconds=.5)->str:
+    def wait_for_response(self,*,before:list[str],timeout_seconds=300,quiet_seconds=3,poll_seconds=.5,require_input_available=True)->str:
         deadline=time.monotonic()+timeout_seconds
         last_text=""
         last_change=0.0
@@ -83,7 +83,8 @@ class ChatGPTPage:
                         last_text=candidate
                         last_change=time.monotonic()
                     obs=observe(self.page)
-                    if time.monotonic()-last_change>=quiet_seconds and not obs.generating and obs.input_available:
+                    input_ready = obs.input_available or not require_input_available
+                    if time.monotonic()-last_change>=quiet_seconds and not obs.generating and input_ready:
                         return candidate
             time.sleep(poll_seconds)
         if not saw: raise TimeoutError("No new assistant response appeared before timeout")

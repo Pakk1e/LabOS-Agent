@@ -106,6 +106,7 @@ def _resolve_execution(chat, response: str, project, project_name: str, config: 
                 "The LabOS controller executed your requested server operations. Use these real results and continue the implementation; do not claim execution that is not shown here.\n\n" + execution_feedback,
                 timeout_seconds=config.browser.response_timeout_seconds,
                 quiet_seconds=config.browser.quiet_seconds,
+                require_input_available=False,
             )
             save_response(project_name, response)
             continue
