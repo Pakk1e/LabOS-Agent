@@ -12,6 +12,7 @@ class SafetyLimits:
     max_iterations: int = 50
     max_rollovers: int = 10
     max_consecutive_failures: int = 3
+    max_consecutive_no_progress: int = 3
 
 
 @dataclass(frozen=True)
@@ -25,6 +26,7 @@ def check_limits(
     iteration: int,
     rollover_count: int,
     consecutive_failures: int,
+    consecutive_no_progress: int = 0,
     limits: SafetyLimits,
     now: datetime,
 ) -> SafetyDecision:
@@ -36,4 +38,6 @@ def check_limits(
         return SafetyDecision(False, "maximum rollovers reached")
     if consecutive_failures >= limits.max_consecutive_failures:
         return SafetyDecision(False, "maximum consecutive failures reached")
+    if consecutive_no_progress >= limits.max_consecutive_no_progress:
+        return SafetyDecision(False, "maximum consecutive no-progress iterations reached")
     return SafetyDecision(True)
