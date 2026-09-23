@@ -8,6 +8,7 @@ import uuid
 from .browser.chatgpt import ChatGPTPage
 from .browser.session import BrowserSession
 from .config import load_config
+from .ci.local import LocalCI
 from .loop import run_loop,run_once,state_path
 from .rollover import rollover
 from .controller import Controller
@@ -24,6 +25,10 @@ def build_parser():
     run.add_argument("--max-rollovers",type=int,default=10)
     cont=sub.add_parser("continue",help="perform exactly one controlled project iteration")
     cont.add_argument("project"); cont.add_argument("--config",default="config.yaml")
+    ci=sub.add_parser("ci",help="run a configured local CI stage for a project")
+    ci.add_argument("project")
+    ci.add_argument("--stage",default="test")
+    ci.add_argument("--config",default="config.yaml")
     browser=sub.add_parser("browser-smoke",help="open persistent ChatGPT browser for manual smoke testing")
     browser.add_argument("--profile-dir",default="./browser-profile"); browser.add_argument("--headless",action="store_true")
     browser.add_argument("--display"); browser.add_argument("--test-message"); browser.add_argument("--keep-open",action="store_true")
@@ -59,6 +64,31 @@ def parse_deadline(value,now):
     deadline=now.replace(hour=hour,minute=minute,second=0,microsecond=0)
     if deadline<=now: raise ValueError("--until must be later today")
     return deadline
+
+def ci_command(args):
+    config=load_config(Path(args.config))
+    project=config.projects.get(args.project)
+    if project is None:
+        raise RuntimeError(f"unknown project: {args.project}")
+    commands=project.ci_stages.get(args.stage)
+    if commands is None:
+        raise RuntimeError(f"no local CI stage configured: {args.project}:{args.stage}")
+    result=LocalCI().run(
+        project=args.project,
+        stage=args.stage,
+        project_root=project.project_root,
+        commands=commands,
+        timeout_seconds=project.ci_timeout_seconds,
+    )
+    print(f"Local CI: project={args.project} stage={args.stage} success={result.success}")
+    for command in result.commands:
+        print(f"$ {' '.join(command.command)}")
+        if command.stdout:
+            print(command.stdout, end="" if command.stdout.endswith("\n") else "\n")
+        if command.stderr:
+            print(command.stderr, end="" if command.stderr.endswith("\n") else "\n")
+    if not result.success:
+        raise SystemExit(result.commands[-1].returncode or 1)
 
 def run_command(args):
     config=load_config(Path(args.config))
@@ -332,7 +362,8 @@ def browser_smoke_command(args):
 
 def main():
     args=build_parser().parse_args()
-    if args.command=="run": run_command(args)
+    if args.command=="ci": ci_command(args)
+    elif args.command=="run": run_command(args)
     elif args.command=="continue": continue_command(args)
     elif args.command=="browser-project-diagnose": browser_project_diagnose_command(args)
     elif args.command=="browser-project-new-chat-test": browser_project_new_chat_test_command(args)
