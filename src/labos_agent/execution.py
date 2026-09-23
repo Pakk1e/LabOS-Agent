@@ -1,0 +1,70 @@
+"""Controlled server execution for autonomous project work."""
+from __future__ import annotations
+from dataclasses import dataclass
+from pathlib import Path
+import json, subprocess
+
+@dataclass(frozen=True)
+class ExecutionPolicy:
+    allowed_roots: tuple[Path, ...]
+    max_output_chars: int = 12000
+    command_timeout_seconds: float = 300.0
+
+@dataclass(frozen=True)
+class ExecutionResult:
+    action: str
+    success: bool
+    exit_code: int | None
+    stdout: str
+    stderr: str
+
+def _rooted_path(root: Path, requested: str, policy: ExecutionPolicy) -> Path:
+    candidate = (root / requested).resolve()
+    if not any(candidate == allowed or allowed in candidate.parents for allowed in policy.allowed_roots):
+        raise PermissionError(f"path is outside configured execution roots: {requested}")
+    return candidate
+
+def execute_request(root: Path, request: dict, policy: ExecutionPolicy) -> ExecutionResult:
+    action = request.get("action")
+    if action == "read_file":
+        path = _rooted_path(root, str(request["path"]), policy)
+        content = path.read_text(encoding="utf-8", errors="replace")
+        return ExecutionResult(action, True, 0, content[:policy.max_output_chars], "")
+    if action == "write_file":
+        path = _rooted_path(root, str(request["path"]), policy)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(str(request["content"]), encoding="utf-8")
+        return ExecutionResult(action, True, 0, f"wrote {path}", "")
+    if action == "run_command":
+        command = request.get("command")
+        if not isinstance(command, list) or not command or not all(isinstance(x, str) and x for x in command):
+            raise ValueError("run_command requires a non-empty argv list")
+        cwd = _rooted_path(root, str(request.get("cwd", ".")), policy)
+        completed = subprocess.run(command, cwd=cwd, stdin=subprocess.DEVNULL, capture_output=True,
+                                  text=True, timeout=policy.command_timeout_seconds, check=False)
+        return ExecutionResult(action, completed.returncode == 0, completed.returncode,
+                               completed.stdout[-policy.max_output_chars:], completed.stderr[-policy.max_output_chars:])
+    raise ValueError(f"unsupported execution action: {action}")
+
+def parse_execution_requests(response: str) -> list[dict]:
+    requests = []
+    marker = chr(96) * 3 + "labos-exec"
+    remainder = response
+    while marker in remainder:
+        _, block = remainder.split(marker, 1)
+        if (chr(96) * 3) not in block:
+            break
+        payload, remainder = block.split(chr(96) * 3, 1)
+        value = json.loads(payload.strip())
+        if not isinstance(value, dict):
+            raise ValueError("labos-exec payload must be an object")
+        requests.append(value)
+    return requests
+
+def format_execution_results(results: list[ExecutionResult]) -> str:
+    lines = ["LabOS server execution results:"]
+    for index, result in enumerate(results, 1):
+        lines.append(f"[{index}] action={result.action} success={result.success} exit_code={result.exit_code}")
+        if result.stdout: lines.extend(["stdout:", result.stdout])
+        if result.stderr: lines.extend(["stderr:", result.stderr])
+    return "\n".join(lines)
