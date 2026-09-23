@@ -41,13 +41,29 @@ def test_stops_after_failures():
     assert decision.reason == "maximum consecutive failures reached"
 
 
-def test_stops_at_iteration_limit():
+def test_stops_after_no_progress():
+    now = datetime.now(timezone.utc)
+    decision = check_limits(
+        iteration=2,
+        rollover_count=0,
+        consecutive_failures=0,
+        consecutive_no_progress=3,
+        limits=SafetyLimits(),
+        now=now,
+    )
+    assert not decision.allowed
+    assert decision.reason == "maximum consecutive no-progress iterations reached"
+
+
+def test_iteration_limit_does_not_depend_on_no_progress():
     now = datetime.now(timezone.utc)
     decision = check_limits(
         iteration=50,
         rollover_count=0,
         consecutive_failures=0,
+        consecutive_no_progress=0,
         limits=SafetyLimits(),
         now=now,
     )
     assert not decision.allowed
+    assert decision.reason == "maximum iterations reached"
