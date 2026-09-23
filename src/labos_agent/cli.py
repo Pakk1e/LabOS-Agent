@@ -101,6 +101,11 @@ def continue_command(args):
     config=load_config(Path(args.config))
     result=run_once(config,args.project)
     print(f"LabOS-Agent iteration finished: state={result.state.state.value} iteration={result.state.iteration}")
+    if result.state.last_ci_result:
+        first_line = result.state.last_ci_result.splitlines()[0]
+        print(f"Local CI: {first_line}")
+    elif result.state.reason == "response completed":
+        print("Local CI: not configured")
     if result.state.reason: print(f"Reason: {result.state.reason}")
     if result.response: print(result.response)
 
