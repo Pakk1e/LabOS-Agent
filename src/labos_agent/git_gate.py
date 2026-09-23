@@ -47,6 +47,42 @@ def assert_unchanged_before_ci(root: Path, before: GitSnapshot) -> None:
             "the implementation iteration pushed changes early"
         )
 
+def prepare_repository(root: Path) -> None:
+    """Validate and safely synchronize the target repository before an iteration."""
+    status = _git(root, "status", "--short")
+    if any(line and not line.startswith("?? ") for line in status.splitlines()):
+        raise RuntimeError(
+            "Git preflight refused: tracked working-tree changes exist before the iteration"
+        )
+
+    subprocess.run(
+        ["git", "-C", str(root), "fetch", "origin", "main"],
+        check=True,
+        timeout=120,
+    )
+    head = _git(root, "rev-parse", "HEAD")
+    remote = _git(root, "rev-parse", "origin/main")
+    if head == remote:
+        return
+
+    merge_base = _git(root, "merge-base", "HEAD", "origin/main")
+    if merge_base == head:
+        subprocess.run(
+            ["git", "-C", str(root), "merge", "--ff-only", "origin/main"],
+            check=True,
+            timeout=60,
+        )
+        return
+    if merge_base == remote:
+        raise RuntimeError(
+            "Git preflight refused: local repository is ahead of origin/main; "
+            "inspect the local commit before autonomous work"
+        )
+    raise RuntimeError(
+        "Git preflight refused: local repository has diverged from origin/main; "
+        "resolve the history before autonomous work"
+    )
+
 
 def _parse_untracked(status: str) -> set[str]:
     return {
