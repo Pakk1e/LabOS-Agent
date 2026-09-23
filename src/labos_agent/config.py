@@ -23,6 +23,7 @@ class ProjectConfig:
     rollover_after_iterations: int = 20
     rollover_after_response_chars: int = 120_000
     ci_timeout_seconds: float = 1800.0
+    ci_stage: str | None = None
     ci_stages: dict[str, tuple[tuple[str, ...], ...]] = field(default_factory=dict)
     state_files: tuple[str, ...] = ("AGENTS.md","PLAN.md","TASKS.md","DECISIONS.md","progress.md","report.md")
 
@@ -69,6 +70,7 @@ def load_config(path: Path) -> AppConfig:
             rollover_after_iterations=int(value.get("rollover_after_iterations",20)),
             rollover_after_response_chars=int(value.get("rollover_after_response_chars",120000)),
             ci_timeout_seconds=float(value.get("ci_timeout_seconds",1800)),
+            ci_stage=value.get("ci_stage"),
             ci_stages=_parse_ci_stages(value.get("ci")),
             state_files=tuple(value.get("state_files",ProjectConfig.state_files)),
         )

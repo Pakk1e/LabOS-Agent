@@ -9,6 +9,7 @@ import uuid
 from .browser.chatgpt import ChatGPTPage
 from .browser.session import BrowserSession
 from .config import AppConfig
+from .ci.local import LocalCI
 from .controller import Controller
 from .project import build_continuation_prompt,inspect_project
 from .rollover import rollover
@@ -27,6 +28,23 @@ def save_response(project:str,response:str)->None:
     d=state_dir(project); d.mkdir(parents=True,exist_ok=True)
     (d/"last_response.md").write_text(response.rstrip()+"\n",encoding="utf-8")
 
+def _run_local_ci(project, state: AgentState) -> bool:
+    stage = project.ci_stage
+    if not stage:
+        state.last_ci_result = None
+        return True
+    commands = project.ci_stages.get(stage)
+    if commands is None:
+        raise RuntimeError(f"configured CI stage is not defined: {stage}")
+    result = LocalCI().run(project=project.name, stage=stage, project_root=project.project_root, commands=commands, timeout_seconds=project.ci_timeout_seconds)
+    lines = [f"stage={stage} success={result.success}"]
+    for command in result.commands:
+        lines.append(f"$ {' '.join(command.command)}")
+        if command.stdout: lines.append(command.stdout.rstrip())
+        if command.stderr: lines.append(command.stderr.rstrip())
+        lines.append(f"exit_code={command.returncode} duration={command.duration_seconds:.2f}s")
+    state.last_ci_result = "\n".join(lines)[-12000:]
+    return result.success
 def _select_chat_page(context):
     pages=[p for p in context.pages if p.url.startswith("https://chatgpt.com/")]
     if not pages: raise RuntimeError("No ChatGPT page is attached")
@@ -52,12 +70,23 @@ def run_once(config:AppConfig,project_name:str)->RunResult:
         if project.project_name and not chat.project_context_present(project.project_name):
             controller.block(f"ChatGPT Project context not detected: {project.project_name}")
             save_state(state_path(project_name),state); return RunResult(state)
-        prompt=build_continuation_prompt(snapshot,project.continuation_message)
+        prompt=build_continuation_prompt(snapshot,project.continuation_message,state.last_ci_result)
         try:
             response=chat.send_and_wait_for_response(prompt,timeout_seconds=config.browser.response_timeout_seconds,quiet_seconds=config.browser.quiet_seconds)
         except Exception as exc:
             controller.mark_failure(str(exc)); save_state(state_path(project_name),state); return RunResult(state)
-        save_response(project_name,response); controller.mark_success()
+        save_response(project_name,response)
+        try:
+            ci_ok = _run_local_ci(project, state)
+        except Exception as exc:
+            controller.mark_failure(f"local CI error: {exc}")
+            save_state(state_path(project_name),state)
+            return RunResult(state,response)
+        if not ci_ok:
+            controller.mark_failure("local CI failed")
+            save_state(state_path(project_name),state)
+            return RunResult(state,response)
+        controller.mark_success()
         save_state(state_path(project_name),state)
         return RunResult(state,response)
 
@@ -80,9 +109,18 @@ def run_loop(config:AppConfig,project_name:str,*,deadline:datetime|None,max_iter
                 save_state(state_path(project_name),state); return RunResult(state)
             try:
                 snapshot=inspect_project(project.project_root,project.repository,project.state_files)
-                prompt=build_continuation_prompt(snapshot,continuation)
+                prompt=build_continuation_prompt(snapshot,continuation,state.last_ci_result)
                 response=chat.send_and_wait_for_response(prompt,timeout_seconds=config.browser.response_timeout_seconds,quiet_seconds=config.browser.quiet_seconds)
-                save_response(project_name,response); controller.mark_success()
+                save_response(project_name,response)
+                ci_ok = _run_local_ci(project, state)
+                if not ci_ok:
+                    controller.mark_failure("local CI failed")
+                    save_state(state_path(project_name),state)
+                    if state.consecutive_failures>=controller.limits.max_consecutive_failures:
+                        controller.stop("maximum consecutive failures reached")
+                        save_state(state_path(project_name),state); return RunResult(state)
+                    time.sleep(2); continue
+                controller.mark_success()
             except Exception as exc:
                 controller.mark_failure(str(exc))
                 save_state(state_path(project_name),state)

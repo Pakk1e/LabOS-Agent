@@ -19,6 +19,7 @@ projects:
     # CI commands are trusted project configuration. Each command is an argv list;
     # LocalCI never passes these through a shell.
     ci_timeout_seconds: 1800
+    ci_stage: "test"
     ci:
       test:
         - ["python3", "-m", "pytest"]

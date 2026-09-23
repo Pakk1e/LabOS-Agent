@@ -24,6 +24,7 @@ class AgentState:
     last_action:str|None=None
     reason:str|None=None
     failure_history:list[dict[str,str|int]]=field(default_factory=list)
+    last_ci_result:str|None=None
 
     def transition(self,state:RunState,*,reason:str|None=None)->None:
         self.state=state; self.reason=reason; self.last_action=state.value
@@ -44,6 +45,7 @@ def load_state(path:Path)->AgentState|None:
     data=json.loads(path.read_text(encoding="utf-8")); data["state"]=RunState(data["state"])
     data.setdefault("iteration_at_last_rollover",0)
     data.setdefault("failure_history",[])
+    data.setdefault("last_ci_result",None)
     return AgentState(**data)
 
 def save_state(path:Path,state:AgentState)->None:
