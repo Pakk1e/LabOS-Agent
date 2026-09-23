@@ -46,3 +46,11 @@ def test_failure_history_is_bounded():
     assert len(state.failure_history)==20
     assert state.failure_history[0]["reason"]=="failure 5"
     assert state.failure_history[-1]["reason"]=="failure 24"
+
+
+def test_state_loads_without_local_ci_result(tmp_path):
+    path = tmp_path / "state.json"
+    path.write_text('{"project":"demo","run_id":"1","state":"IDLE"}\n', encoding="utf-8")
+    state = load_state(path)
+    assert state is not None
+    assert state.last_ci_result is None
