@@ -13,6 +13,8 @@ The controller now supports:
 - repeated development with `lab-agent run <project> --until HH:MM`;
 - persistent controller state under `state/<project>/`;
 - project-state snapshots from the repository;
+- controlled server execution for project-scoped file reads/writes and argv commands;
+- explicit execution results returned to the ChatGPT loop before it can claim a command ran;
 - conservative response completion detection;
 - safety limits and fail-closed BLOCKED/STOPPED states;
 - conversation handoff generation and Project-aware rollover hooks.
@@ -71,3 +73,20 @@ The persistent browser profile is sensitive local state and must never be commit
 - Authentication or verification failures stop the run.
 - Project rollover fails closed unless the Project route and selector are explicitly configured.
 - The controller never claims a response is complete solely because a new assistant DOM node appeared; it also requires a conservative quiet period and no detected stop control.
+
+
+## Server execution
+
+When enabled for a project, ChatGPT may request controlled operations using fenced `labos-exec` JSON blocks. LabOS executes them on the configured project host, validates paths against configured execution roots, runs commands without a shell, captures stdout/stderr/exit code, and returns the real result to the agent.
+
+Supported operations are `read_file`, `write_file`, and `run_command`. Controller-owned Git operations and privileged infrastructure commands are rejected by the execution layer. Commit/push remains exclusively in the Git gate after LocalCI passes.
+
+Example:
+
+```text
+```labos-exec
+{"action":"run_command","command":["python3","-m","pytest"],"cwd":"."}
+```
+```
+
+Execution is disabled by setting `execution.enabled: false` in the project configuration.
