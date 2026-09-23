@@ -46,6 +46,7 @@ def _run_local_ci(project, state: AgentState) -> bool:
         lines.append(f"exit_code={command.returncode} duration={command.duration_seconds:.2f}s")
     state.last_ci_result = "\n".join(lines)[-12000:]
     return result.success
+
 def _select_chat_page(context):
     pages=[p for p in context.pages if p.url.startswith("https://chatgpt.com/")]
     if not pages: raise RuntimeError("No ChatGPT page is attached")
@@ -64,13 +65,24 @@ def _prepare_state(project_name:str)->AgentState:
         state.iteration=0
         state.rollover_count=0
         state.consecutive_failures=0
+        state.consecutive_no_progress=0
         state.iteration_at_last_rollover=0
         state.started_at=None
         state.stopped_at=None
         state.last_action=None
         state.reason=None
         state.last_ci_result=None
+        state.last_progress_result=None
     return state
+
+def _handle_no_progress(controller:Controller, state:AgentState) -> bool:
+    controller.mark_no_progress(
+        "assistant response completed but repository working tree did not change"
+    )
+    if state.consecutive_no_progress >= controller.limits.max_consecutive_no_progress:
+        controller.stop("maximum consecutive no-progress iterations reached")
+        return True
+    return False
 
 def run_once(config:AppConfig,project_name:str)->RunResult:
     project=config.projects.get(project_name)
@@ -88,16 +100,22 @@ def run_once(config:AppConfig,project_name:str)->RunResult:
         if project.project_name and not chat.project_context_present(project.project_name):
             controller.block(f"ChatGPT Project context not detected: {project.project_name}")
             save_state(state_path(project_name),state); return RunResult(state)
-        prompt=build_continuation_prompt(snapshot,project.continuation_message,state.last_ci_result)
+        prompt=build_continuation_prompt(snapshot,project.continuation_message,state.last_ci_result,state.last_progress_result)
         try:
             response=chat.send_and_wait_for_response(prompt,timeout_seconds=config.browser.response_timeout_seconds,quiet_seconds=config.browser.quiet_seconds)
         except Exception as exc:
             controller.mark_failure(str(exc)); save_state(state_path(project_name),state); return RunResult(state)
         save_response(project_name,response)
         try:
+            assert_unchanged_before_ci(project.project_root, before_git)
+            after_git=git_snapshot(project.project_root)
+            if after_git.status == before_git.status:
+                _handle_no_progress(controller,state)
+                save_state(state_path(project_name),state)
+                return RunResult(state,response)
             ci_ok = _run_local_ci(project, state)
         except Exception as exc:
-            controller.mark_failure(f"local CI error: {exc}")
+            controller.mark_failure(str(exc))
             save_state(state_path(project_name),state)
             return RunResult(state,response)
         if not ci_ok:
@@ -136,11 +154,19 @@ def run_loop(config:AppConfig,project_name:str,*,deadline:datetime|None,max_iter
             try:
                 prepare_repository(project.project_root)
                 snapshot=inspect_project(project.project_root,project.repository,project.state_files)
-                prompt=build_continuation_prompt(snapshot,continuation,state.last_ci_result)
+                prompt=build_continuation_prompt(snapshot,continuation,state.last_ci_result,state.last_progress_result)
                 before_git = git_snapshot(project.project_root)
                 response=chat.send_and_wait_for_response(prompt,timeout_seconds=config.browser.response_timeout_seconds,quiet_seconds=config.browser.quiet_seconds)
                 save_response(project_name,response)
                 assert_unchanged_before_ci(project.project_root, before_git)
+                after_git=git_snapshot(project.project_root)
+                if after_git.status == before_git.status:
+                    should_stop=_handle_no_progress(controller,state)
+                    save_state(state_path(project_name),state)
+                    if should_stop:
+                        return RunResult(state,response)
+                    time.sleep(2)
+                    continue
                 ci_ok = _run_local_ci(project, state)
                 if not ci_ok:
                     controller.mark_failure("local CI failed")
