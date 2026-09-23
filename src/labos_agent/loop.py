@@ -11,6 +11,7 @@ from .browser.session import BrowserSession
 from .config import AppConfig
 from .ci.local import LocalCI
 from .git_gate import snapshot as git_snapshot, assert_unchanged_before_ci, commit_and_push, prepare_repository
+from .execution import ExecutionPolicy, execute_request, format_execution_results, parse_execution_requests
 from .controller import Controller
 from .project import build_continuation_prompt,inspect_project
 from .rollover import rollover
@@ -46,6 +47,19 @@ def _run_local_ci(project, state: AgentState) -> bool:
         lines.append(f"exit_code={command.returncode} duration={command.duration_seconds:.2f}s")
     state.last_ci_result = "\n".join(lines)[-12000:]
     return result.success
+
+def _execute_agent_requests(response: str, project) -> tuple[str, bool]:
+    if not project.execution_enabled:
+        return response, False
+    requests = parse_execution_requests(response)
+    if not requests:
+        return response, False
+    policy = ExecutionPolicy(
+        allowed_roots=tuple(path.resolve() for path in project.execution_allowed_roots),
+        command_timeout_seconds=project.execution_command_timeout_seconds,
+    )
+    results = [execute_request(project.project_root, request, policy) for request in requests]
+    return format_execution_results(results), True
 
 def _select_chat_page(context):
     pages=[p for p in context.pages if p.url.startswith("https://chatgpt.com/")]
@@ -100,7 +114,7 @@ def run_once(config:AppConfig,project_name:str)->RunResult:
         if project.project_name and not chat.project_context_present(project.project_name):
             controller.block(f"ChatGPT Project context not detected: {project.project_name}")
             save_state(state_path(project_name),state); return RunResult(state)
-        prompt=build_continuation_prompt(snapshot,project.continuation_message,state.last_ci_result,state.last_progress_result)
+        prompt=build_continuation_prompt(snapshot,project.continuation_message,state.last_ci_result,state.last_progress_result,project.execution_enabled)
         try:
             response=chat.send_and_wait_for_response(prompt,timeout_seconds=config.browser.response_timeout_seconds,quiet_seconds=config.browser.quiet_seconds)
         except Exception as exc:
