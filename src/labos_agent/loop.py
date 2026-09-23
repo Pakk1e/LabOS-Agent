@@ -52,8 +52,15 @@ def _select_chat_page(context):
 
 def _prepare_state(project_name:str)->AgentState:
     state=load_state(state_path(project_name))
-    if state is None or state.state in {RunState.STOPPED,RunState.COMPLETED,RunState.ERROR,RunState.BLOCKED}:
-        state=AgentState(project=project_name,run_id=uuid.uuid4().hex)
+    if state is None:
+        return AgentState(project=project_name,run_id=uuid.uuid4().hex)
+    if state.state in {RunState.STOPPED,RunState.COMPLETED,RunState.ERROR,RunState.BLOCKED}:
+        state.run_id=uuid.uuid4().hex
+        state.state=RunState.IDLE
+        state.started_at=None
+        state.stopped_at=None
+        state.last_action=None
+        state.reason=None
     return state
 
 def run_once(config:AppConfig,project_name:str)->RunResult:
