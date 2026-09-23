@@ -31,3 +31,9 @@ def test_format_results():
 def test_controller_commands_are_blocked(tmp_path: Path):
     with pytest.raises(PermissionError):
         execute_request(tmp_path, {"action":"run_command","command":["git","push"]}, policy(tmp_path))
+
+
+def test_execution_protocol_marker_is_detectable():
+    marker = chr(96) * 3
+    response = marker + "labos-exec\n" + '{"action":"run_command","command":["git","status","--short"]}' + "\n" + marker
+    assert parse_execution_requests(response)[0]["action"] == "run_command"
