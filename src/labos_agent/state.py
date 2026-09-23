@@ -18,6 +18,7 @@ class AgentState:
     iteration:int=0
     rollover_count:int=0
     consecutive_failures:int=0
+    consecutive_no_progress:int=0
     iteration_at_last_rollover:int=0
     started_at:str|None=None
     stopped_at:str|None=None
@@ -25,6 +26,7 @@ class AgentState:
     reason:str|None=None
     failure_history:list[dict[str,str|int]]=field(default_factory=list)
     last_ci_result:str|None=None
+    last_progress_result:str|None=None
 
     def transition(self,state:RunState,*,reason:str|None=None)->None:
         self.state=state; self.reason=reason; self.last_action=state.value
@@ -46,6 +48,8 @@ def load_state(path:Path)->AgentState|None:
     data.setdefault("iteration_at_last_rollover",0)
     data.setdefault("failure_history",[])
     data.setdefault("last_ci_result",None)
+    data.setdefault("consecutive_no_progress",0)
+    data.setdefault("last_progress_result",None)
     return AgentState(**data)
 
 def save_state(path:Path,state:AgentState)->None:
