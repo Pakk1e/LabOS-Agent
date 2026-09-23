@@ -99,16 +99,26 @@ def _handle_no_progress(controller:Controller, state:AgentState) -> bool:
     return False
 
 def _resolve_execution(chat, response: str, project, project_name: str, config: AppConfig) -> str:
-    for _ in range(3):
+    for attempt in range(4):
         execution_feedback, requested_execution = _execute_agent_requests(response, project)
-        if not requested_execution:
-            return response
-        response = chat.send_and_wait_for_response(
-            "The LabOS controller executed your requested server operations. Use these real results and continue the implementation; do not claim execution that is not shown here.\n\n" + execution_feedback,
-            timeout_seconds=config.browser.response_timeout_seconds,
-            quiet_seconds=config.browser.quiet_seconds,
-        )
-        save_response(project_name, response)
+        if requested_execution:
+            response = chat.send_and_wait_for_response(
+                "The LabOS controller executed your requested server operations. Use these real results and continue the implementation; do not claim execution that is not shown here.\n\n" + execution_feedback,
+                timeout_seconds=config.browser.response_timeout_seconds,
+                quiet_seconds=config.browser.quiet_seconds,
+            )
+            save_response(project_name, response)
+            continue
+        if attempt == 0 and project.execution_enabled:
+            tick=chr(96)
+            response = chat.send_and_wait_for_response(
+                "STOP. You have not produced a server execution request. You do not have direct access to the LabOS project filesystem. Before doing anything else, issue at least one controlled server operation using a fenced " + tick + tick + tick + "labos-exec JSON block. Start with read_file on the relevant source file, or run_command with git status. Wait for the real execution result and then continue the implementation. Do not answer with prose only.",
+                timeout_seconds=config.browser.response_timeout_seconds,
+                quiet_seconds=config.browser.quiet_seconds,
+            )
+            save_response(project_name, response)
+            continue
+        return response
     return response
 
 def run_once(config:AppConfig,project_name:str)->RunResult:
