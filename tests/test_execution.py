@@ -37,3 +37,26 @@ def test_execution_protocol_marker_is_detectable():
     marker = chr(96) * 3
     response = marker + "labos-exec\n" + '{"action":"run_command","command":["git","status","--short"]}' + "\n" + marker
     assert parse_execution_requests(response)[0]["action"] == "run_command"
+
+
+def test_parse_inline_execution_request():
+    response = 'labos-exec{"action":"read_file","path":"frontend-dev/src/components/dashboard/Widget.jsx"}'
+    requests = parse_execution_requests(response)
+    assert requests == [{
+        "action": "read_file",
+        "path": "frontend-dev/src/components/dashboard/Widget.jsx",
+    }]
+
+
+def test_parse_mixed_execution_requests():
+    response = (
+        'labos-exec{"action":"read_file","path":"a.txt"}'
+        '\n```labos-exec\n'
+        '{"action":"read_file","path":"b.txt"}'
+        '\n```'
+    )
+    requests = parse_execution_requests(response)
+    assert requests == [
+        {"action": "read_file", "path": "a.txt"},
+        {"action": "read_file", "path": "b.txt"},
+    ]

@@ -53,15 +53,62 @@ def execute_request(root: Path, request: dict, policy: ExecutionPolicy) -> Execu
     raise ValueError(f"unsupported execution action: {action}")
 
 def parse_execution_requests(response: str) -> list[dict]:
-    requests=[]; marker=chr(96)*3+"labos-exec"; remainder=response
-    while marker in remainder:
-        _, block=remainder.split(marker,1)
-        if chr(96)*3 not in block: break
-        payload,remainder=block.split(chr(96)*3,1)
-        value=json.loads(payload.strip())
-        if not isinstance(value,dict): raise ValueError("labos-exec payload must be an object")
-        requests.append(value)
-    return requests
+    requests = []
+    marker = chr(96) * 3 + "labos-exec"
+    decoder = json.JSONDecoder()
+
+    # Standard fenced execution blocks.
+    search_from = 0
+    while True:
+        marker_start = response.find(marker, search_from)
+        if marker_start == -1:
+            break
+
+        payload_start = marker_start + len(marker)
+        closing = response.find(chr(96) * 3, payload_start)
+
+        if closing == -1:
+            break
+
+        payload = response[payload_start:closing]
+        value = json.loads(payload.strip())
+
+        if not isinstance(value, dict):
+            raise ValueError("labos-exec payload must be an object")
+
+        requests.append((marker_start, value))
+        search_from = closing + 3
+
+    # Compact form emitted by some ChatGPT responses:
+    # labos-exec{"action":"read_file",...}
+    #
+    # Only recognize the marker when immediately followed by '{'.
+    search_from = 0
+    inline_marker = "labos-exec"
+
+    while True:
+        marker_start = response.find(inline_marker, search_from)
+        if marker_start == -1:
+            break
+
+        payload_start = marker_start + len(inline_marker)
+
+        if payload_start < len(response) and response[payload_start] == "{":
+            value, consumed = decoder.raw_decode(response[payload_start:])
+
+            if not isinstance(value, dict):
+                raise ValueError("labos-exec payload must be an object")
+
+            # Ignore a marker that is actually the fenced form.
+            if marker_start == 0 or response[marker_start - 3:marker_start] != chr(96) * 3:
+                requests.append((marker_start, value))
+
+            search_from = payload_start + consumed
+        else:
+            search_from = payload_start
+
+    requests.sort(key=lambda item: item[0])
+    return [value for _, value in requests]
 
 def format_execution_results(results: list[ExecutionResult]) -> str:
     lines=["LabOS server execution results:"]
