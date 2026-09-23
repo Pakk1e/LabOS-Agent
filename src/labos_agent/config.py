@@ -22,12 +22,31 @@ class ProjectConfig:
     new_chat_selector: str | None = None
     rollover_after_iterations: int = 20
     rollover_after_response_chars: int = 120_000
+    ci_timeout_seconds: float = 1800.0
+    ci_stages: dict[str, tuple[tuple[str, ...], ...]] = field(default_factory=dict)
     state_files: tuple[str, ...] = ("AGENTS.md","PLAN.md","TASKS.md","DECISIONS.md","progress.md","report.md")
 
 @dataclass(frozen=True)
 class AppConfig:
     browser: BrowserConfig = field(default_factory=BrowserConfig)
     projects: dict[str, ProjectConfig] = field(default_factory=dict)
+
+def _parse_ci_stages(raw: object) -> dict[str, tuple[tuple[str, ...], ...]]:
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ValueError("ci must be a mapping of stage names to command lists")
+    stages: dict[str, tuple[tuple[str, ...], ...]] = {}
+    for stage, commands in raw.items():
+        if not isinstance(stage, str) or not isinstance(commands, list):
+            raise ValueError("each ci stage must contain a list of argv commands")
+        parsed: list[tuple[str, ...]] = []
+        for command in commands:
+            if not isinstance(command, list) or not command or not all(isinstance(part, str) for part in command):
+                raise ValueError(f"ci.{stage} commands must be non-empty argv lists of strings")
+            parsed.append(tuple(command))
+        stages[stage] = tuple(parsed)
+    return stages
 
 def load_config(path: Path) -> AppConfig:
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
@@ -49,6 +68,8 @@ def load_config(path: Path) -> AppConfig:
             new_chat_selector=value.get("new_chat_selector"),
             rollover_after_iterations=int(value.get("rollover_after_iterations",20)),
             rollover_after_response_chars=int(value.get("rollover_after_response_chars",120000)),
+            ci_timeout_seconds=float(value.get("ci_timeout_seconds",1800)),
+            ci_stages=_parse_ci_stages(value.get("ci")),
             state_files=tuple(value.get("state_files",ProjectConfig.state_files)),
         )
     return AppConfig(browser=browser,projects=projects)

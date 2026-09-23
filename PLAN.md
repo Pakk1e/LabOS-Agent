@@ -51,3 +51,6 @@
 - [ ] Support additional Lab OS projects.
 - [x] Keep project-specific rules/configuration isolated.
 - [ ] Add project adapters only where required.
+- [x] Add provider-independent local CI contract and LocalCI executor.
+- [ ] Connect LocalCI results to autonomous project-loop state transitions.
+- [ ] Add GitHub Actions as an optional CI provider/fallback.

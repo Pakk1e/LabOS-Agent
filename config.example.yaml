@@ -11,12 +11,26 @@ projects:
     repository: "Pakk1e/VilaPro-Weather"
     project_root: "/home/park-pro/VilaPro/VilaPro-Weather"
     continuation_message: "Continue Weather"
-    # Weather development must stay inside this exact ChatGPT Project.
     project_name: "Vadovsky Tech — Weather"
     project_url: "https://chatgpt.com/g/g-p-6ab2a81b723081918c9e1052acf0af9c-vadovsky-tech-weather/project"
-    # Current ChatGPT UI exposes the Project home through the visible
-    # "Open project home" button. Leave this empty unless a different,
-    # independently verified UI action is required.
     new_chat_selector: ""
     rollover_after_iterations: 20
     rollover_after_response_chars: 120000
+    # CI commands are trusted project configuration. Each command is an argv list;
+    # LocalCI never passes these through a shell.
+    ci_timeout_seconds: 1800
+    ci:
+      test:
+        - ["python3", "-m", "pytest"]
+
+  # Example for another project. The project can live anywhere on the Lab OS host.
+  # worlds:
+  #   repository: "Pakk1e/VilaPro-Worlds"
+  #   project_root: "/home/park-pro/VilaPro/VilaPro-Worlds"
+  #   continuation_message: "Continue Worlds"
+  #   ci_timeout_seconds: 1800
+  #   ci:
+  #     test:
+  #       - ["npm", "test"]
+  #     build:
+  #       - ["npm", "run", "build"]
