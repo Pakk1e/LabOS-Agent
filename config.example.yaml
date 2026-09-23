@@ -14,6 +14,11 @@ projects:
     project_name: "Vadovsky Tech — Weather"
     project_url: "https://chatgpt.com/g/g-p-6ab2a81b723081918c9e1052acf0af9c-vadovsky-tech-weather/project"
     new_chat_selector: ""
+    execution:
+      enabled: true
+      allowed_roots:
+        - "/home/park-pro/VilaPro/VilaPro-Weather"
+      command_timeout_seconds: 300
     rollover_after_iterations: 20
     rollover_after_response_chars: 120000
     # CI commands are trusted project configuration. Each command is an argv list;
