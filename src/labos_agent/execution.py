@@ -138,9 +138,16 @@ def _validate_command(command: list[str]) -> None:
 
         if subcommand in {"status", "ls-files"}:
             raise PermissionError(f"git path must be supplied after '--': {token}")
-        if subcommand in {"diff", "log", "show"}:
-            if token.startswith("/") or token == ".." or token.startswith("../") or token.startswith("./"):
-                raise PermissionError(f"git path must be supplied after '--': {token}")
+        _validate_git_revision_token(subcommand, token)
+
+def _validate_git_revision_token(subcommand: str, token: str) -> None:
+    if subcommand not in {"diff", "log", "show"}:
+        return
+    # Exclude Git revision:path forms and traversal-like tokens. Actual
+    # pathspecs must be supplied after -- and are validated separately.
+    if ":" in token or token.startswith("/") or token == ".." or token.startswith("../") or token.startswith("./"):
+        raise PermissionError(f"git revision/path token is not allowed: {token}")
+
 
 def _validate_command_paths(command: list[str], root: Path) -> None:
     separator = False
