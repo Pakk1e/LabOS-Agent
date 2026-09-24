@@ -22,15 +22,43 @@ _BLOCKED_COMMANDS = {"git push","git commit","git reset","git checkout","git mer
 
 def _rooted_path(root: Path, requested: str, policy: ExecutionPolicy) -> Path:
     candidate = (root / requested).resolve()
-    if not any(candidate == allowed or allowed in candidate.parents for allowed in policy.allowed_roots):
+    allowed_roots = tuple(path.expanduser().resolve() for path in policy.allowed_roots)
+    if not any(candidate == allowed or allowed in candidate.parents for allowed in allowed_roots):
         raise PermissionError(f"path is outside configured execution roots: {requested}")
     return candidate
+
+_BLOCKED_GIT_SUBCOMMANDS = {"push", "commit", "reset", "checkout", "merge", "rebase"}
+_BLOCKED_EXECUTABLES = {"rm", "shutdown", "reboot", "poweroff", "mkfs", "mount", "umount", "systemctl"}
 
 def _validate_command(command: list[str]) -> None:
     if not isinstance(command, list) or not command or not all(isinstance(x, str) and x for x in command):
         raise ValueError("run_command requires a non-empty argv list")
-    if " ".join(command).casefold() in _BLOCKED_COMMANDS or command[0].casefold() in _BLOCKED_COMMANDS:
+
+    executable = Path(command[0]).name.casefold()
+    if executable in _BLOCKED_EXECUTABLES:
         raise PermissionError("command is reserved for the LabOS controller or human approval")
+
+    if executable == "git":
+        # Git global options can appear before the subcommand, e.g.
+        # git -C /repo push. Inspect the first non-option token after
+        # consuming the common global options that take a value.
+        i = 1
+        while i < len(command):
+            token = command[i]
+            if token in {"-C", "-c", "--git-dir", "--work-tree"}:
+                i += 2
+                continue
+            if token.startswith("-"):
+                i += 1
+                continue
+            if token.casefold() in _BLOCKED_GIT_SUBCOMMANDS:
+                raise PermissionError("git history mutation or push is reserved for the LabOS controller")
+            break
+
+    # These are intentionally rejected because they turn argv execution into
+    # an unrestricted code/shell escape around the project-root boundary.
+    if executable in {"sh", "bash", "dash", "zsh", "fish", "ksh", "csh", "tcsh", "cmd", "powershell", "pwsh"}:
+        raise PermissionError("shell interpreters are not allowed through autonomous execution")
 
 def execute_request(root: Path, request: dict, policy: ExecutionPolicy) -> ExecutionResult:
     action = request.get("action")
