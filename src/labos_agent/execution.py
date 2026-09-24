@@ -144,7 +144,14 @@ def _validate_git_revision_token(subcommand: str, token: str) -> None:
         return
     # Exclude Git revision:path forms and traversal-like tokens. Actual
     # pathspecs must be supplied after -- and are validated separately.
-    if (":" in token or token.startswith("/") or token == ".." or token.startswith("../") or token.startswith("./") or ".." in token or ("/" in token and not token.startswith(("refs/", "origin/")))):
+    if (
+        ":" in token
+        or token.startswith("/")
+        or token == ".."
+        or token.startswith("../")
+        or token.startswith("./")
+        or ".." in token
+    ):
         raise PermissionError(f"git revision/path token is not allowed: {token}")
 
 
