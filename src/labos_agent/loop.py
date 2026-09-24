@@ -165,7 +165,7 @@ def _prepare_state(project_name: str, *, recover: bool = False) -> AgentState:
         state.failure_history.append({
             "timestamp": datetime.now().astimezone().isoformat(),
             "iteration": state.iteration,
-            "reason": "recovered stale WORKING state after controller restart",
+            "reason": "recovered stale controller state after controller restart",
         })
         state.failure_history = state.failure_history[-20:]
         state.state = RunState.IDLE
