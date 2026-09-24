@@ -1,4 +1,5 @@
 from pathlib import Path
+import subprocess
 import pytest
 from labos_agent.execution import ExecutionPolicy, execute_request, format_execution_results, parse_execution_requests
 
@@ -8,9 +9,10 @@ def policy(root: Path) -> ExecutionPolicy:
 def test_parse_execution_requests():
     marker = chr(96) * 3
     response = "Inspect this first.\n" + marker + "labos-exec\n" + '{"action":"run_command","command":["git","status","--short"]}' + "\n" + marker
-    assert parse_execution_requests(response) == [{"action":"run_command","command":["python3","-c","print(42)"]}]
+    assert parse_execution_requests(response) == [{"action":"run_command","command":["git","status","--short"]}]
 
 def test_run_command_is_argv_and_returns_result(tmp_path: Path):
+    subprocess.run(["git","init",str(tmp_path)],check=True,capture_output=True)
     result = execute_request(tmp_path, {"action":"run_command","command":["git","status","--short"]}, policy(tmp_path))
     assert result.success and result.exit_code == 0
 
