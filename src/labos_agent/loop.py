@@ -13,13 +13,14 @@ from .browser.session import BrowserSession
 from playwright.sync_api import Error as PlaywrightError
 from .config import AppConfig
 from .ci.local import LocalCI
-from .git_gate import GitPushError, snapshot as git_snapshot, assert_unchanged_before_ci, commit_and_push, prepare_repository
+from .git_gate import GitPushError, snapshot as git_snapshot, assert_unchanged_before_ci, changed_paths, meaningful_change, commit_and_push, prepare_repository
 from .execution import ExecutionPolicy, ExecutionResult, execute_request, format_execution_results, parse_execution_requests
 from .controller import Controller
 from .project import build_continuation_prompt, inspect_project
 from .rollover import rollover, rollover_from_max_length
+from .remote_ci import verify_github_actions
 from .safety import SafetyLimits
-from .state import AgentState, RunState, load_state, save_state
+from .state import AgentState, IterationStage, RunState, load_state, save_state
 
 
 @dataclass(frozen=True)
@@ -204,6 +205,9 @@ def _prepare_state(project_name: str, *, recover: bool = False) -> AgentState:
         state.pending_ci_fix = False
         state.pending_ci_baseline_untracked = []
         state.pending_ci_worktree_fingerprint = None
+        state.pending_remote_ci_fix = False
+        state.pending_remote_ci_sha = None
+        state.pending_remote_ci_result = None
     if state.branch_name == "main":
         state.branch_name = f"agent/{state.run_id[:12]}"
     return state
@@ -221,7 +225,7 @@ def _response_declares_done(response: str) -> bool:
     return "LABOS_DONE" in response
 
 
-def _resolve_execution(chat, response: str, project, project_name: str, config: AppConfig, deadline: datetime | None = None) -> str:
+def _resolve_execution(chat, response: str, project, project_name: str, config: AppConfig, deadline: datetime | None = None, state: AgentState | None = None) -> str:
     had_execution = False
     for attempt in range(4):
         if deadline is not None and datetime.now().astimezone() >= deadline:
@@ -230,6 +234,12 @@ def _resolve_execution(chat, response: str, project, project_name: str, config: 
         execution_feedback, requested_execution = _execute_agent_requests(response, project)
         if requested_execution:
             had_execution = True
+            if state is not None:
+                state.execution_requested = True
+                state.iteration_stage = IterationStage.EXECUTION_REQUIRED
+                if "success=True" in execution_feedback:
+                    state.execution_applied = True
+                    state.iteration_stage = IterationStage.EXECUTION_APPLIED
             response = chat.send_and_wait_for_response(
                 "The LabOS controller executed your requested server operations. Use these real results and continue the implementation; do not claim execution that is not shown here. "
                 "If more implementation is required, issue another labos-exec request. If the implementation is complete, end your response with LABOS_DONE.\n\n"
@@ -331,6 +341,8 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
         )
         snapshot = inspect_project(project.project_root, project.repository, project.state_files)
         before_git = git_snapshot(project.project_root)
+        state.start_iteration(before_git.head)
+        controller.chatgpt_working()
 
         with BrowserSession(config.browser.profile_dir, cdp_url=config.browser.cdp_url) as session:
             context = session.context
@@ -369,7 +381,7 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
 
             save_response(project_name, response)
             try:
-                response = _resolve_execution(chat, response, project, project_name, config, deadline=None)
+                response = _resolve_execution(chat, response, project, project_name, config, deadline=None, state=state)
                 save_response(project_name, response)
                 assert_unchanged_before_ci(project.project_root, before_git)
                 after_git = git_snapshot(project.project_root)
@@ -377,6 +389,13 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
                     _handle_no_progress(controller, state)
                     save_state(state_path(project_name), state)
                     return RunResult(state, response)
+                paths = changed_paths(project.project_root, before_git)
+                controller.progress_verified(meaningful=meaningful_change(paths))
+                if not state.meaningful_progress:
+                    _handle_no_progress(controller, state)
+                    save_state(state_path(project_name), state)
+                    return RunResult(state, response)
+                controller.ci_running()
                 ci_ok = _run_local_ci(project, state, deadline=None)
             except Exception as exc:
                 try:
@@ -401,6 +420,8 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
                 return RunResult(state, response)
 
             try:
+                controller.ci_passed()
+                controller.committing()
                 committed_sha = commit_and_push(
                     project.project_root,
                     before_git,
@@ -414,8 +435,25 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
                     controller.mark_failure("working tree changed but Git gate produced no commit")
                     save_state(state_path(project_name), state)
                     return RunResult(state, response)
+                state.commit_created = True
+                controller.pushing()
                 state.last_action = f"committed and pushed {committed_sha}"
                 state.last_commit_sha = committed_sha
+                controller.remote_verified(committed_sha)
+                remote_ci = verify_github_actions(
+                    project.repository,
+                    committed_sha,
+                    timeout_seconds=project.remote_ci_timeout_seconds,
+                    poll_seconds=project.remote_ci_poll_seconds,
+                )
+                state.pending_remote_ci_result = remote_ci.summary
+                if not remote_ci.success:
+                    state.pending_remote_ci_fix = True
+                    state.pending_remote_ci_sha = committed_sha
+                    controller.mark_failure(f"GitHub Actions failed for exact SHA {committed_sha}: {remote_ci.summary}")
+                    save_state(state_path(project_name), state)
+                    return RunResult(state, response)
+                controller.github_ci_verified()
             except GitPushError as exc:
                 _mark_push_failure_recovery(state, before_git, git_snapshot(project.project_root))
                 controller.mark_failure(f"validated changes could not be pushed; recovery is pending: {exc}")
@@ -525,6 +563,8 @@ def _run_loop_impl(
                         project.execution_enabled,
                     )
                     before_git = git_snapshot(project.project_root)
+                    state.start_iteration(before_git.head)
+                    controller.chatgpt_working()
                     if chat.status().rollover_required:
                         continuation, response = _rollover_and_process_resume(
                             chat, project, state, project_name, config,
@@ -540,7 +580,7 @@ def _run_loop_impl(
                         quiet_seconds=config.browser.quiet_seconds,
                     )
                     save_response(project_name, response)
-                    response = _resolve_execution(chat, response, project, project_name, config, deadline=deadline)
+                    response = _resolve_execution(chat, response, project, project_name, config, deadline=deadline, state=state)
                     assert_unchanged_before_ci(project.project_root, before_git)
                     after_git = git_snapshot(project.project_root)
                     if after_git.worktree_fingerprint == before_git.worktree_fingerprint:
@@ -550,13 +590,24 @@ def _run_loop_impl(
                             return RunResult(state, response)
                         time.sleep(2)
                         continue
+                    paths = changed_paths(project.project_root, before_git)
+                    controller.progress_verified(meaningful=meaningful_change(paths))
+                    if not state.meaningful_progress:
+                        should_stop = _handle_no_progress(controller, state)
+                        save_state(state_path(project_name), state)
+                        if should_stop:
+                            return RunResult(state, response)
+                        time.sleep(2)
+                        continue
 
+                    controller.ci_passed()
                     if deadline is not None and datetime.now().astimezone() >= deadline:
                         _mark_dirty_recovery(state, before_git)
                         controller.stop("deadline reached before LocalCI")
                         save_state(state_path(project_name), state)
                         return RunResult(state, response)
 
+                    controller.ci_running()
                     ci_ok = _run_local_ci(project, state, deadline=deadline)
                     if not ci_ok:
                         state.pending_ci_fix = True
@@ -577,6 +628,7 @@ def _run_loop_impl(
                         return RunResult(state, response)
 
                     try:
+                        controller.committing()
                         committed_sha = commit_and_push(
                             project.project_root,
                             before_git,
@@ -608,8 +660,34 @@ def _run_loop_impl(
                             return RunResult(state, response)
                         time.sleep(2)
                         continue
+                    state.commit_created = True
+                    controller.pushing()
                     state.last_action = f"committed and pushed {committed_sha}"
                     state.last_commit_sha = committed_sha
+                    controller.remote_verified(committed_sha)
+                    remote_ci = verify_github_actions(
+                        project.repository,
+                        committed_sha,
+                        timeout_seconds=project.remote_ci_timeout_seconds,
+                        poll_seconds=project.remote_ci_poll_seconds,
+                    )
+                    state.pending_remote_ci_result = remote_ci.summary
+                    if not remote_ci.success:
+                        state.pending_remote_ci_fix = True
+                        state.pending_remote_ci_sha = committed_sha
+                        controller.mark_failure(
+                            f"GitHub Actions failed for exact SHA {committed_sha}: {remote_ci.summary}"
+                        )
+                        save_state(state_path(project_name), state)
+                        if state.consecutive_failures >= controller.limits.max_consecutive_failures:
+                            controller.stop("maximum consecutive failures reached")
+                            save_state(state_path(project_name), state)
+                            return RunResult(state, response)
+                        time.sleep(2)
+                        continue
+                    state.pending_remote_ci_fix = False
+                    state.pending_remote_ci_sha = None
+                    controller.github_ci_verified()
                     controller.mark_success(continue_running=True)
                     state.pending_ci_fix = False
                     state.pending_ci_baseline_untracked = []
