@@ -25,7 +25,8 @@ def test_rejects_path_escape(tmp_path: Path):
         execute_request(tmp_path, {"action":"read_file","path":"../secret.txt"}, policy(tmp_path))
 
 def test_format_results():
-    result = execute_request(Path("."), {"action":"run_command","command":["pytest","--version"]}, policy(Path(".")))
+    root = Path(__file__).resolve().parents[1]
+    result = execute_request(root, {"action":"run_command","command":["git","status","--short"]}, policy(root))
     text = format_execution_results([result])
     assert "LabOS server execution results:" in text and "success=True" in text
 
