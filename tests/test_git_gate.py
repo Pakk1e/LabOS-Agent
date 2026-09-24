@@ -1,7 +1,7 @@
 from pathlib import Path
 import subprocess
 
-from labos_agent.git_gate import commit_and_push, snapshot
+from labos_agent.git_gate import GitPushError, commit_and_push, snapshot
 
 
 def _git(root: Path, *args: str) -> str:
@@ -301,8 +301,8 @@ def test_commit_and_push_resets_commit_when_push_fails(tmp_path: Path):
     (root / "change.txt").write_text("change")
     try:
         commit_and_push(root, before, "push failure")
-    except Exception as exc:
-        assert "push" in str(exc).lower() or "remote" in str(exc).lower()
+    except GitPushError as exc:
+        assert "push failed" in str(exc).lower()
     else:
         raise AssertionError("push failure was not surfaced")
     assert _git(root, "rev-parse", "HEAD") == before.head
