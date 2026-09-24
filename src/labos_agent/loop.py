@@ -87,7 +87,16 @@ def _prepare_state(project_name:str, *, recover: bool=False)->AgentState:
     if state is None:
         run_id=uuid.uuid4().hex
         return AgentState(project=project_name,run_id=run_id,branch_name=f"agent/{run_id[:12]}")
-    if recover and state.state in {RunState.STOPPED,RunState.ERROR}:\n        state.run_id=state.run_id or uuid.uuid4().hex\n        state.state=RunState.IDLE\n        state.consecutive_failures=0\n        state.consecutive_no_progress=0\n        state.started_at=None\n        state.stopped_at=None\n        state.last_action=None\n        state.reason=None\n    elif state.state in {RunState.STOPPED,RunState.COMPLETED,RunState.ERROR,RunState.BLOCKED}:
+    if recover and state.state in {RunState.STOPPED,RunState.ERROR}:
+        state.run_id=state.run_id or uuid.uuid4().hex
+        state.state=RunState.IDLE
+        state.consecutive_failures=0
+        state.consecutive_no_progress=0
+        state.started_at=None
+        state.stopped_at=None
+        state.last_action=None
+        state.reason=None
+    elif state.state in {RunState.STOPPED,RunState.COMPLETED,RunState.ERROR,RunState.BLOCKED}:
         # A new run is a new execution, not a recovery of the previous run.
         # Keep failure_history for diagnostics, but reset execution counters and
         # per-run results so stale failures cannot immediately stop the new run.
