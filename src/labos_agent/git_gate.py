@@ -120,6 +120,26 @@ def snapshot(root: Path) -> GitSnapshot:
     )
 
 
+def changed_paths(root: Path, before: GitSnapshot) -> tuple[str, ...]:
+    """Return paths changed relative to the iteration baseline, including new untracked files."""
+    current = snapshot(root)
+    paths = set(_status_paths_z(current.status))
+    before_untracked = set(before.untracked_paths)
+    paths.update(set(current.untracked_paths) - before_untracked)
+    return tuple(sorted(paths))
+
+
+def meaningful_change(paths: tuple[str, ...]) -> bool:
+    """Classify repository changes that represent implementation progress."""
+    if not paths:
+        return False
+    # Tests-only changes are validation work, not implementation progress, unless
+    # the task explicitly consists of tests (the controller can still commit them
+    # when the caller marks the iteration as meaningful).
+    meaningful_prefixes = ("src/", "app/", "lib/", "docs/", "config.", "pyproject.toml", "README")
+    return any(path.startswith(meaningful_prefixes) and not path.startswith("tests/") for path in paths)
+
+
 def assert_unchanged_before_ci(root: Path, before: GitSnapshot) -> None:
     after = snapshot(root)
     if after.head != before.head:
