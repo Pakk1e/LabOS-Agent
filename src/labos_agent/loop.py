@@ -10,13 +10,14 @@ import uuid
 
 from .browser.chatgpt import ChatGPTPage
 from .browser.session import BrowserSession
+from playwright.sync_api import Error as PlaywrightError
 from .config import AppConfig
 from .ci.local import LocalCI
 from .git_gate import GitPushError, snapshot as git_snapshot, assert_unchanged_before_ci, commit_and_push, prepare_repository
 from .execution import ExecutionPolicy, ExecutionResult, execute_request, format_execution_results, parse_execution_requests
 from .controller import Controller
 from .project import build_continuation_prompt, inspect_project
-from .rollover import rollover
+from .rollover import rollover, rollover_from_max_length
 from .safety import SafetyLimits
 from .state import AgentState, RunState, load_state, save_state
 
@@ -25,6 +26,29 @@ from .state import AgentState, RunState, load_state, save_state
 class RunResult:
     state: AgentState
     response: str | None = None
+
+
+class DeadlineReached(RuntimeError):
+    """The configured hard stop was reached while an operation was in flight."""
+
+
+def _remaining_timeout(deadline: datetime | None, configured: float) -> float:
+    if deadline is None:
+        return configured
+    remaining = (deadline - datetime.now().astimezone()).total_seconds()
+    if remaining <= 0:
+        raise DeadlineReached("deadline reached during operation")
+    return min(configured, max(0.1, remaining))
+
+
+def _is_browser_connection_error(exc: Exception) -> bool:
+    if isinstance(exc, PlaywrightError):
+        return True
+    text = str(exc).casefold()
+    return any(token in text for token in (
+        "target closed", "browser has been closed", "connection closed",
+        "websocket", "cdp", "transport", "playwright",
+    ))
 
 
 def state_dir(project: str) -> Path:
@@ -57,7 +81,7 @@ def save_response(project: str, response: str) -> None:
     (d / "last_response.md").write_text(response.rstrip() + "\n", encoding="utf-8")
 
 
-def _run_local_ci(project, state: AgentState) -> bool:
+def _run_local_ci(project, state: AgentState, deadline: datetime | None = None) -> bool:
     stage = project.ci_stage
     if not stage:
         state.last_ci_result = None
@@ -70,7 +94,7 @@ def _run_local_ci(project, state: AgentState) -> bool:
         stage=stage,
         project_root=project.project_root,
         commands=commands,
-        timeout_seconds=project.ci_timeout_seconds,
+        timeout_seconds=_remaining_timeout(deadline, project.ci_timeout_seconds),
     )
     lines = [f"stage={stage} success={result.success}"]
     for command in result.commands:
@@ -184,16 +208,18 @@ def _handle_no_progress(controller: Controller, state: AgentState) -> bool:
     return False
 
 
-def _resolve_execution(chat, response: str, project, project_name: str, config: AppConfig) -> str:
+def _resolve_execution(chat, response: str, project, project_name: str, config: AppConfig, deadline: datetime | None = None) -> str:
     had_execution = False
     for attempt in range(4):
+        if deadline is not None and datetime.now().astimezone() >= deadline:
+            raise DeadlineReached("deadline reached before server execution")
         execution_feedback, requested_execution = _execute_agent_requests(response, project)
         if requested_execution:
             had_execution = True
             response = chat.send_and_wait_for_response(
                 "The LabOS controller executed your requested server operations. Use these real results and continue the implementation; do not claim execution that is not shown here.\n\n"
                 + execution_feedback,
-                timeout_seconds=config.browser.response_timeout_seconds,
+                timeout_seconds=_remaining_timeout(deadline, config.browser.response_timeout_seconds),
                 quiet_seconds=config.browser.quiet_seconds,
                 require_input_available=False,
             )
