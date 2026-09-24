@@ -113,6 +113,6 @@ def test_network_escape_tools_are_blocked(tmp_path: Path):
 def test_write_file_json_content_may_contain_markdown_fence():
     marker = chr(96) * 3
     content = "before " + marker + "python\\nprint(1)\\n" + marker + " after"
-    response = marker + "labos-exec\\n" + '{"action":"write_file","path":"doc.md","content":"' + content.replace("\\","\\\\").replace('"','\\"').replace("\n","\\n") + '"}' + "\\n" + marker
+    response = marker + "labos-exec\n" + '{"action":"write_file","path":"doc.md","content":"' + content.replace("\\","\\\\").replace('"','\\"').replace("\n","\\n") + '"}' + "\\n" + marker
     request = parse_execution_requests(response)[0]
     assert request["content"] == content
