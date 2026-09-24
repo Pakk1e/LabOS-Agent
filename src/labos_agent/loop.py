@@ -183,7 +183,7 @@ def run_once(config:AppConfig,project_name:str)->RunResult:
             save_state(state_path(project_name),state)
             return RunResult(state,response)
         try:
-            committed_sha = commit_and_push(project.project_root, before_git, f"lab-agent: iteration {state.iteration}", branch_name=state.branch_name)
+            committed_sha = commit_and_push(project.project_root, before_git, f"lab-agent: iteration {state.iteration}", branch_name=state.branch_name, allow_preexisting_tracked_changes=bool(state.last_ci_result and "success=False" in state.last_ci_result))
             if committed_sha:
                 state.last_action=f"committed and pushed {committed_sha}"
         except Exception as exc:
