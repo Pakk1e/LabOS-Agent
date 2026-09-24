@@ -36,7 +36,42 @@ def _rooted_path(root: Path, requested: str, policy: ExecutionPolicy) -> Path:
 
 _ALLOWED_GIT_SUBCOMMANDS = {"status", "diff", "log", "show", "ls-files"}
 _BLOCKED_GIT_SUBCOMMANDS = {"push", "commit", "reset", "checkout", "merge", "rebase", "switch", "restore", "clean", "stash"}
-_BLOCKED_GIT_OPTIONS = {"-C", "-c", "--git-dir", "--work-tree", "--no-index", "--exec-path", "--upload-pack", "--receive-pack", "--ext-diff", "--textconv"}
+
+# This is deliberately an allowlist, not a denylist.  These commands are the
+# only subprocess surface exposed to the autonomous agent, so every accepted
+# option must be known to be observational only.  In particular, git log/diff/
+# show have options such as --output=<file> that turn their stdout into a
+# filesystem write; unknown options are rejected before git starts.
+_GIT_SAFE_OPTIONS = {
+    "status": {
+        "--short", "--porcelain", "--porcelain=v1", "-z", "-uall",
+        "--untracked-files=all", "--branch",
+    },
+    "ls-files": {
+        "-o", "--others", "--exclude-standard", "-z", "--stage", "--cached",
+        "--deleted", "--modified", "--ignored",
+    },
+    "diff": {
+        "--binary", "--cached", "--staged", "--name-only", "--name-status",
+        "--numstat", "--stat", "--check", "-z", "--no-ext-diff",
+        "--no-textconv", "--no-renames", "--minimal", "--patience",
+    },
+    "log": {
+        "--oneline", "--decorate", "--no-decorate", "--name-only",
+        "--name-status", "--stat", "--patch", "-p", "--no-patch",
+        "--no-ext-diff", "--no-textconv", "-z",
+    },
+    "show": {
+        "--oneline", "--name-only", "--name-status", "--stat", "--patch",
+        "-p", "--no-patch", "--no-ext-diff", "--no-textconv", "-z",
+    },
+}
+
+_GIT_SAFE_OPTION_PREFIXES = {
+    "diff": ("--diff-filter=", "--unified=", "-U"),
+    "log": ("--format=", "--pretty=", "--max-count=", "-n"),
+    "show": ("--format=", "--pretty=", "--abbrev=", "--encoding="),
+}
 
 def _git_env(root: Path) -> dict[str, str]:
     import os
@@ -64,6 +99,12 @@ def _validate_git_path(root: Path, raw: str) -> None:
         raise PermissionError(f"git path is outside execution root: {raw}")
     _rooted_path(root, raw, ExecutionPolicy((root,)))
 
+def _git_option_allowed(subcommand: str, token: str) -> bool:
+    if token in _GIT_SAFE_OPTIONS.get(subcommand, set()):
+        return True
+    return any(token.startswith(prefix) for prefix in _GIT_SAFE_OPTION_PREFIXES.get(subcommand, ()))
+
+
 def _validate_command(command: list[str]) -> None:
     if not isinstance(command, list) or not command or not all(isinstance(x, str) and x for x in command):
         raise ValueError("run_command requires a non-empty argv list")
@@ -72,22 +113,32 @@ def _validate_command(command: list[str]) -> None:
     if len(command) < 2:
         raise PermissionError("git subcommand is required")
     subcommand = command[1].casefold()
-    if subcommand in _BLOCKED_GIT_SUBCOMMANDS or command[1] in _BLOCKED_GIT_OPTIONS:
+    if subcommand in _BLOCKED_GIT_SUBCOMMANDS:
         raise PermissionError("unsafe git operation is not allowed in autonomous execution")
     if subcommand not in _ALLOWED_GIT_SUBCOMMANDS:
         raise PermissionError(f"git subcommand is not allowed in autonomous execution: {subcommand}")
+
     separator = False
     for token in command[2:]:
         if token == "--":
             separator = True
             continue
-        if token in _BLOCKED_GIT_OPTIONS or token.startswith("--config") or token.startswith("--output="):
-            raise PermissionError(f"unsafe git option is not allowed in autonomous execution: {token}")
-        if token.startswith("-"):
+        if separator:
+            if token.startswith("-"):
+                raise PermissionError(f"git option after '--' is not allowed in autonomous execution: {token}")
             continue
-        if not separator and subcommand in {"status", "ls-files"}:
+
+        # Only a fixed allowlist of read-only options is accepted.  This
+        # intentionally rejects --output <file>, --output=<file>, and every
+        # future/unknown option until it is reviewed and added explicitly.
+        if token.startswith("-"):
+            if not _git_option_allowed(subcommand, token):
+                raise PermissionError(f"git option is not allowed in autonomous execution: {token}")
+            continue
+
+        if subcommand in {"status", "ls-files"}:
             raise PermissionError(f"git path must be supplied after '--': {token}")
-        if not separator and subcommand in {"diff", "log", "show"}:
+        if subcommand in {"diff", "log", "show"}:
             if token.startswith("/") or token == ".." or token.startswith("../") or token.startswith("./"):
                 raise PermissionError(f"git path must be supplied after '--': {token}")
 

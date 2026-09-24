@@ -131,9 +131,28 @@ def test_git_read_surface_rejects_no_index_output_and_external_paths(tmp_path: P
     for command in (
         ["git", "diff", "/dev/null", "etc/passwd"],
         ["git", "diff", "--output=/tmp/labos-out", "HEAD", "--", "file.txt"],
+        ["git", "diff", "--output", "/tmp/labos-out", "HEAD", "--", "file.txt"],
         ["git", "log", "--output=/tmp/labos-out"],
+        ["git", "log", "--output", "/tmp/labos-out"],
+        ["git", "show", "--output=/tmp/labos-out", "HEAD"],
+        ["git", "show", "--output", "/tmp/labos-out", "HEAD"],
         ["git", "diff", "--ext-diff", "HEAD", "--", "file.txt"],
         ["git", "show", "HEAD", "--", "/etc/passwd"],
+    ):
+        with pytest.raises(PermissionError):
+            execute_request(tmp_path, {"action": "run_command", "command": command}, policy(tmp_path))
+
+
+def test_git_read_surface_is_allowlisted_per_subcommand(tmp_path: Path):
+    for command in (
+        ["git", "status", "--future-write-option"],
+        ["git", "diff", "--future-write-option"],
+        ["git", "log", "--future-write-option"],
+        ["git", "show", "--future-write-option"],
+        ["git", "ls-files", "--future-write-option"],
+        ["git", "log", "--output", "file.txt"],
+        ["git", "diff", "--output=file.txt"],
+        ["git", "show", "--output", "file.txt"],
     ):
         with pytest.raises(PermissionError):
             execute_request(tmp_path, {"action": "run_command", "command": command}, policy(tmp_path))

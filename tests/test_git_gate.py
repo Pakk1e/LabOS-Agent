@@ -215,3 +215,47 @@ def test_untracked_content_changes_change_fingerprint(tmp_path: Path):
     (tmp_path / "new.txt").write_text("two")
     after = snapshot(tmp_path)
     assert after.worktree_fingerprint != before.worktree_fingerprint
+
+
+def test_prepare_repository_recovers_tracked_sensitive_worktree_change(tmp_path: Path):
+    from labos_agent.git_gate import prepare_repository
+
+    remote = tmp_path / "remote.git"
+    root = tmp_path / "repo"
+    subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True)
+    subprocess.run(["git", "init", str(root)], check=True, capture_output=True)
+    _git(root, "config", "user.name", "LabOS Test")
+    _git(root, "config", "user.email", "labos@example.invalid")
+    workflow = root / ".github" / "workflows"
+    workflow.mkdir(parents=True)
+    (workflow / "ci.yml").write_text("name: CI\n")
+    (root / "base.txt").write_text("base")
+    _git(root, "add", ".")
+    _git(root, "commit", "-m", "base")
+    _git(root, "branch", "-M", "main")
+    _git(root, "remote", "add", "origin", str(remote))
+    _git(root, "push", "-u", "origin", "main")
+
+    (workflow / "ci.yml").write_text("name: attacker\n")
+    prepare_repository(root)
+    assert (workflow / "ci.yml").read_text() == "name: CI\n"
+    assert _git(root, "status", "--short") == ""
+
+
+def test_prepare_repository_still_refuses_untracked_sensitive_path(tmp_path: Path):
+    from labos_agent.git_gate import prepare_repository
+
+    subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True)
+    _git(tmp_path, "config", "user.name", "LabOS Test")
+    _git(tmp_path, "config", "user.email", "labos@example.invalid")
+    (tmp_path / "base.txt").write_text("base")
+    _git(tmp_path, "add", "base.txt")
+    _git(tmp_path, "commit", "-m", "base")
+    (tmp_path / ".env.local").write_text("SECRET=keep")
+
+    try:
+        prepare_repository(tmp_path)
+    except RuntimeError as exc:
+        assert "sensitive path" in str(exc)
+    else:
+        raise AssertionError("untracked sensitive path was not rejected")
