@@ -209,7 +209,7 @@ class ChatGPTPage:
         if not target:
             return True
         escaped=re.escape(target)
-        return re.search(r"(?<![\\w])" + escaped + r"(?![\\w])", body.casefold()) is not None
+        return re.search(r"(?<![\w])" + escaped + r"(?![\w])", body.casefold()) is not None
 
     def project_chat_composer(self,project_name:str):
         """Return the visible Project-home composer, identified by its rendered placeholder."""
