@@ -13,8 +13,10 @@ The controller now supports:
 - repeated development with `lab-agent run <project> --until HH:MM`;
 - persistent controller state under `state/<project>/`;
 - project-state snapshots from the repository;
-- controlled server execution for project-scoped file reads/writes and argv commands;
+- controlled server execution for project-scoped file reads/writes and read-only Git inspection;
 - explicit execution results returned to the ChatGPT loop before it can claim a command ran;
+- per-project process locking and stale-run recovery;
+- CI-failure recovery that preserves failed-iteration changes, including untracked files;
 - conservative response completion detection;
 - safety limits and fail-closed BLOCKED/STOPPED states;
 - conversation handoff generation and Project-aware rollover hooks.
@@ -77,16 +79,16 @@ The persistent browser profile is sensitive local state and must never be commit
 
 ## Server execution
 
-When enabled for a project, ChatGPT may request controlled operations using fenced `labos-exec` JSON blocks. LabOS executes them on the configured project host, validates paths against configured execution roots, runs commands without a shell, captures stdout/stderr/exit code, and returns the real result to the agent.
+When enabled for a project, ChatGPT may request controlled operations using fenced `labos-exec` JSON blocks. LabOS validates file paths against configured execution roots, rejects controller-owned paths at any depth, and returns real stdout/stderr/exit codes to the agent.
 
-Supported operations are `read_file`, `write_file`, and `run_command`. Controller-owned Git operations and privileged infrastructure commands are rejected by the execution layer. Commit/push remains exclusively in the Git gate after LocalCI passes.
+Supported operations are `read_file`, `write_file`, and a tightly restricted `run_command` surface. The latter permits only read-only Git inspection rooted to the configured repository; Git paths must remain inside the project root. Hooks and fsmonitor are disabled for controller and agent Git calls. Commit/push remains exclusively in the Git gate after LocalCI passes.
 
-Example:
+The execution feature is disabled by default. Project CI commands are trusted controller configuration and are separate from the agent execution protocol.
 
-```text
-```labos-exec
-{"action":"run_command","command":["python3","-m","pytest"],"cwd":"."}
-```
-```
+## Branch and recovery model
 
-Execution is disabled by setting `execution.enabled: false` in the project configuration.
+Each autonomous run uses an `agent/<run-id>` branch. The controller never commits directly to `main`. A successful LocalCI result is required before the controller commits and pushes an agent branch.
+
+If LocalCI fails, the controller persists the failed-iteration baseline and `pending_ci_fix`. A later `continue` can recover that state and includes changes made during the failed iteration, including newly created or subsequently edited untracked files.
+
+A per-project filesystem lock prevents concurrent controllers. If a previous controller crashed while the state was `WORKING`, the next owner safely resets the stale execution state while preserving CI-recovery state.
