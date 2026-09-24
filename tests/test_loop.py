@@ -326,3 +326,30 @@ def test_project_state_prompt_is_bounded(tmp_path, monkeypatch):
     snapshot = inspect_project(tmp_path, "example/repo", ("AGENTS.md",))
     assert len(snapshot.files["AGENTS.md"]) < MAX_STATE_FILE_CHARS + 300
     assert "state file truncated" in snapshot.files["AGENTS.md"]
+
+
+def test_hard_limit_rollover_preserves_iteration_dirty_recovery(monkeypatch, tmp_path):
+    class Project:
+        project_root = tmp_path
+        project_name = "Test"
+        name = "test"
+
+    state = AgentState(project="test", run_id="run", iteration=3)
+    baseline = type("Snapshot", (), {"worktree_fingerprint": "before", "untracked_paths": ("old.txt",)})()
+    changed = type("Snapshot", (), {"worktree_fingerprint": "after", "untracked_paths": ("old.txt", "new.txt")})()
+    snapshots = iter([baseline, changed])
+    monkeypatch.setattr(loop, "git_snapshot", lambda root: next(snapshots))
+    monkeypatch.setattr(loop, "rollover_from_max_length", lambda *args, **kwargs: ("continue", None, "resume"))
+    monkeypatch.setattr(loop, "_resolve_execution", lambda *args, **kwargs: "resume")
+    monkeypatch.setattr(loop, "save_response", lambda *args, **kwargs: None)
+    config = type("Config", (), {"browser": BrowserConfig(profile_dir=tmp_path)})()
+
+    continuation, response = loop._rollover_and_process_resume(
+        object(), Project(), state, "test", config, deadline=None, max_rollovers=3,
+        recovery_baseline=baseline,
+    )
+
+    assert continuation == "continue"
+    assert response == "resume"
+    assert state.pending_ci_fix is True
+    assert state.pending_ci_baseline_untracked == ["old.txt"]
