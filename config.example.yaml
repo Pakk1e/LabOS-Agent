@@ -17,7 +17,7 @@ projects:
     execution:
       enabled: true
       allowed_roots:
-        - "/home/park-pro/VilaPro/VilaPro-Weather"
+        - "/home/park-pro/VilaPro-Weather"
       command_timeout_seconds: 300
     rollover_after_iterations: 20
     rollover_after_response_chars: 120000
