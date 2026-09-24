@@ -14,11 +14,16 @@ class GitSnapshot:
     upstream: str
     status: str
     worktree_fingerprint: str
+    untracked_paths: tuple[str, ...]
 
 
-def _env() -> dict[str, str]:
+def _env(root: Path) -> dict[str, str]:
+    resolved = root.expanduser().resolve()
     env = os.environ.copy()
     env.update({
+        "GIT_DIR": str(resolved / ".git"),
+        "GIT_WORK_TREE": str(resolved),
+        "GIT_CEILING_DIRECTORIES": str(resolved.parent),
         "GIT_CONFIG_COUNT": "2",
         "GIT_CONFIG_KEY_0": "core.hooksPath",
         "GIT_CONFIG_VALUE_0": "/dev/null",
@@ -30,26 +35,68 @@ def _env() -> dict[str, str]:
 
 def _git(root: Path, *args: str, check: bool = True) -> str:
     result = subprocess.run(
-        ["git", "-C", str(root), *args],
+        ["git", *args],
+        cwd=root,
         check=check,
         capture_output=True,
         text=True,
         timeout=120,
-        env=_env(),
+        env=_env(root),
     )
     if not check and result.returncode:
         return ""
-    return result.stdout.strip()
+    return result.stdout.rstrip("\n")
+
+
+def _untracked_paths(root: Path) -> tuple[str, ...]:
+    raw = _git(root, "ls-files", "-o", "--exclude-standard", "-z")
+    return tuple(sorted(p for p in raw.split("\0") if p))
+
+
+def _untracked_fingerprint(root: Path, paths: tuple[str, ...]) -> bytes:
+    digest = hashlib.sha256()
+    for path in paths:
+        digest.update(path.encode("utf-8", "surrogateescape"))
+        digest.update(b"\0")
+        candidate = (root / path).resolve()
+        root_resolved = root.resolve()
+        if root_resolved not in candidate.parents and candidate != root_resolved:
+            digest.update(b"OUTSIDE")
+            continue
+        raw_path = root / path
+        try:
+            stat = raw_path.lstat()
+            if raw_path.is_symlink():
+                digest.update(b"SYMLINK\0" + os.readlink(raw_path).encode("utf-8", "surrogateescape"))
+            elif raw_path.is_file():
+                digest.update(b"FILE\0")
+                with raw_path.open("rb") as handle:
+                    while chunk := handle.read(1024 * 1024):
+                        digest.update(chunk)
+            else:
+                digest.update(f"OTHER:{stat.st_mode}".encode())
+        except OSError as exc:
+            digest.update(f"ERROR:{type(exc).__name__}:{exc}".encode())
+    return digest.digest()
 
 
 def snapshot(root: Path) -> GitSnapshot:
-    status = _git(root, "status", "--porcelain=v1", "-uall")
+    status = _git(root, "status", "--porcelain=v1", "-z", "-uall")
     diff = _git(root, "diff", "HEAD", "--binary", "--")
+    untracked = _untracked_paths(root)
+    fingerprint = hashlib.sha256(
+        status.encode("utf-8", "surrogateescape")
+        + b"\0"
+        + diff.encode("utf-8", "surrogateescape")
+        + b"\0"
+        + _untracked_fingerprint(root, untracked)
+    ).hexdigest()
     return GitSnapshot(
         head=_git(root, "rev-parse", "HEAD"),
         upstream=_git(root, "rev-parse", "--verify", "@{upstream}", check=False),
         status=status,
-        worktree_fingerprint=hashlib.sha256((status + "\0" + diff).encode()).hexdigest(),
+        worktree_fingerprint=fingerprint,
+        untracked_paths=untracked,
     )
 
 
@@ -61,27 +108,53 @@ def assert_unchanged_before_ci(root: Path, before: GitSnapshot) -> None:
         raise RuntimeError("LocalCI gate refused: upstream changed before LocalCI ran")
 
 
-def _validate_stage_paths(paths: str) -> None:
-    for raw in paths.splitlines():
-        path = raw.strip()
-        if not path:
-            continue
+def _status_paths_z(status: str) -> list[str]:
+    records = [record for record in status.split("\0") if record]
+    paths: list[str] = []
+    index = 0
+    while index < len(records):
+        record = records[index]
+        if len(record) >= 3 and record[2] == " ":
+            paths.append(record[3:])
+            code = record[:2]
+            if code[0] in "RC" or code[1] in "RC":
+                if index + 1 < len(records):
+                    paths.append(records[index + 1])
+                    index += 1
+        else:
+            paths.append(record)
+        index += 1
+    return paths
+
+
+def _validate_sensitive_paths(paths: list[str]) -> None:
+    for path in paths:
         parts = Path(path).parts
-        if any(part == ".git" or part == ".github" or part.startswith(".env") for part in parts):
-            raise RuntimeError(f"Git gate refused sensitive path: {path}")
+        for part in parts:
+            folded = part.casefold()
+            if folded in {".git", ".github"} or folded.startswith(".env"):
+                raise RuntimeError(f"Git gate refused sensitive path: {path}")
+
+
+def _parse_untracked(status: str) -> set[str]:
+    return {path for path in _status_paths_z(status) if path in set(_status_paths_z(status)) and path}
 
 
 def prepare_repository(root: Path, *, branch_name: str = "main", allow_dirty: bool = False) -> None:
-    status = _git(root, "status", "--porcelain=v1", "-uall")
-    if not allow_dirty and any(line and not line.startswith("?? ") for line in status.splitlines()):
+    status = _git(root, "status", "--porcelain=v1", "-z", "-uall")
+    _validate_sensitive_paths(_status_paths_z(status))
+    if not allow_dirty and any(
+        record and len(record) >= 3 and record[2] == " " and not record.startswith("?? ")
+        for record in status.split("\0") if record
+    ):
         raise RuntimeError("Git preflight refused: tracked working-tree changes exist before the iteration")
     _git(root, "fetch", "origin", "main")
     current_branch = _git(root, "branch", "--show-current")
     if branch_name != "main":
         if current_branch != branch_name:
             exists = subprocess.run(
-                ["git", "-C", str(root), "show-ref", "--verify", "--quiet", f"refs/heads/{branch_name}"],
-                env=_env(), check=False,
+                ["git", "show-ref", "--verify", "--quiet", f"refs/heads/{branch_name}"],
+                cwd=root, env=_env(root), check=False,
             ).returncode == 0
             if exists:
                 _git(root, "switch", branch_name)
@@ -110,10 +183,6 @@ def prepare_repository(root: Path, *, branch_name: str = "main", allow_dirty: bo
     raise RuntimeError("Git preflight refused: local repository has diverged from origin/main")
 
 
-def _parse_untracked(status: str) -> set[str]:
-    return {line[3:] for line in status.splitlines() if line.startswith("?? ")}
-
-
 def commit_and_push(
     root: Path,
     before: GitSnapshot,
@@ -121,21 +190,31 @@ def commit_and_push(
     *,
     branch_name: str = "main",
     allow_preexisting_tracked_changes: bool = False,
+    baseline_untracked: set[str] | None = None,
 ) -> str | None:
     assert_unchanged_before_ci(root, before)
     current = snapshot(root)
-    if not allow_preexisting_tracked_changes and any(line and not line.startswith("?? ") for line in before.status.splitlines()):
+    _validate_sensitive_paths(_status_paths_z(current.status))
+    if not allow_preexisting_tracked_changes and any(
+        record and len(record) >= 3 and record[2] == " " and not record.startswith("?? ")
+        for record in before.status.split("\0") if record
+    ):
         raise RuntimeError("Git gate refused: tracked working-tree changes existed before the iteration")
-    baseline_untracked = _parse_untracked(before.status)
-    new_untracked = _parse_untracked(current.status) - baseline_untracked
-    if new_untracked:
-        _git(root, "add", "--", *sorted(new_untracked))
-    _git(root, "add", "-u")
-    staged = _git(root, "diff", "--cached", "--name-only")
-    _validate_stage_paths(staged)
-    if not staged:
-        return None
-    _git(root, "commit", "-m", message)
-    sha = _git(root, "rev-parse", "HEAD")
-    _git(root, "push", "--porcelain", "origin", f"HEAD:refs/heads/{branch_name}")
-    return sha
+
+    baseline = baseline_untracked if baseline_untracked is not None else set(_untracked_paths(root))
+    new_untracked = set(current.untracked_paths) - baseline
+    try:
+        if new_untracked:
+            _git(root, "add", "--", *sorted(new_untracked))
+        _git(root, "add", "-u", "--")
+        staged = [path for path in _git(root, "diff", "--cached", "--name-only", "-z", "--").split("\0") if path]
+        _validate_sensitive_paths(staged)
+        if not staged:
+            return None
+        _git(root, "commit", "-m", message)
+        sha = _git(root, "rev-parse", "HEAD")
+        _git(root, "push", "--porcelain", "origin", f"HEAD:refs/heads/{branch_name}")
+        return sha
+    except Exception:
+        _git(root, "reset", "--mixed", "HEAD", "--", check=False)
+        raise
