@@ -107,8 +107,8 @@ def test_select_page_prefers_exact_project_url():
 
 
 def test_select_page_prefers_project_context_when_urls_are_not_exact(monkeypatch):
-    wrong = _FakePage("https://chatgpt.com/c/wrong")
-    project = _FakePage("https://chatgpt.com/c/project")
+    wrong = _FakeTab("https://chatgpt.com/c/wrong")
+    project = _FakeTab("https://chatgpt.com/c/project")
     context = _FakeContext(wrong, project)
 
     monkeypatch.setattr(
