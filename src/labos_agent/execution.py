@@ -104,7 +104,7 @@ def _git_option_allowed(subcommand: str, token: str) -> bool:
     return any(token.startswith(prefix) for prefix in _GIT_SAFE_OPTION_PREFIXES.get(subcommand, ()))
 
 
-def _validate_command(command: list[str]) -> None:
+def _validate_command(command: list[str], root: Path) -> None:
     if not isinstance(command, list) or not command or not all(isinstance(x, str) and x for x in command):
         raise ValueError("run_command requires a non-empty argv list")
     if Path(command[0]).name.casefold() != "git":
@@ -137,15 +137,34 @@ def _validate_command(command: list[str]) -> None:
 
         if subcommand in {"status", "ls-files"}:
             raise PermissionError(f"git path must be supplied after '--': {token}")
-        _validate_git_revision_token(subcommand, token)
+        _validate_git_revision_token(root, subcommand, token)
 
-def _validate_git_revision_token(subcommand: str, token: str) -> None:
+def _validate_git_revision_token(root: Path, subcommand: str, token: str) -> None:
     if subcommand not in {"diff", "log", "show"}:
         return
-    # Exclude Git revision:path forms and traversal-like tokens. Actual
-    # pathspecs must be supplied after -- and are validated separately.
-    if (":" in token or token.startswith("/") or token == ".." or token.startswith("../") or token.startswith("./") or ".." in token or ("/" in token and not token.startswith(("refs/", "origin/")))):
+    # Revision/path forms and traversal-like tokens are rejected. For
+    # slash-containing names, require Git itself to resolve the token as a
+    # commit-ish revision; actual pathspecs must be supplied after --.
+    if (
+        ":" in token
+        or token.startswith("/")
+        or token == ".."
+        or token.startswith("../")
+        or token.startswith("./")
+        or ".." in token
+    ):
         raise PermissionError(f"git revision/path token is not allowed: {token}")
+    if "/" in token:
+        result = subprocess.run(
+            ["git", "rev-parse", "--verify", "--end-of-options", f"{token}^{{commit}}"],
+            cwd=root,
+            env=_git_env(root),
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            raise PermissionError(f"git revision/path token is not a known revision: {token}")
 
 
 def _validate_command_paths(command: list[str], root: Path) -> None:
@@ -169,7 +188,7 @@ def execute_request(root: Path, request: dict, policy: ExecutionPolicy) -> Execu
         return ExecutionResult(action, True, 0, f"wrote {path}", "")
     if action == "run_command":
         command = request.get("command")
-        _validate_command(command)
+        _validate_command(command, root)
         _validate_command_paths(command, root)
         execution_cwd = _rooted_path(root, str(request.get("cwd", ".")), policy)
         try:

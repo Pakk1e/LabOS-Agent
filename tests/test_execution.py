@@ -194,3 +194,28 @@ def test_run_command_honors_relative_cwd(tmp_path: Path):
         policy(tmp_path),
     )
     assert result.success
+
+
+def test_git_read_surface_allows_slash_containing_revision_refs(tmp_path: Path, monkeypatch):
+    calls = []
+
+    class Result:
+        returncode = 0
+        stdout = "deadbeef"
+        stderr = ""
+
+    original_run = subprocess.run
+
+    def fake_run(command, **kwargs):
+        if command[:4] == ["git", "rev-parse", "--verify", "--end-of-options"]:
+            calls.append(command)
+            return Result()
+        return original_run(command, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    for command in (
+        ["git", "log", "feature/foo"],
+        ["git", "show", "refs/heads/feature/foo"],
+    ):
+        execute_request(tmp_path, {"action": "run_command", "command": command}, policy(tmp_path))
+    assert any("feature/foo" in command[-1] for command in calls)

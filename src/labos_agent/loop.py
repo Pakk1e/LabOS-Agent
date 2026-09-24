@@ -12,7 +12,7 @@ from .browser.chatgpt import ChatGPTPage
 from .browser.session import BrowserSession
 from .config import AppConfig
 from .ci.local import LocalCI
-from .git_gate import snapshot as git_snapshot, assert_unchanged_before_ci, commit_and_push, prepare_repository
+from .git_gate import GitPushError, snapshot as git_snapshot, assert_unchanged_before_ci, commit_and_push, prepare_repository
 from .execution import ExecutionPolicy, ExecutionResult, execute_request, format_execution_results, parse_execution_requests
 from .controller import Controller
 from .project import build_continuation_prompt, inspect_project
@@ -211,11 +211,17 @@ def _resolve_execution(chat, response: str, project, project_name: str, config: 
             save_response(project_name, response)
             continue
         if project.execution_enabled:
-            continue
+            raise RuntimeError("server execution is required but the assistant produced no executable request after the enforcement re-prompt")
         return response
     if project.execution_enabled:
         raise RuntimeError("server execution is required but the assistant produced no executable request")
     return response
+
+
+def _mark_push_failure_recovery(state: AgentState, before_git) -> None:
+    """Preserve rolled-back validated changes for the next recovery iteration."""
+    state.pending_ci_fix = True
+    state.pending_ci_baseline_untracked = list(before_git.untracked_paths)
 
 
 def _commit_recovery_baseline(state: AgentState) -> set[str] | None:
@@ -302,6 +308,11 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
                 if committed_sha:
                     state.last_action = f"committed and pushed {committed_sha}"
                     state.last_commit_sha = committed_sha
+            except GitPushError as exc:
+                _mark_push_failure_recovery(state, before_git)
+                controller.mark_failure(f"validated changes could not be pushed; recovery is pending: {exc}")
+                save_state(state_path(project_name), state)
+                return RunResult(state, response)
             except Exception as exc:
                 controller.mark_failure(f"validated changes could not be committed/pushed: {exc}")
                 save_state(state_path(project_name), state)
@@ -318,13 +329,14 @@ def run_once(config: AppConfig, project_name: str) -> RunResult:
     try:
         return _run_once_impl(config, project_name)
     except Exception as exc:
-        state = load_state(state_path(project_name))
-        if state is not None and state.state in {RunState.WORKING, RunState.STARTING, RunState.ROLLOVER}:
-            state.record_failure(str(exc))
-            state.consecutive_failures += 1
-            state.transition(RunState.ERROR, reason=str(exc))
-            save_state(state_path(project_name), state)
-            return RunResult(state)
+        with _project_lock(project_name):
+            state = load_state(state_path(project_name))
+            if state is not None and state.state in {RunState.WORKING, RunState.STARTING, RunState.ROLLOVER}:
+                state.record_failure(str(exc))
+                state.consecutive_failures += 1
+                state.transition(RunState.ERROR, reason=str(exc))
+                save_state(state_path(project_name), state)
+                return RunResult(state)
         raise
 
 
@@ -486,11 +498,12 @@ def run_loop(
     try:
         return _run_loop_impl(config, project_name, deadline=deadline, max_iterations=max_iterations, max_rollovers=max_rollovers)
     except Exception as exc:
-        state = load_state(state_path(project_name))
-        if state is not None and state.state in {RunState.WORKING, RunState.STARTING, RunState.ROLLOVER, RunState.WAITING}:
-            state.record_failure(str(exc))
-            state.consecutive_failures += 1
-            state.transition(RunState.ERROR, reason=str(exc))
-            save_state(state_path(project_name), state)
-            return RunResult(state)
+        with _project_lock(project_name):
+            state = load_state(state_path(project_name))
+            if state is not None and state.state in {RunState.WORKING, RunState.STARTING, RunState.ROLLOVER, RunState.WAITING}:
+                state.record_failure(str(exc))
+                state.consecutive_failures += 1
+                state.transition(RunState.ERROR, reason=str(exc))
+                save_state(state_path(project_name), state)
+                return RunResult(state)
         raise
