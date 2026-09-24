@@ -13,7 +13,7 @@ from .browser.session import BrowserSession
 from playwright.sync_api import Error as PlaywrightError
 from .config import AppConfig
 from .ci.local import LocalCI
-from .git_gate import GitPushError, snapshot as git_snapshot, assert_unchanged_before_ci, changed_paths, meaningful_change, commit_and_push, prepare_repository
+from .git_gate import GitPushError, snapshot as git_snapshot, assert_unchanged_before_ci, changed_paths, meaningful_change, commit_and_push, prepare_repository, can_clear_legacy_dirty_recovery
 from .execution import ExecutionPolicy, ExecutionResult, execute_request, format_execution_results, parse_execution_requests
 from .controller import Controller
 from .project import build_continuation_prompt, inspect_project
@@ -291,6 +291,18 @@ def _mark_push_failure_recovery(state: AgentState, before_git, current_git=None)
     _mark_dirty_recovery(state, before_git, current_git)
 
 
+def _migrate_legacy_dirty_recovery(state: AgentState, project_root: Path) -> None:
+    """Safely retire recovery metadata created before fingerprint persistence existed."""
+    if not state.pending_ci_fix or state.pending_ci_worktree_fingerprint is not None:
+        return
+    if not can_clear_legacy_dirty_recovery(project_root, set(state.pending_ci_baseline_untracked)):
+        return
+    state.pending_ci_fix = False
+    state.pending_ci_baseline_untracked = []
+    state.pending_ci_worktree_fingerprint = None
+    state.reason = "migrated stale recovery metadata with verified clean worktree"
+
+
 def _commit_recovery_baseline(state: AgentState) -> set[str] | None:
     if not state.pending_ci_fix:
         return None
@@ -333,6 +345,7 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
         controller.begin_iteration(datetime.now().astimezone())
         save_state(state_path(project_name), state)
 
+        _migrate_legacy_dirty_recovery(state, project.project_root)
         prepare_repository(
             project.project_root,
             branch_name=state.branch_name,
@@ -545,6 +558,7 @@ def _run_loop_impl(
 
                 before_git = None
                 try:
+                    _migrate_legacy_dirty_recovery(state, project.project_root)
                     prepare_repository(
                         project.project_root,
                         branch_name=state.branch_name,
