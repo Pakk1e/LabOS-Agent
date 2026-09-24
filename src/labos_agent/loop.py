@@ -203,6 +203,7 @@ def _prepare_state(project_name: str, *, recover: bool = False) -> AgentState:
         state.last_progress_result = None
         state.pending_ci_fix = False
         state.pending_ci_baseline_untracked = []
+        state.pending_ci_worktree_fingerprint = None
     if state.branch_name == "main":
         state.branch_name = f"agent/{state.run_id[:12]}"
     return state
@@ -266,15 +267,18 @@ def _resolve_execution(chat, response: str, project, project_name: str, config: 
     raise RuntimeError("server execution handshake did not complete within the maximum protocol rounds")
 
 
-def _mark_dirty_recovery(state: AgentState, before_git) -> None:
-    """Preserve dirty worktree changes for the next recovery iteration."""
+def _mark_dirty_recovery(state: AgentState, before_git, current_git=None) -> None:
+    """Persist an exact recovery fingerprint so only LabOS-owned dirty work can resume."""
     state.pending_ci_fix = True
     state.pending_ci_baseline_untracked = list(before_git.untracked_paths)
+    state.pending_ci_worktree_fingerprint = (
+        current_git.worktree_fingerprint if current_git is not None else None
+    )
 
 
-def _mark_push_failure_recovery(state: AgentState, before_git) -> None:
+def _mark_push_failure_recovery(state: AgentState, before_git, current_git=None) -> None:
     """Preserve rolled-back validated changes for the next recovery iteration."""
-    _mark_dirty_recovery(state, before_git)
+    _mark_dirty_recovery(state, before_git, current_git)
 
 
 def _commit_recovery_baseline(state: AgentState) -> set[str] | None:
@@ -386,6 +390,7 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
             if not ci_ok:
                 state.pending_ci_fix = True
                 state.pending_ci_baseline_untracked = list(before_git.untracked_paths)
+                state.pending_ci_worktree_fingerprint = after_git.worktree_fingerprint
                 controller.mark_failure("local CI failed")
                 save_state(state_path(project_name), state)
                 return RunResult(state, response)
@@ -417,7 +422,7 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
                 save_state(state_path(project_name), state)
                 return RunResult(state, response)
 
-            controller.mark_success()
+            controller.mark_success(continue_running=False)
             state.pending_ci_fix = False
             state.pending_ci_baseline_untracked = []
             save_state(state_path(project_name), state)
@@ -499,6 +504,7 @@ def _run_loop_impl(
                         project.project_root,
                         branch_name=state.branch_name,
                         allow_dirty=state.pending_ci_fix,
+                        expected_dirty_fingerprint=state.pending_ci_worktree_fingerprint,
                     )
                     snapshot = inspect_project(
                         project.project_root,
@@ -598,7 +604,7 @@ def _run_loop_impl(
                         continue
                     state.last_action = f"committed and pushed {committed_sha}"
                     state.last_commit_sha = committed_sha
-                    controller.mark_success()
+                    controller.mark_success(continue_running=True)
                     state.pending_ci_fix = False
                     state.pending_ci_baseline_untracked = []
                 except Exception as exc:
