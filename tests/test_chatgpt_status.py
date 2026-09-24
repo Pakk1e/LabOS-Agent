@@ -33,13 +33,18 @@ class _FakeComposer:
         self.pressed = value
 
 
+class _FakeLocatorSet:
+    def __init__(self, composer):
+        self.first = composer
+
+
 class _FakePage:
     def __init__(self, composer):
         self.composer = composer
         self.waits = 0
 
     def locator(self, selector):
-        return self.composer
+        return _FakeLocatorSet(self.composer)
 
     def wait_for_timeout(self, milliseconds):
         self.waits += milliseconds
