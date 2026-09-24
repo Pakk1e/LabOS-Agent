@@ -219,9 +219,11 @@ def test_push_failure_recovery_marks_pending_ci_fix():
         pending_ci_baseline_untracked=[],
     )
     before = type("Snapshot", (), {"untracked_paths": ("preexisting.txt",)})()
-    loop._mark_push_failure_recovery(state, before)
+    current = type("Snapshot", (), {"worktree_fingerprint": "recovery-fp"})()
+    loop._mark_push_failure_recovery(state, before, current)
     assert state.pending_ci_fix is True
     assert state.pending_ci_baseline_untracked == ["preexisting.txt"]
+    assert state.pending_ci_worktree_fingerprint == "recovery-fp"
 
 
 def test_run_once_outer_exception_records_failure_under_project_lock(tmp_path: Path, monkeypatch):
