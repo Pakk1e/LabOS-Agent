@@ -75,6 +75,8 @@ class FakeSession:
     def __exit__(self,*args): pass
 
 class FakeChat:
+    @staticmethod
+    def select_page(context, **kwargs): return context.pages[0]
     def __init__(self,page): pass
     def assert_ready(self): pass
     def project_context_present(self,name): return True
