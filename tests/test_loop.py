@@ -205,7 +205,7 @@ def test_required_execution_cannot_fall_back_to_prose(monkeypatch, tmp_path):
     try:
         loop._resolve_execution(chat, "initial prose", Project(), "test", Config())
     except RuntimeError as exc:
-        assert "server execution is required" in str(exc)
+        assert "server execution handshake did not complete" in str(exc)
     else:
         raise AssertionError("required execution was allowed to fall back to prose")
     assert chat.calls == 4
