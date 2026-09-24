@@ -151,7 +151,7 @@ class ChatGPTPage:
                         last_change=time.monotonic()
                     obs=observe(self.page)
                     input_ready = obs.input_available or not require_input_available
-                    if time.monotonic()-last_change>=quiet_seconds and not obs.generating and input_ready:
+                    if time.monotonic()-last_change>=quiet_seconds and input_ready:
                         return candidate
             time.sleep(poll_seconds)
         if not saw: raise TimeoutError("No new assistant response appeared before timeout")
