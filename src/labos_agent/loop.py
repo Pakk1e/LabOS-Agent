@@ -166,7 +166,7 @@ def _prepare_state(project_name: str, *, recover: bool = False) -> AgentState:
         run_id = uuid.uuid4().hex
         return AgentState(project=project_name, run_id=run_id, branch_name=f"agent/{run_id[:12]}")
 
-    if recover and state.state in {RunState.WORKING, RunState.STARTING, RunState.ROLLOVER, RunState.WAITING}:
+    if recover and state.state in {RunState.WORKING, RunState.STARTING, RunState.ROLLOVER, RunState.ITERATION_SUCCEEDED}:
         state.failure_history.append({
             "timestamp": datetime.now().astimezone().isoformat(),
             "iteration": state.iteration,
