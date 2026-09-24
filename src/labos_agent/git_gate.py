@@ -236,14 +236,12 @@ def commit_and_push(
     baseline = baseline_untracked if baseline_untracked is not None else set(before.untracked_paths)
     new_untracked = set(current.untracked_paths) - baseline
     current_branch = _git(root, "branch", "--show-current")
-    if current_branch != branch_name:
-        raise RuntimeError(
-            f"Git gate refused: current branch {current_branch!r} does not match expected branch {branch_name!r}"
-        )
-
-    committed = False
     try:
         _validate_sensitive_paths(_status_paths_z(current.status))
+        if current_branch != branch_name:
+            raise RuntimeError(
+                f"Git gate refused: current branch {current_branch!r} does not match expected branch {branch_name!r}"
+            )
         if new_untracked:
             _git(root, "add", "--", *sorted(new_untracked))
         _git(root, "add", "-u", "--")
