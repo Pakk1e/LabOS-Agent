@@ -61,10 +61,12 @@ def _execute_agent_requests(response: str, project) -> tuple[str, bool]:
     results = [execute_request(project.project_root, request, policy) for request in requests]
     return format_execution_results(results), True
 
-def _select_chat_page(context):
-    pages=[p for p in context.pages if p.url.startswith("https://chatgpt.com/")]
-    if not pages: raise RuntimeError("No ChatGPT page is attached")
-    return pages[0]
+def _select_chat_page(context, project):
+    return ChatGPTPage.select_page(
+        context,
+        project_name=project.project_name,
+        project_url=project.project_url,
+    )
 
 def _prepare_state(project_name:str)->AgentState:
     state=load_state(state_path(project_name))
@@ -134,7 +136,7 @@ def run_once(config:AppConfig,project_name:str)->RunResult:
     before_git = git_snapshot(project.project_root)
     with BrowserSession(config.browser.profile_dir,cdp_url=config.browser.cdp_url) as session:
         context=session.context
-        chat=ChatGPTPage(_select_chat_page(context)); chat.assert_ready()
+        chat=ChatGPTPage(_select_chat_page(context, project)); chat.assert_ready()
         if project.project_name and not chat.project_context_present(project.project_name):
             controller.block(f"ChatGPT Project context not detected: {project.project_name}")
             save_state(state_path(project_name),state); return RunResult(state)
