@@ -306,7 +306,7 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
 
             save_response(project_name, response)
             try:
-                response = _resolve_execution(chat, response, project, project_name, config)
+                response = _resolve_execution(chat, response, project, project_name, config, deadline=None)
                 save_response(project_name, response)
                 assert_unchanged_before_ci(project.project_root, before_git)
                 after_git = git_snapshot(project.project_root)
@@ -314,9 +314,18 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
                     _handle_no_progress(controller, state)
                     save_state(state_path(project_name), state)
                     return RunResult(state, response)
-                ci_ok = _run_local_ci(project, state)
+                ci_ok = _run_local_ci(project, state, deadline=deadline)
             except Exception as exc:
-                controller.mark_failure(str(exc))
+                try:
+                    after_git = git_snapshot(project.project_root)
+                    if after_git.worktree_fingerprint != before_git.worktree_fingerprint:
+                        _mark_dirty_recovery(state, before_git)
+                except Exception:
+                    pass
+                if isinstance(exc, DeadlineReached):
+                    controller.stop(str(exc))
+                else:
+                    controller.mark_failure(str(exc))
                 save_state(state_path(project_name), state)
                 return RunResult(state, response)
 
@@ -345,6 +354,7 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
                 save_state(state_path(project_name), state)
                 return RunResult(state, response)
             except Exception as exc:
+                _mark_dirty_recovery(state, before_git)
                 controller.mark_failure(f"validated changes could not be committed/pushed: {exc}")
                 save_state(state_path(project_name), state)
                 return RunResult(state, response)
@@ -437,7 +447,7 @@ def _run_loop_impl(
                         quiet_seconds=config.browser.quiet_seconds,
                     )
                     save_response(project_name, response)
-                    response = _resolve_execution(chat, response, project, project_name, config)
+                    response = _resolve_execution(chat, response, project, project_name, config, deadline=deadline)
                     assert_unchanged_before_ci(project.project_root, before_git)
                     after_git = git_snapshot(project.project_root)
                     if after_git.worktree_fingerprint == before_git.worktree_fingerprint:
