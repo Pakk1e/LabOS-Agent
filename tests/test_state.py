@@ -14,7 +14,7 @@ def test_terminal_transition_records_reason():
 
 def test_rollover_position_round_trip(tmp_path:Path):
     state=AgentState(project="weather",run_id="x",iteration=20,rollover_count=1,iteration_at_last_rollover=20)
-    state.transition(RunState.WAITING)
+    state.transition(RunState.ITERATION_SUCCEEDED)
     path=tmp_path/"state.json"; save_state(path,state); restored=load_state(path)
     assert restored is not None and restored.iteration_at_last_rollover==20
 
