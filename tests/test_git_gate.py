@@ -94,3 +94,17 @@ def test_prepare_repository_syncs_remote_ahead_and_rejects_unsafe_history(tmp_pa
         assert "diverged" in str(exc)
     else:
         raise AssertionError("diverged repository was not rejected")
+
+def test_snapshot_detects_untracked_files_with_spaces(tmp_path: Path):
+    subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True)
+    _git(tmp_path, "config", "user.name", "LabOS Test")
+    _git(tmp_path, "config", "user.email", "labos@example.invalid")
+    (tmp_path / "base.txt").write_text("base")
+    _git(tmp_path, "add", "base.txt")
+    _git(tmp_path, "commit", "-m", "base")
+    (tmp_path / "file with spaces.txt").write_text("new")
+    before = snapshot(tmp_path)
+    assert "file with spaces.txt" in before.status
+    (tmp_path / "another file.txt").write_text("newer")
+    after = snapshot(tmp_path)
+    assert after.worktree_fingerprint != before.worktree_fingerprint
