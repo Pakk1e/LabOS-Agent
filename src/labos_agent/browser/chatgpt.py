@@ -51,13 +51,17 @@ class ChatGPTPage:
         if len(pages)==1:
             return pages[0]
 
+        if project_url:
+            normalized_project_url=project_url.rstrip("/")
+            for page in pages:
+                if page.url.rstrip("/") == normalized_project_url:
+                    return page
+
         best_page=None
         best_score=-1
         for page in pages:
             score=0
             try:
-                if project_url and page.url.rstrip("/") == project_url.rstrip("/"):
-                    score += 100
                 chat=cls(page)
                 if project_name:
                     if chat.project_context_present(project_name):
