@@ -50,6 +50,10 @@ def _is_browser_connection_error(exc: Exception) -> bool:
         "websocket", "cdp", "transport", "playwright",
     ))
 
+def _is_max_length_error(exc: Exception) -> bool:
+    return "maximum length" in str(exc).casefold()
+
+
 
 def state_dir(project: str) -> Path:
     return Path("state") / project
@@ -548,6 +552,22 @@ def _run_loop_impl(
                                 _mark_dirty_recovery(state, before_git)
                         except Exception:
                             pass
+                    if _is_max_length_error(exc) and chat.status().rollover_required:
+                        try:
+                            controller.rollover()
+                            continuation, _, response = rollover_from_max_length(
+                                chat,
+                                project,
+                                state_dir(project_name),
+                                timeout_seconds=_remaining_timeout(deadline, config.browser.response_timeout_seconds),
+                                quiet_seconds=config.browser.quiet_seconds,
+                            )
+                            save_response(project_name, response)
+                            state.reason = "conversation reached hard maximum; rolled over and resumed"
+                            save_state(state_path(project_name), state)
+                            continue
+                        except Exception as rollover_exc:
+                            exc = rollover_exc
                     if _is_browser_connection_error(exc):
                         try:
                             context = session.reconnect()
