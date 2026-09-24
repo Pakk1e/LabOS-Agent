@@ -1,6 +1,7 @@
 """Conservative ChatGPT browser adapter."""
 from __future__ import annotations
 from dataclasses import dataclass
+import re
 import time
 from urllib.parse import urlparse
 from playwright.sync_api import Error as PlaywrightError, Page, TimeoutError as PlaywrightTimeoutError
