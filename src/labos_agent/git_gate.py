@@ -136,7 +136,44 @@ def _validate_sensitive_paths(paths: list[str]) -> None:
                 raise RuntimeError(f"Git gate refused sensitive path: {path}")
 
 
+def _discard_tracked_sensitive_changes(root: Path, status: str) -> None:
+    """
+    Recover from a sensitive tracked-path mutation without committing it.
+
+    The autonomous execution surface must never write these paths, but a
+    defense-in-depth failure should not permanently wedge the next iteration.
+    Only paths already tracked by HEAD are restored here; an untracked
+    sensitive file may be a pre-existing human secret and is therefore left
+    untouched and still causes the normal gate refusal.
+    """
+    sensitive = []
+    for path in _status_paths_z(status):
+        parts = Path(path).parts
+        if any(part.casefold() in {".git", ".github"} or part.casefold().startswith(".env") for part in parts):
+            sensitive.append(path)
+
+    if not sensitive:
+        return
+
+    tracked = []
+    for path in sorted(set(sensitive)):
+        result = subprocess.run(
+            ["git", "cat-file", "-e", f"HEAD:{path}"],
+            cwd=root,
+            env=_env(root),
+            check=False,
+            capture_output=True,
+        )
+        if result.returncode == 0:
+            tracked.append(path)
+
+    if tracked:
+        _git(root, "restore", "--staged", "--worktree", "--", *tracked, check=False)
+
+
 def prepare_repository(root: Path, *, branch_name: str = "main", allow_dirty: bool = False) -> None:
+    status = _git(root, "status", "--porcelain=v1", "-z", "-uall")
+    _discard_tracked_sensitive_changes(root, status)
     status = _git(root, "status", "--porcelain=v1", "-z", "-uall")
     _validate_sensitive_paths(_status_paths_z(status))
     if not allow_dirty and any(
