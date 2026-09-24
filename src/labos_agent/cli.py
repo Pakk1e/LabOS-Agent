@@ -113,8 +113,9 @@ def browser_project_diagnose_command(args):
     session=BrowserSession(Path("."))
     try:
         context=session.connect_over_cdp(args.cdp)
-        page=next((p for p in context.pages if p.url.startswith("https://chatgpt.com/")),None)
-        if page is None: raise RuntimeError("No ChatGPT page is attached")
+        pages=[p for p in context.pages if ChatGPTPage._is_chatgpt_url(p.url)]
+        if not pages: raise RuntimeError("No ChatGPT page is attached")
+        page=ChatGPTPage.select_page(context,project_name=args.project_name or None)
         print(f"URL: {page.url}")
         print(f"Title: {page.title()}")
         if args.project_name:
@@ -183,10 +184,7 @@ def browser_project_new_chat_test_command(args):
     session=BrowserSession(Path("."))
     try:
         context=session.connect_over_cdp(args.cdp)
-        pages=[p for p in context.pages if p.url.startswith("https://chatgpt.com/")]
-        page=pages[0] if pages else None
-        if page is None:
-            raise RuntimeError("No ChatGPT page is attached")
+        page=ChatGPTPage.select_page(context,project_name=args.project_name,project_url=args.project_url or None)
         chat=ChatGPTPage(page)
         chat.assert_ready()
         if not chat.project_context_present(args.project_name):
@@ -235,10 +233,7 @@ def browser_project_rollover_test_command(args):
     session=BrowserSession(Path("."))
     try:
         context=session.connect_over_cdp(args.cdp)
-        pages=[p for p in context.pages if p.url.startswith("https://chatgpt.com/")]
-        page=pages[0] if pages else None
-        if page is None:
-            raise RuntimeError("No ChatGPT page is attached")
+        page=ChatGPTPage.select_page(context,project_name=args.project_name)
         chat=ChatGPTPage(page)
         status=chat.status()
         if status.is_challenge:
@@ -278,10 +273,7 @@ def browser_project_handoff_rollover_test_command(args):
     session=BrowserSession(Path("."))
     try:
         context=session.connect_over_cdp(args.cdp)
-        pages=[p for p in context.pages if p.url.startswith("https://chatgpt.com/")]
-        page=pages[0] if pages else None
-        if page is None:
-            raise RuntimeError("No ChatGPT page is attached")
+        page=ChatGPTPage.select_page(context,project_name=args.project_name,project_url=args.project_url or None)
         chat=ChatGPTPage(page)
         status=chat.status()
         if status.is_challenge:
