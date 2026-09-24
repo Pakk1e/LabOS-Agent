@@ -136,10 +136,6 @@ def _validate_sensitive_paths(paths: list[str]) -> None:
                 raise RuntimeError(f"Git gate refused sensitive path: {path}")
 
 
-def _parse_untracked(status: str) -> set[str]:
-    return {path for path in _status_paths_z(status) if path in set(_status_paths_z(status)) and path}
-
-
 def prepare_repository(root: Path, *, branch_name: str = "main", allow_dirty: bool = False) -> None:
     status = _git(root, "status", "--porcelain=v1", "-z", "-uall")
     _validate_sensitive_paths(_status_paths_z(status))
@@ -194,7 +190,6 @@ def commit_and_push(
 ) -> str | None:
     assert_unchanged_before_ci(root, before)
     current = snapshot(root)
-    _validate_sensitive_paths(_status_paths_z(current.status))
     if not allow_preexisting_tracked_changes and any(
         record and len(record) >= 3 and record[2] == " " and not record.startswith("?? ")
         for record in before.status.split("\0") if record
@@ -204,6 +199,7 @@ def commit_and_push(
     baseline = baseline_untracked if baseline_untracked is not None else set(_untracked_paths(root))
     new_untracked = set(current.untracked_paths) - baseline
     try:
+        _validate_sensitive_paths(_status_paths_z(current.status))
         if new_untracked:
             _git(root, "add", "--", *sorted(new_untracked))
         _git(root, "add", "-u", "--")
