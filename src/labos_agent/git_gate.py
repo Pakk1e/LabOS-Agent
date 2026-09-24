@@ -43,12 +43,13 @@ def _git(root: Path, *args: str, check: bool = True) -> str:
 
 
 def snapshot(root: Path) -> GitSnapshot:
+    status = _git(root, "status", "--porcelain=v1", "-uall")
     diff = _git(root, "diff", "HEAD", "--binary", "--")
     return GitSnapshot(
         head=_git(root, "rev-parse", "HEAD"),
         upstream=_git(root, "rev-parse", "--verify", "@{upstream}"),
-        status=_git(root, "status", "--porcelain=v1", "-uall"),
-        worktree_fingerprint=hashlib.sha256(diff.encode()).hexdigest(),
+        status=status,
+        worktree_fingerprint=hashlib.sha256((status + "\0" + diff).encode()).hexdigest(),
     )
 
 
