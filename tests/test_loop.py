@@ -239,3 +239,10 @@ def test_run_once_outer_exception_records_failure_under_project_lock(tmp_path: P
     result = loop.run_once(config, "weather")
     assert acquired["value"] is True
     assert result.state.state == RunState.ERROR
+
+
+def test_run_loop_source_has_dedicated_git_push_recovery_path():
+    source = loop._run_loop_impl.__code__
+    names = set(source.co_names)
+    assert "GitPushError" in names
+    assert "_mark_push_failure_recovery" in names
