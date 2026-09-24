@@ -142,9 +142,25 @@ class ChatGPTPage:
             self.page.wait_for_timeout(250)
         else:
             raise RuntimeError(f"Project composer is not editable for: {project_name}")
-        composer.fill(message)
-        composer.press("Enter")
-        return self.wait_for_response(before=before,**kwargs)
+        deadline=time.monotonic()+15
+        last_error=None
+        while time.monotonic()<deadline:
+            composer=self.project_chat_composer(project_name)
+            if composer is None:
+                self.page.wait_for_timeout(250)
+                continue
+            try:
+                if not composer.is_editable():
+                    self.page.wait_for_timeout(250)
+                    continue
+                composer.fill(message,timeout=1000)
+                composer.press("Enter",timeout=1000)
+                return self.wait_for_response(before=before,**kwargs)
+            except (PlaywrightTimeoutError,PlaywrightError) as exc:
+                last_error=exc
+                self.page.wait_for_timeout(250)
+        detail=f": {last_error}" if last_error else ""
+        raise RuntimeError(f"Project composer remained unstable while sending for: {project_name}{detail}")
 
     def project_context_present(self,project_name:str)->bool:
         if not project_name: return True
