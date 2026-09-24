@@ -60,3 +60,32 @@ def test_parse_mixed_execution_requests():
         {"action": "read_file", "path": "a.txt"},
         {"action": "read_file", "path": "b.txt"},
     ]
+
+
+def test_git_global_option_cannot_bypass_controller_gate(tmp_path: Path):
+    with pytest.raises(PermissionError):
+        execute_request(
+            tmp_path,
+            {"action": "run_command", "command": ["git", "-C", str(tmp_path), "push"]},
+            policy(tmp_path),
+        )
+
+
+def test_shell_interpreters_are_blocked(tmp_path: Path):
+    with pytest.raises(PermissionError):
+        execute_request(
+            tmp_path,
+            {"action": "run_command", "command": ["bash", "-lc", "echo unsafe"]},
+            policy(tmp_path),
+        )
+
+
+def test_relative_allowed_root_is_normalized(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    policy_with_relative_root = ExecutionPolicy((Path("."),))
+    execute_request(
+        tmp_path,
+        {"action": "write_file", "path": "nested/file.txt", "content": "ok"},
+        policy_with_relative_root,
+    )
+    assert (tmp_path / "nested/file.txt").read_text() == "ok"
