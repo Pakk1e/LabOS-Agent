@@ -237,7 +237,7 @@ def _resolve_execution(chat, response: str, project, project_name: str, config: 
                 + tick * 3
                 + "labos-exec JSON block. Start with read_file on the relevant source file, or run_command with git status. "
                 "Wait for the real execution result and then continue the implementation. Do not answer with prose only.",
-                timeout_seconds=config.browser.response_timeout_seconds,
+                timeout_seconds=_remaining_timeout(deadline, config.browser.response_timeout_seconds),
                 quiet_seconds=config.browser.quiet_seconds,
             )
             save_response(project_name, response)
@@ -328,7 +328,7 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
                     _handle_no_progress(controller, state)
                     save_state(state_path(project_name), state)
                     return RunResult(state, response)
-                ci_ok = _run_local_ci(project, state, deadline=deadline)
+                ci_ok = _run_local_ci(project, state, deadline=None)
             except Exception as exc:
                 try:
                     after_git = git_snapshot(project.project_root)
@@ -486,7 +486,7 @@ def _run_loop_impl(
                         raise DeadlineReached("deadline reached before ChatGPT request")
                     response = chat.send_and_wait_for_response(
                         prompt,
-                        timeout_seconds=config.browser.response_timeout_seconds,
+                        timeout_seconds=_remaining_timeout(deadline, config.browser.response_timeout_seconds),
                         quiet_seconds=config.browser.quiet_seconds,
                     )
                     save_response(project_name, response)
@@ -507,7 +507,7 @@ def _run_loop_impl(
                         save_state(state_path(project_name), state)
                         return RunResult(state, response)
 
-                    ci_ok = _run_local_ci(project, state)
+                    ci_ok = _run_local_ci(project, state, deadline=deadline)
                     if not ci_ok:
                         state.pending_ci_fix = True
                         state.pending_ci_baseline_untracked = list(before_git.untracked_paths)
@@ -615,7 +615,7 @@ def _run_loop_impl(
                             chat,
                             project,
                             state_dir(project_name),
-                            timeout_seconds=config.browser.response_timeout_seconds,
+                            timeout_seconds=_remaining_timeout(deadline, config.browser.response_timeout_seconds),
                             quiet_seconds=config.browser.quiet_seconds,
                         )
                         save_response(project_name, resume_response)
