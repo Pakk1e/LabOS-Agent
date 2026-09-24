@@ -24,11 +24,15 @@ def _env(root: Path) -> dict[str, str]:
         "GIT_DIR": str(resolved / ".git"),
         "GIT_WORK_TREE": str(resolved),
         "GIT_CEILING_DIRECTORIES": str(resolved.parent),
-        "GIT_CONFIG_COUNT": "2",
+        "GIT_CONFIG_COUNT": "4",
         "GIT_CONFIG_KEY_0": "core.hooksPath",
         "GIT_CONFIG_VALUE_0": "/dev/null",
         "GIT_CONFIG_KEY_1": "core.fsmonitor",
         "GIT_CONFIG_VALUE_1": "false",
+        "GIT_CONFIG_KEY_2": "user.name",
+        "GIT_CONFIG_VALUE_2": "LabOS Agent",
+        "GIT_CONFIG_KEY_3": "user.email",
+        "GIT_CONFIG_VALUE_3": "labos-agent@localhost",
     })
     return env
 
@@ -53,6 +57,9 @@ def _untracked_paths(root: Path) -> tuple[str, ...]:
     return tuple(sorted(p for p in raw.split("\0") if p))
 
 
+UNTRACKED_FULL_HASH_LIMIT = 8 * 1024 * 1024
+
+
 def _untracked_fingerprint(root: Path, paths: tuple[str, ...]) -> bytes:
     digest = hashlib.sha256()
     for path in paths:
@@ -70,14 +77,27 @@ def _untracked_fingerprint(root: Path, paths: tuple[str, ...]) -> bytes:
                 digest.update(b"SYMLINK\0" + os.readlink(raw_path).encode("utf-8", "surrogateescape"))
             elif raw_path.is_file():
                 digest.update(b"FILE\0")
-                with raw_path.open("rb") as handle:
-                    while chunk := handle.read(1024 * 1024):
-                        digest.update(chunk)
+                if stat.st_size <= UNTRACKED_FULL_HASH_LIMIT:
+                    with raw_path.open("rb") as handle:
+                        while chunk := handle.read(1024 * 1024):
+                            digest.update(chunk)
+                else:
+                    digest.update(f"SIZE:{stat.st_size};MTIME:{stat.st_mtime_ns}".encode())
+                    with raw_path.open("rb") as handle:
+                        digest.update(handle.read(1024 * 1024))
+                        if stat.st_size > 1024 * 1024:
+                            handle.seek(max(0, stat.st_size - 1024 * 1024))
+                            digest.update(handle.read(1024 * 1024))
             else:
                 digest.update(f"OTHER:{stat.st_mode}".encode())
         except OSError as exc:
             digest.update(f"ERROR:{type(exc).__name__}:{exc}".encode())
     return digest.digest()
+
+
+def git_status(root: Path) -> str:
+    """Return sanitized controller-owned Git status for project inspection."""
+    return _git(root, "status", "--short")
 
 
 def snapshot(root: Path) -> GitSnapshot:
