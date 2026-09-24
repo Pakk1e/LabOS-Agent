@@ -102,27 +102,23 @@ def parse_execution_requests(response: str) -> list[dict]:
     marker = chr(96) * 3 + "labos-exec"
     decoder = json.JSONDecoder()
 
-    # Standard fenced execution blocks.
+    # Standard fenced execution blocks. Decode JSON directly so code fences
+    # inside a JSON string do not terminate the request prematurely.
     search_from = 0
     while True:
         marker_start = response.find(marker, search_from)
         if marker_start == -1:
             break
-
         payload_start = marker_start + len(marker)
-        closing = response.find(chr(96) * 3, payload_start)
-
-        if closing == -1:
-            break
-
-        payload = response[payload_start:closing]
-        value = json.loads(payload.strip())
-
+        try:
+            value, consumed = decoder.raw_decode(response[payload_start:].lstrip())
+        except json.JSONDecodeError:
+            search_from = payload_start
+            continue
         if not isinstance(value, dict):
             raise ValueError("labos-exec payload must be an object")
-
         requests.append((marker_start, value))
-        search_from = closing + 3
+        search_from = payload_start + consumed
 
     # Compact form emitted by some ChatGPT responses:
     # labos-exec{"action":"read_file",...}
