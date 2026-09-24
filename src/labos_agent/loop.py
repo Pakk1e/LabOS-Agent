@@ -587,22 +587,21 @@ def _run_loop_impl(
                                 _mark_dirty_recovery(state, before_git)
                         except Exception:
                             pass
-                    if _is_max_length_error(exc) and chat.status().rollover_required:
+                    if _is_max_length_error(exc):
                         try:
-                            controller.rollover()
-                            continuation, _, response = rollover_from_max_length(
-                                chat,
-                                project,
-                                state_dir(project_name),
-                                timeout_seconds=_remaining_timeout(deadline, config.browser.response_timeout_seconds),
-                                quiet_seconds=config.browser.quiet_seconds,
-                            )
-                            save_response(project_name, response)
-                            state.reason = "conversation reached hard maximum; rolled over and resumed"
-                            save_state(state_path(project_name), state)
-                            continue
-                        except Exception as rollover_exc:
-                            exc = rollover_exc
+                            rollover_required = chat.status().rollover_required
+                        except Exception:
+                            rollover_required = False
+                        if rollover_required:
+                            try:
+                                continuation, response = _rollover_and_process_resume(
+                                    chat, project, state, project_name, config,
+                                    deadline=deadline, max_rollovers=max_rollovers,
+                                )
+                                save_state(state_path(project_name), state)
+                                continue
+                            except Exception as rollover_exc:
+                                exc = rollover_exc
                     if _is_browser_connection_error(exc):
                         try:
                             context = session.reconnect()
@@ -633,9 +632,13 @@ def _run_loop_impl(
                     (state.iteration - state.iteration_at_last_rollover) >= project.rollover_after_iterations
                     or len(response) >= project.rollover_after_response_chars
                 ):
-                    controller.rollover()
-                    save_state(state_path(project_name), state)
+                    if state.rollover_count >= max_rollovers:
+                        controller.stop("maximum rollovers reached")
+                        save_state(state_path(project_name), state)
+                        return RunResult(state, response)
                     try:
+                        baseline = git_snapshot(project.project_root)
+                        controller.rollover()
                         continuation, _, resume_response = rollover(
                             chat,
                             project,
@@ -643,13 +646,17 @@ def _run_loop_impl(
                             timeout_seconds=_remaining_timeout(deadline, config.browser.response_timeout_seconds),
                             quiet_seconds=config.browser.quiet_seconds,
                         )
+                        resume_response = _resolve_execution(chat, resume_response, project, project_name, config, deadline=deadline)
                         save_response(project_name, resume_response)
+                        after = git_snapshot(project.project_root)
+                        if after.worktree_fingerprint != baseline.worktree_fingerprint:
+                            _mark_dirty_recovery(state, baseline)
                         state.reason = "conversation rolled over and resumed"
                         save_state(state_path(project_name), state)
                     except Exception as exc:
                         controller.block(f"conversation rollover failed: {exc}")
                         save_state(state_path(project_name), state)
-                        return RunResult(state)
+                        return RunResult(state, response)
 
 def run_loop(
     config: AppConfig,
