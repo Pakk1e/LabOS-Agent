@@ -149,7 +149,7 @@ def run_once(config:AppConfig,project_name:str)->RunResult:
     controller=Controller(state=state,limits=SafetyLimits(max_iterations=state.iteration+1))
     controller.start(); controller.begin_iteration(datetime.now().astimezone())
     save_state(state_path(project_name),state)
-    prepare_repository(project.project_root, branch_name=state.branch_name)
+    prepare_repository(project.project_root, branch_name=state.branch_name, allow_preexisting_tracked_changes=bool(state.last_ci_result and "success=False" in state.last_ci_result))
     snapshot=inspect_project(project.project_root,project.repository,project.state_files)
     before_git = git_snapshot(project.project_root)
     with BrowserSession(config.browser.profile_dir,cdp_url=config.browser.cdp_url) as session:
