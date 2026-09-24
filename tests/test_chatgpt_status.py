@@ -61,3 +61,22 @@ def test_send_message_waits_for_visible_composer_to_become_editable(monkeypatch)
     assert composer.filled == "hello"
     assert composer.pressed == "Enter"
     assert page.waits == 500
+
+
+def test_project_message_retries_transient_composer_instability(monkeypatch):
+    composer = _FakeComposer()
+    page = _FakePage(composer)
+    chat = ChatGPTPage(page)
+    monkeypatch.setattr(chat, "project_chat_composer", lambda project_name: composer)
+    monkeypatch.setattr(chat, "_assistant_texts", lambda: [])
+    monkeypatch.setattr(
+        chat,
+        "wait_for_response",
+        lambda **kwargs: "response",
+    )
+
+    result = chat.send_project_message_and_wait_for_response("Weather", "hello")
+
+    assert result == "response"
+    assert composer.filled == "hello"
+    assert composer.pressed == "Enter"
