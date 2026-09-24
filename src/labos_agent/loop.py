@@ -11,7 +11,7 @@ from .browser.session import BrowserSession
 from .config import AppConfig
 from .ci.local import LocalCI
 from .git_gate import snapshot as git_snapshot, assert_unchanged_before_ci, commit_and_push, prepare_repository
-from .execution import ExecutionPolicy, execute_request, format_execution_results, parse_execution_requests
+from .execution import ExecutionPolicy, ExecutionResult, execute_request, format_execution_results, parse_execution_requests
 from .controller import Controller
 from .project import build_continuation_prompt,inspect_project
 from .rollover import rollover
@@ -51,14 +51,28 @@ def _run_local_ci(project, state: AgentState) -> bool:
 def _execute_agent_requests(response: str, project) -> tuple[str, bool]:
     if not project.execution_enabled:
         return response, False
-    requests = parse_execution_requests(response)
+    try:
+        requests = parse_execution_requests(response)
+    except Exception as exc:
+        return f"LabOS server execution results:\n[1] action=protocol success=False exit_code=None\nstdout=\nstderr=invalid execution request: {exc}", True
     if not requests:
         return response, False
     policy = ExecutionPolicy(
         allowed_roots=tuple(path.resolve() for path in project.execution_allowed_roots),
         command_timeout_seconds=project.execution_command_timeout_seconds,
     )
-    results = [execute_request(project.project_root, request, policy) for request in requests]
+    results = []
+    for request in requests:
+        try:
+            results.append(execute_request(project.project_root, request, policy))
+        except Exception as exc:
+            results.append(ExecutionResult(
+                action=str(request.get("action", "unknown")),
+                success=False,
+                exit_code=None,
+                stdout="",
+                stderr=f"request rejected: {type(exc).__name__}: {exc}",
+            ))
     return format_execution_results(results), True
 
 def _select_chat_page(context, project):
@@ -71,12 +85,14 @@ def _select_chat_page(context, project):
 def _prepare_state(project_name:str)->AgentState:
     state=load_state(state_path(project_name))
     if state is None:
-        return AgentState(project=project_name,run_id=uuid.uuid4().hex)
+        run_id=uuid.uuid4().hex
+        return AgentState(project=project_name,run_id=run_id,branch_name=f"agent/{run_id[:12]}")
     if state.state in {RunState.STOPPED,RunState.COMPLETED,RunState.ERROR,RunState.BLOCKED}:
         # A new run is a new execution, not a recovery of the previous run.
         # Keep failure_history for diagnostics, but reset execution counters and
         # per-run results so stale failures cannot immediately stop the new run.
         state.run_id=uuid.uuid4().hex
+        state.branch_name=f"agent/{state.run_id[:12]}"
         state.state=RunState.IDLE
         state.iteration=0
         state.rollover_count=0
@@ -89,6 +105,8 @@ def _prepare_state(project_name:str)->AgentState:
         state.reason=None
         state.last_ci_result=None
         state.last_progress_result=None
+    if state.branch_name == "main":
+        state.branch_name=f"agent/{state.run_id[:12]}"
     return state
 
 def _handle_no_progress(controller:Controller, state:AgentState) -> bool:
@@ -131,7 +149,7 @@ def run_once(config:AppConfig,project_name:str)->RunResult:
     controller=Controller(state=state,limits=SafetyLimits(max_iterations=state.iteration+1))
     controller.start(); controller.begin_iteration(datetime.now().astimezone())
     save_state(state_path(project_name),state)
-    prepare_repository(project.project_root)
+    prepare_repository(project.project_root, branch_name=state.branch_name)
     snapshot=inspect_project(project.project_root,project.repository,project.state_files)
     before_git = git_snapshot(project.project_root)
     with BrowserSession(config.browser.profile_dir,cdp_url=config.browser.cdp_url) as session:
@@ -165,7 +183,7 @@ def run_once(config:AppConfig,project_name:str)->RunResult:
             save_state(state_path(project_name),state)
             return RunResult(state,response)
         try:
-            committed_sha = commit_and_push(project.project_root, before_git, f"lab-agent: validated iteration {state.iteration}")
+            committed_sha = commit_and_push(project.project_root, before_git, f"lab-agent: iteration {state.iteration}", branch_name=state.branch_name)
             if committed_sha:
                 state.last_action=f"committed and pushed {committed_sha}"
         except Exception as exc:
@@ -184,7 +202,7 @@ def run_loop(config:AppConfig,project_name:str,*,deadline:datetime|None,max_iter
     controller.start(); save_state(state_path(project_name),state)
     with BrowserSession(config.browser.profile_dir,cdp_url=config.browser.cdp_url) as session:
         context=session.context
-        chat=ChatGPTPage(_select_chat_page(context)); chat.assert_ready()
+        chat=ChatGPTPage(_select_chat_page(context, project)); chat.assert_ready()
         if project.project_name and not chat.project_context_present(project.project_name):
             controller.block(f"ChatGPT Project context not detected: {project.project_name}")
             save_state(state_path(project_name),state); return RunResult(state)
@@ -194,7 +212,7 @@ def run_loop(config:AppConfig,project_name:str,*,deadline:datetime|None,max_iter
             if state.state==RunState.STOPPED:
                 save_state(state_path(project_name),state); return RunResult(state)
             try:
-                prepare_repository(project.project_root)
+                prepare_repository(project.project_root, branch_name=state.branch_name, allow_dirty=bool(state.last_ci_result and "success=False" in state.last_ci_result))
                 snapshot=inspect_project(project.project_root,project.repository,project.state_files)
                 prompt=build_continuation_prompt(snapshot,continuation,state.last_ci_result,state.last_progress_result,project.execution_enabled)
                 before_git = git_snapshot(project.project_root)
@@ -210,6 +228,10 @@ def run_loop(config:AppConfig,project_name:str,*,deadline:datetime|None,max_iter
                         return RunResult(state,response)
                     time.sleep(2)
                     continue
+                if deadline is not None and datetime.now().astimezone() >= deadline:
+                    controller.stop("deadline reached before LocalCI")
+                    save_state(state_path(project_name),state)
+                    return RunResult(state,response)
                 ci_ok = _run_local_ci(project, state)
                 if not ci_ok:
                     controller.mark_failure("local CI failed")
@@ -218,7 +240,11 @@ def run_loop(config:AppConfig,project_name:str,*,deadline:datetime|None,max_iter
                         controller.stop("maximum consecutive failures reached")
                         save_state(state_path(project_name),state); return RunResult(state)
                     time.sleep(2); continue
-                committed_sha = commit_and_push(project.project_root, before_git, f"lab-agent: validated iteration {state.iteration}")
+                if deadline is not None and datetime.now().astimezone() >= deadline:
+                    controller.stop("deadline reached before commit")
+                    save_state(state_path(project_name),state)
+                    return RunResult(state,response)
+                committed_sha = commit_and_push(project.project_root, before_git, f"lab-agent: iteration {state.iteration}", branch_name=state.branch_name)
                 if committed_sha:
                     state.last_action=f"committed and pushed {committed_sha}"
                 controller.mark_success()
