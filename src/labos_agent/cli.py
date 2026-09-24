@@ -100,8 +100,11 @@ def run_command(args):
     if result.state.reason: print(f"Reason: {result.state.reason}")
     if result.state.state.value in {"ERROR", "BLOCKED"}:
         raise SystemExit(1)
-    if result.state.state.value == "STOPPED" and result.state.reason not in {"deadline reached", "maximum iterations reached", "maximum rollovers reached"}:
-        raise SystemExit(1)
+    if result.state.state.value == "STOPPED":
+        reason = result.state.reason or ""
+        intentional = (reason.startswith("deadline reached") or reason in {"maximum iterations reached", "maximum rollovers reached"})
+        if not intentional:
+            raise SystemExit(1)
 
 def continue_command(args):
     config=load_config(Path(args.config))
