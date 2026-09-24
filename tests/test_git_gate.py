@@ -108,3 +108,110 @@ def test_snapshot_detects_untracked_files_with_spaces(tmp_path: Path):
     (tmp_path / "another file.txt").write_text("newer")
     after = snapshot(tmp_path)
     assert after.worktree_fingerprint != before.worktree_fingerprint
+
+
+def test_commit_and_push_handles_filename_with_spaces(tmp_path: Path):
+    remote = tmp_path / "remote.git"
+    root = tmp_path / "repo"
+    subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True)
+    subprocess.run(["git", "init", str(root)], check=True, capture_output=True)
+    _git(root, "config", "user.name", "LabOS Test")
+    _git(root, "config", "user.email", "labos@example.invalid")
+    (root / "base.txt").write_text("base")
+    _git(root, "add", "base.txt")
+    _git(root, "commit", "-m", "base")
+    _git(root, "branch", "-M", "main")
+    _git(root, "remote", "add", "origin", str(remote))
+    _git(root, "push", "-u", "origin", "main")
+    before = snapshot(root)
+    (root / "file with spaces.txt").write_text("new")
+    sha = commit_and_push(root, before, "spaces")
+    assert sha == _git(root, "rev-parse", "HEAD")
+    assert "file with spaces.txt" in _git(root, "show", "--format=", "--name-only", "HEAD")
+
+
+def test_gate_refusal_unstages_sensitive_paths(tmp_path: Path):
+    remote = tmp_path / "remote.git"
+    root = tmp_path / "repo"
+    subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True)
+    subprocess.run(["git", "init", str(root)], check=True, capture_output=True)
+    _git(root, "config", "user.name", "LabOS Test")
+    _git(root, "config", "user.email", "labos@example.invalid")
+    (root / "base.txt").write_text("base")
+    _git(root, "add", "base.txt")
+    _git(root, "commit", "-m", "base")
+    _git(root, "branch", "-M", "main")
+    _git(root, "remote", "add", "origin", str(remote))
+    _git(root, "push", "-u", "origin", "main")
+    before = snapshot(root)
+    (root / ".env.example").write_text("SECRET=not-secret")
+    try:
+        commit_and_push(root, before, "reject sensitive")
+    except RuntimeError as exc:
+        assert "sensitive path" in str(exc)
+    else:
+        raise AssertionError("sensitive path was not rejected")
+    assert _git(root, "diff", "--cached", "--name-only") == ""
+
+
+def test_nested_sensitive_paths_are_rejected_before_staging(tmp_path: Path):
+    subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True)
+    _git(tmp_path, "config", "user.name", "LabOS Test")
+    _git(tmp_path, "config", "user.email", "labos@example.invalid")
+    (tmp_path / "base.txt").write_text("base")
+    _git(tmp_path, "add", "base.txt")
+    _git(tmp_path, "commit", "-m", "base")
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / ".github").mkdir()
+    (tmp_path / "sub" / ".github" / "é.yml").write_text("blocked")
+    before = snapshot(tmp_path)
+    try:
+        commit_and_push(tmp_path, before, "reject nested")
+    except RuntimeError as exc:
+        assert "sensitive path" in str(exc)
+    else:
+        raise AssertionError("nested sensitive path was not rejected")
+    assert _git(tmp_path, "diff", "--cached", "--name-only") == ""
+
+
+def test_recovery_commit_includes_untracked_file_from_failed_iteration(tmp_path: Path):
+    remote = tmp_path / "remote.git"
+    root = tmp_path / "repo"
+    subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True)
+    subprocess.run(["git", "init", str(root)], check=True, capture_output=True)
+    _git(root, "config", "user.name", "LabOS Test")
+    _git(root, "config", "user.email", "labos@example.invalid")
+    (root / "base.txt").write_text("base")
+    _git(root, "add", "base.txt")
+    _git(root, "commit", "-m", "base")
+    _git(root, "branch", "-M", "main")
+    _git(root, "remote", "add", "origin", str(remote))
+    _git(root, "push", "-u", "origin", "main")
+    before_failed_iteration = snapshot(root)
+    (root / "a.txt").write_text("tracked fix")
+    (root / "feature.txt").write_text("new fix")
+    recovery_snapshot = snapshot(root)
+    (root / "feature.txt").write_text("new fix updated")
+    sha = commit_and_push(
+        root,
+        recovery_snapshot,
+        "recovery",
+        baseline_untracked=set(before_failed_iteration.untracked_paths),
+    )
+    changed = _git(root, "show", "--format=", "--name-only", sha)
+    assert "a.txt" in changed
+    assert "feature.txt" in changed
+
+
+def test_untracked_content_changes_change_fingerprint(tmp_path: Path):
+    subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True)
+    _git(tmp_path, "config", "user.name", "LabOS Test")
+    _git(tmp_path, "config", "user.email", "labos@example.invalid")
+    (tmp_path / "base.txt").write_text("base")
+    _git(tmp_path, "add", "base.txt")
+    _git(tmp_path, "commit", "-m", "base")
+    (tmp_path / "new.txt").write_text("one")
+    before = snapshot(tmp_path)
+    (tmp_path / "new.txt").write_text("two")
+    after = snapshot(tmp_path)
+    assert after.worktree_fingerprint != before.worktree_fingerprint
