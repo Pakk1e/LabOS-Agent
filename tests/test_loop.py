@@ -307,7 +307,7 @@ def test_remaining_timeout_rejects_expired_deadline():
 def test_long_run_recovery_hooks_are_present():
     source = loop._run_loop_impl.__code__
     names = set(source.co_names)
-    assert "rollover_from_max_length" in names
+    assert "_rollover_and_process_resume" in names
     assert "_is_browser_connection_error" in names
     assert "_mark_dirty_recovery" in names
     assert "reconnect" in names
