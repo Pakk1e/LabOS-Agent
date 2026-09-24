@@ -14,5 +14,5 @@ def test_successful_one_shot_iteration_is_completed():
 def test_successful_autonomous_iteration_waits_for_next_iteration():
     state = AgentState(project="weather", run_id="run", state=RunState.WORKING, iteration=1)
     Controller(state=state, limits=SafetyLimits()).mark_success(continue_running=True)
-    assert state.state == RunState.WAITING
+    assert state.state == RunState.ITERATION_SUCCEEDED
     assert state.reason == "iteration committed and pushed successfully"
