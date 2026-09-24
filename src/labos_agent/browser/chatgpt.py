@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import time
 from urllib.parse import urlparse
-from playwright.sync_api import Page
+from playwright.sync_api import Error as PlaywrightError, Page, TimeoutError as PlaywrightTimeoutError
 from .detection import observe, rollover_required
 
 @dataclass(frozen=True)
@@ -55,13 +55,43 @@ class ChatGPTPage:
         try: self.assert_ready(); return True
         except RuntimeError: return False
 
+    def _wait_for_editable_input(self,timeout_seconds:float=15.0):
+        deadline=time.monotonic()+timeout_seconds
+        while time.monotonic()<deadline:
+            box=self._find_input()
+            if box is not None:
+                try:
+                    if box.is_editable():
+                        return box
+                except Exception:
+                    pass
+            self.page.wait_for_timeout(250)
+        raise RuntimeError("ChatGPT message input did not become editable")
+
     def send_message(self,message:str)->None:
         if not message.strip(): raise ValueError("message must not be empty")
         self.assert_ready()
-        box=self._find_input()
-        if box is None: raise RuntimeError("ChatGPT message input was not found")
-        box.fill(message)
-        box.press("Enter")
+        deadline=time.monotonic()+15
+        last_error=None
+        while time.monotonic()<deadline:
+            box=self._find_input()
+            if box is None:
+                self.page.wait_for_timeout(250)
+                continue
+            try:
+                if not box.is_editable():
+                    self.page.wait_for_timeout(250)
+                    continue
+                # Keep the action timeout short so a transient ChatGPT
+                # re-render cannot consume the full Playwright default.
+                box.fill(message,timeout=1000)
+                box.press("Enter",timeout=1000)
+                return
+            except (PlaywrightTimeoutError,PlaywrightError) as exc:
+                last_error=exc
+                self.page.wait_for_timeout(250)
+        detail=f": {last_error}" if last_error else ""
+        raise RuntimeError(f"ChatGPT message input remained unstable while sending{detail}")
 
     def _assistant_texts(self)->list[str]:
         loc=self.page.locator('[data-message-author-role="assistant"]')
