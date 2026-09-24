@@ -2,7 +2,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
-import subprocess
+from .git_gate import git_status
 
 MAX_STATE_FILE_CHARS = 24000
 
@@ -28,8 +28,7 @@ def inspect_project(root: Path, repository: str, state_files: tuple[str,...]) ->
                     "inspect the repository file directly if more context is required.]"
                 )
             files[name]=content
-    result=subprocess.run(["git","-C",str(root),"status","--short"],check=True,capture_output=True,text=True,timeout=20)
-    return ProjectSnapshot(root,repository,files,result.stdout.strip())
+    return ProjectSnapshot(root,repository,files,git_status(root))
 
 def build_continuation_prompt(snapshot: ProjectSnapshot, message: str, ci_feedback: str|None = None, progress_feedback: str|None = None, execution_enabled: bool = False) -> str:
     parts=[message,"","LabOS-Agent controller context:",
