@@ -246,3 +246,39 @@ def test_run_loop_source_has_dedicated_git_push_recovery_path():
     names = set(source.co_names)
     assert "GitPushError" in names
     assert "_mark_push_failure_recovery" in names
+
+
+def test_resolve_execution_returns_after_execution_round_completes(monkeypatch, tmp_path):
+    class Project:
+        execution_enabled = True
+
+    class Config:
+        browser = BrowserConfig(profile_dir=tmp_path, response_timeout_seconds=1, quiet_seconds=0)
+
+    class Chat:
+        def __init__(self):
+            self.calls = 0
+
+        def send_and_wait_for_response(self, *args, **kwargs):
+            self.calls += 1
+            return "next execution request" if self.calls == 1 else "final response"
+
+    responses = iter([
+        ("feedback 1", True),
+        ("feedback 2", True),
+        ("final response", False),
+    ])
+    monkeypatch.setattr(loop, "_execute_agent_requests", lambda response, project: next(responses))
+    monkeypatch.setattr(loop, "save_response", lambda *args, **kwargs: None)
+
+    chat = Chat()
+    result = loop._resolve_execution(chat, "initial execution request", Project(), "test", Config())
+
+    assert result == "final response"
+    assert chat.calls == 2
+
+
+def test_run_loop_source_marks_deadline_dirty_worktree_for_recovery():
+    source = loop._run_loop_impl.__code__
+    names = set(source.co_names)
+    assert "_mark_dirty_recovery" in names
