@@ -304,19 +304,19 @@ def _migrate_legacy_dirty_recovery(state: AgentState, project_root: Path) -> Non
         return
 
     # Legacy states may contain validated tracked changes but no persisted
-    # fingerprint. Adopt them only when the previous iteration started from
-    # the current HEAD and its LocalCI result was successful. Unexpected
-    # untracked paths still block adoption.
+    # fingerprint. The legacy pending_ci_fix flag was written by the agent
+    # after it observed a dirty tree; require that evidence plus a successful
+    # LocalCI result and an unchanged set of baseline untracked paths before
+    # adopting the current fingerprint. Do not infer ownership from the
+    # current tree alone, and never discard the tracked changes.
     current = git_snapshot(project_root)
     if (
-        state.iteration_started_sha
-        and current.head == state.iteration_started_sha
-        and "success=True" in (state.last_ci_result or "")
+        "success=True" in (state.last_ci_result or "")
         and set(current.untracked_paths).issubset(baseline_untracked)
         and current.status
     ):
         state.pending_ci_worktree_fingerprint = current.worktree_fingerprint
-        state.reason = "adopted legacy validated worktree using prior iteration evidence"
+        state.reason = "adopted legacy validated worktree using prior CI evidence"
 
 
 def _commit_recovery_baseline(state: AgentState) -> set[str] | None:
