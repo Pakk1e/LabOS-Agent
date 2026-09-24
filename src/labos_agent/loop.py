@@ -265,6 +265,29 @@ def _commit_recovery_baseline(state: AgentState) -> set[str] | None:
     return set(state.pending_ci_baseline_untracked)
 
 
+def _rollover_and_process_resume(
+    chat, project, state: AgentState, project_name: str, config: AppConfig,
+    *, deadline: datetime | None, max_rollovers: int,
+) -> tuple[str, str]:
+    if state.rollover_count >= max_rollovers:
+        raise RuntimeError("maximum rollovers reached")
+    baseline = git_snapshot(project.project_root)
+    state.rollover_count += 1
+    state.iteration_at_last_rollover = state.iteration
+    state.transition(RunState.ROLLOVER, reason="conversation rollover requested")
+    continuation, _, resume_response = rollover_from_max_length(
+        chat, project, state_dir(project_name),
+        timeout_seconds=_remaining_timeout(deadline, config.browser.response_timeout_seconds),
+        quiet_seconds=config.browser.quiet_seconds,
+    )
+    response = _resolve_execution(chat, resume_response, project, project_name, config, deadline=deadline)
+    save_response(project_name, response)
+    after = git_snapshot(project.project_root)
+    if after.worktree_fingerprint != baseline.worktree_fingerprint:
+        _mark_dirty_recovery(state, baseline)
+    state.reason = "conversation rolled over and resumed"
+    return continuation, response
+
 def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
     project = config.projects.get(project_name)
     if project is None:
@@ -428,13 +451,9 @@ def _run_loop_impl(
             context = session.context
             chat = ChatGPTPage(_select_chat_page(context, project))
             if chat.status().rollover_required:
-                controller.rollover()
-                continuation, _, resume_response = rollover_from_max_length(
-                    chat,
-                    project,
-                    state_dir(project_name),
-                    timeout_seconds=_remaining_timeout(deadline, config.browser.response_timeout_seconds),
-                    quiet_seconds=config.browser.quiet_seconds,
+                continuation, resume_response = _rollover_and_process_resume(
+                    chat, project, state, project_name, config,
+                    deadline=deadline, max_rollovers=max_rollovers,
                 )
                 save_response(project_name, resume_response)
                 save_state(state_path(project_name), state)
@@ -473,17 +492,10 @@ def _run_loop_impl(
                     )
                     before_git = git_snapshot(project.project_root)
                     if chat.status().rollover_required:
-                        controller.rollover()
-                        save_state(state_path(project_name), state)
-                        continuation, _, response = rollover_from_max_length(
-                            chat,
-                            project,
-                            state_dir(project_name),
-                            timeout_seconds=_remaining_timeout(deadline, config.browser.response_timeout_seconds),
-                            quiet_seconds=config.browser.quiet_seconds,
+                        continuation, response = _rollover_and_process_resume(
+                            chat, project, state, project_name, config,
+                            deadline=deadline, max_rollovers=max_rollovers,
                         )
-                        save_response(project_name, response)
-                        state.reason = "conversation reached hard maximum; rolled over and resumed"
                         save_state(state_path(project_name), state)
                         continue
                     if deadline is not None and datetime.now().astimezone() >= deadline:
