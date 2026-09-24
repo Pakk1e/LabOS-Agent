@@ -450,6 +450,7 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
                 if not remote_ci.success:
                     state.pending_remote_ci_fix = True
                     state.pending_remote_ci_sha = committed_sha
+                    state.last_ci_result = (state.last_ci_result or "") + "\n" + state.pending_remote_ci_result
                     controller.mark_failure(f"GitHub Actions failed for exact SHA {committed_sha}: {remote_ci.summary}")
                     save_state(state_path(project_name), state)
                     return RunResult(state, response)
@@ -600,15 +601,16 @@ def _run_loop_impl(
                         time.sleep(2)
                         continue
 
-                    controller.ci_passed()
+                    controller.ci_running()
                     if deadline is not None and datetime.now().astimezone() >= deadline:
                         _mark_dirty_recovery(state, before_git)
                         controller.stop("deadline reached before LocalCI")
                         save_state(state_path(project_name), state)
                         return RunResult(state, response)
 
-                    controller.ci_running()
                     ci_ok = _run_local_ci(project, state, deadline=deadline)
+                    if ci_ok:
+                        controller.ci_passed()
                     if not ci_ok:
                         state.pending_ci_fix = True
                         state.pending_ci_baseline_untracked = list(before_git.untracked_paths)
