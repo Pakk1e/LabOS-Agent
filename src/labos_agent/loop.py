@@ -414,12 +414,14 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
                 save_response(project_name, response)
                 assert_unchanged_before_ci(project.project_root, before_git)
                 after_git = git_snapshot(project.project_root)
-                if after_git.worktree_fingerprint == before_git.worktree_fingerprint:
+                recovery_pending = state.pending_ci_fix
+                if after_git.worktree_fingerprint == before_git.worktree_fingerprint and not recovery_pending:
                     _handle_no_progress(controller, state)
                     save_state(state_path(project_name), state)
                     return RunResult(state, response)
                 paths = changed_paths(project.project_root, before_git)
-                controller.progress_verified(meaningful=meaningful_change(paths))
+                meaningful = meaningful_change(paths) or recovery_pending
+                controller.progress_verified(meaningful=meaningful)
                 if not state.meaningful_progress:
                     _handle_no_progress(controller, state)
                     save_state(state_path(project_name), state)
