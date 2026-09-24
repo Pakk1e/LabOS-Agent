@@ -216,16 +216,22 @@ def _handle_no_progress(controller: Controller, state: AgentState) -> bool:
     return False
 
 
+def _response_declares_done(response: str) -> bool:
+    return "LABOS_DONE" in response
+
+
 def _resolve_execution(chat, response: str, project, project_name: str, config: AppConfig, deadline: datetime | None = None) -> str:
     had_execution = False
     for attempt in range(4):
         if deadline is not None and datetime.now().astimezone() >= deadline:
             raise DeadlineReached("deadline reached before server execution")
+
         execution_feedback, requested_execution = _execute_agent_requests(response, project)
         if requested_execution:
             had_execution = True
             response = chat.send_and_wait_for_response(
-                "The LabOS controller executed your requested server operations. Use these real results and continue the implementation; do not claim execution that is not shown here.\n\n"
+                "The LabOS controller executed your requested server operations. Use these real results and continue the implementation; do not claim execution that is not shown here. "
+                "If more implementation is required, issue another labos-exec request. If the implementation is complete, end your response with LABOS_DONE.\n\n"
                 + execution_feedback,
                 timeout_seconds=_remaining_timeout(deadline, config.browser.response_timeout_seconds),
                 quiet_seconds=config.browser.quiet_seconds,
@@ -233,23 +239,31 @@ def _resolve_execution(chat, response: str, project, project_name: str, config: 
             )
             save_response(project_name, response)
             continue
-        if attempt == 0 and project.execution_enabled:
-            tick = chr(96)
-            response = chat.send_and_wait_for_response(
-                "STOP. You have not produced a server execution request. You do not have direct access to the LabOS project filesystem. "
-                "Before doing anything else, issue at least one controlled server operation using a fenced "
-                + tick * 3
-                + "labos-exec JSON block. Start with read_file on the relevant source file, or run_command with git status. "
-                "Wait for the real execution result and then continue the implementation. Do not answer with prose only.",
-                timeout_seconds=_remaining_timeout(deadline, config.browser.response_timeout_seconds),
-                quiet_seconds=config.browser.quiet_seconds,
+
+        if not project.execution_enabled:
+            return response
+
+        if _response_declares_done(response):
+            if had_execution:
+                return response
+            raise RuntimeError(
+                "server execution is required but the assistant declared LABOS_DONE without producing an execution request"
             )
-            save_response(project_name, response)
-            continue
-        if project.execution_enabled and not had_execution:
-            raise RuntimeError("server execution is required but the assistant produced no executable request after the enforcement re-prompt")
-        return response
-    return response
+
+        tick = chr(96)
+        response = chat.send_and_wait_for_response(
+            "STOP. Your response did not contain a server execution request or the required LABOS_DONE completion marker. "
+            "Do not describe an intended change without performing it. You do not have direct access to the LabOS controller filesystem. "
+            "Before doing anything else, issue at least one controlled server operation using a fenced "
+            + tick * 3
+            + "labos-exec JSON block. Use write_file for source/documentation changes, or read_file/run_command for inspection. "
+            "Wait for the real execution result and then continue. If no further change is needed, issue a final inspection request and end with LABOS_DONE.",
+            timeout_seconds=_remaining_timeout(deadline, config.browser.response_timeout_seconds),
+            quiet_seconds=config.browser.quiet_seconds,
+        )
+        save_response(project_name, response)
+
+    raise RuntimeError("server execution handshake did not complete within the maximum protocol rounds")
 
 
 def _mark_dirty_recovery(state: AgentState, before_git) -> None:
