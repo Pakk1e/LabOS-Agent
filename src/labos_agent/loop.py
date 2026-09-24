@@ -797,7 +797,7 @@ def run_loop(
     except Exception as exc:
         with _project_lock(project_name):
             state = load_state(state_path(project_name))
-            if state is not None and state.state in {RunState.WORKING, RunState.STARTING, RunState.ROLLOVER, RunState.WAITING}:
+            if state is not None and state.state in {RunState.WORKING, RunState.STARTING, RunState.ROLLOVER, RunState.ITERATION_SUCCEEDED}:
                 state.record_failure(str(exc))
                 state.consecutive_failures += 1
                 state.transition(RunState.ERROR, reason=str(exc))
