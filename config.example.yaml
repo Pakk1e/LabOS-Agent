@@ -2,17 +2,17 @@
 
 browser:
   cdp_url: "http://127.0.0.1:9222"
-  profile_dir: "/home/park-pro/LabOS-Agent/browser-profile"
+  profile_dir: "/path/to/LabOS-Agent/browser-profile"
   response_timeout_seconds: 300
   quiet_seconds: 3
 
 projects:
   weather:
     repository: "Pakk1e/VilaPro-Weather"
-    project_root: "/home/park-pro/VilaPro-Weather"
+    project_root: "/path/to/VilaPro-Weather"
     continuation_message: "Continue Weather"
     project_name: "Vadovsky Tech — Weather"
-    project_url: "https://chatgpt.com/g/g-p-6ab2a81b723081918c9e1052acf0af9c-vadovsky-tech-weather/project"
+    project_url: "https://chatgpt.com/g/g-p-example/vadovsky-tech-weather/project"
     new_chat_selector: ""
     execution:
       enabled: false
