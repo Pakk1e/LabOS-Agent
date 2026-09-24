@@ -19,7 +19,6 @@ class ExecutionResult:
     stdout: str
     stderr: str
 
-_BLOCKED_COMMANDS = {"git push","git commit","git reset","git checkout","git merge","git rebase","rm","shutdown","reboot","poweroff","mkfs","mount","umount","systemctl"}
 
 def _rooted_path(root: Path, requested: str, policy: ExecutionPolicy) -> Path:
     candidate = (root / requested).resolve()
@@ -73,9 +72,9 @@ _GIT_SAFE_OPTION_PREFIXES = {
     "show": ("--format=", "--pretty=", "--abbrev=", "--encoding="),
 }
 
-def _git_env(root: Path) -> dict[str, str]:
+def _git_env(repo_root: Path) -> dict[str, str]:
     import os
-    resolved = root.expanduser().resolve()
+    resolved = repo_root.expanduser().resolve()
     env = os.environ.copy()
     for key in ("GIT_EXTERNAL_DIFF", "GIT_DIFF_OPTS", "GIT_SSH_COMMAND", "GIT_PROXY_COMMAND"):
         env.pop(key, None)
@@ -172,9 +171,9 @@ def execute_request(root: Path, request: dict, policy: ExecutionPolicy) -> Execu
         command = request.get("command")
         _validate_command(command)
         _validate_command_paths(command, root)
-        _rooted_path(root, str(request.get("cwd", ".")), policy)
+        execution_cwd = _rooted_path(root, str(request.get("cwd", ".")), policy)
         try:
-            completed = subprocess.run(command, cwd=root, stdin=subprocess.DEVNULL, capture_output=True,
+            completed = subprocess.run(command, cwd=execution_cwd, stdin=subprocess.DEVNULL, capture_output=True,
                                       text=True, timeout=policy.command_timeout_seconds, check=False,
                                       env=_git_env(root))
         except subprocess.TimeoutExpired as exc:

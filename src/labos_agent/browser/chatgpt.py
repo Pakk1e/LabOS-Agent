@@ -1,6 +1,7 @@
 """Conservative ChatGPT browser adapter."""
 from __future__ import annotations
 from dataclasses import dataclass
+import re
 import time
 from urllib.parse import urlparse
 from playwright.sync_api import Error as PlaywrightError, Page, TimeoutError as PlaywrightTimeoutError
@@ -151,7 +152,7 @@ class ChatGPTPage:
                         last_change=time.monotonic()
                     obs=observe(self.page)
                     input_ready = obs.input_available or not require_input_available
-                    if time.monotonic()-last_change>=quiet_seconds and not obs.generating and input_ready:
+                    if time.monotonic()-last_change>=quiet_seconds and input_ready:
                         return candidate
             time.sleep(poll_seconds)
         if not saw: raise TimeoutError("No new assistant response appeared before timeout")
@@ -200,9 +201,15 @@ class ChatGPTPage:
 
     def project_context_present(self,project_name:str)->bool:
         if not project_name: return True
-        try: body=self.page.locator("body").inner_text(timeout=3000)
-        except Exception: return False
-        return project_name.casefold() in body.casefold()
+        try:
+            body=self.page.locator("body").inner_text(timeout=3000)
+        except Exception:
+            return False
+        target=project_name.casefold().strip()
+        if not target:
+            return True
+        escaped=re.escape(target)
+        return re.search(r"(?<![\w])" + escaped + r"(?![\w])", body.casefold()) is not None
 
     def project_chat_composer(self,project_name:str):
         """Return the visible Project-home composer, identified by its rendered placeholder."""

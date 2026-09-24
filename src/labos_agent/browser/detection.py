@@ -72,7 +72,8 @@ def observe(page: Page) -> ResponseObservation:
                 textbox=box.get_attribute("role") == "textbox"
                 hidden=box.is_hidden()
                 disabled=box.is_disabled() if tag == "textarea" else False
-                available=not hidden and not disabled and (
+                editable=box.is_editable() if tag != "textarea" else True
+                available=not hidden and not disabled and editable and (
                     tag == "textarea" or contenteditable == "true" or textbox
                 )
     except Exception:
