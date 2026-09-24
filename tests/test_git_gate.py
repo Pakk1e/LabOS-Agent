@@ -339,3 +339,26 @@ def test_prepare_repository_rejects_changed_pending_recovery_worktree(tmp_path: 
         assert "changed outside LabOS" in str(exc)
     else:
         raise AssertionError("changed recovery worktree was accepted")
+
+
+def test_can_clear_legacy_dirty_recovery_only_for_unchanged_baseline_untracked(tmp_path: Path):
+    from labos_agent.git_gate import can_clear_legacy_dirty_recovery
+
+    subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True)
+    _git(tmp_path, "config", "user.name", "LabOS Test")
+    _git(tmp_path, "config", "user.email", "labos@example.invalid")
+    (tmp_path / "base.txt").write_text("base")
+    _git(tmp_path, "add", "base.txt")
+    _git(tmp_path, "commit", "-m", "base")
+    (tmp_path / ".venv").mkdir()
+    (tmp_path / ".venv" / "marker").write_text("machine-local")
+
+    baseline = set(snapshot(tmp_path).untracked_paths)
+    assert can_clear_legacy_dirty_recovery(tmp_path, baseline)
+
+    (tmp_path / "base.txt").write_text("unexpected tracked change")
+    assert not can_clear_legacy_dirty_recovery(tmp_path, baseline)
+    _git(tmp_path, "restore", "--worktree", "--", "base.txt")
+
+    (tmp_path / "unexpected.txt").write_text("unexpected")
+    assert not can_clear_legacy_dirty_recovery(tmp_path, baseline)
