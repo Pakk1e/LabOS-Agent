@@ -5,6 +5,7 @@ from pathlib import Path
 from .git_gate import git_status
 
 MAX_STATE_FILE_CHARS = 24000
+MAX_PROMPT_STATE_CHARS = 80000
 
 @dataclass(frozen=True)
 class ProjectSnapshot:
@@ -45,7 +46,15 @@ def build_continuation_prompt(snapshot: ProjectSnapshot, message: str, ci_feedba
                   'Supported actions: {"action":"read_file","path":"..."}, {"action":"write_file","path":"...","content":"..."}, {"action":"run_command","command":["..."],"cwd":"..."}.',
                   "Paths are restricted to the configured project execution roots. Commands are executed without a shell. Do not use server execution to commit or push; the controller Git gate owns commit/push.",
                   "After requesting execution, wait for the controller to return the real stdout/stderr/exit code before claiming that a command ran."]
-    for name,content in snapshot.files.items(): parts += ["",f"--- {name} ---",content]
+    state_budget = MAX_PROMPT_STATE_CHARS
+    for name,content in snapshot.files.items():
+        if state_budget <= 0:
+            parts += ["", "[LabOS-Agent: remaining state files omitted for prompt-size safety.]"]
+            break
+        if len(content) > state_budget:
+            content = content[:state_budget] + "\n\n[LabOS-Agent: remaining state content omitted for prompt-size safety.]"
+        parts += ["",f"--- {name} ---",content]
+        state_budget -= len(content)
     parts += ["","Execution boundary: the LabOS controller inspected the local project filesystem before sending this prompt. The ChatGPT execution environment may not have access to that controller-side path. Do not treat inability to access the local project path as a blocker, and do not claim local commands were run unless your execution environment actually ran them. Use the configured repository as the authoritative source for source-code inspection and changes. Treat the reported local git status as controller-provided context; it may contain deployment-only or machine-local changes that must not be overwritten blindly.",
               "","Work autonomously within the project rules. Make the smallest useful next change using the authoritative repository, test it with the available repository/CI mechanisms, and report exactly what changed, what was tested, blockers, and the precise next action. For CI verification, do not rely solely on a commit-workflow endpoint that may omit push-triggered runs; when available, inspect the repository Actions/workflow runs and match the target commit SHA. A successful push-triggered CI run for that exact SHA is valid evidence even if a narrower commit-status wrapper returns no result.",
               "","Controller Git gate: when a local CI stage is configured, do not commit or push changes yourself. Leave source changes in the working tree. LabOS will commit/push only after the controller has verified that LocalCI passed."]
