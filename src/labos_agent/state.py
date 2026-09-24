@@ -14,6 +14,7 @@ class RunState(str,Enum):
 class AgentState:
     project:str
     run_id:str
+    branch_name:str="main"
     state:RunState=RunState.IDLE
     iteration:int=0
     rollover_count:int=0
@@ -45,6 +46,7 @@ def utc_now()->str: return datetime.now(timezone.utc).isoformat()
 def load_state(path:Path)->AgentState|None:
     if not path.exists(): return None
     data=json.loads(path.read_text(encoding="utf-8")); data["state"]=RunState(data["state"])
+    data.setdefault("branch_name","main")
     data.setdefault("iteration_at_last_rollover",0)
     data.setdefault("failure_history",[])
     data.setdefault("last_ci_result",None)

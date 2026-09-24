@@ -26,7 +26,7 @@ class ProjectConfig:
     ci_stage: str | None = None
     ci_stages: dict[str, tuple[tuple[str, ...], ...]] = field(default_factory=dict)
     state_files: tuple[str, ...] = ("AGENTS.md","PLAN.md","TASKS.md","DECISIONS.md","progress.md","report.md")
-    execution_enabled: bool = True
+    execution_enabled: bool = False
     execution_allowed_roots: tuple[Path, ...] = ()
     execution_command_timeout_seconds: float = 300.0
 
@@ -73,7 +73,7 @@ def load_config(path: Path) -> AppConfig:
             ci_timeout_seconds=float(value.get("ci_timeout_seconds",1800)),
             ci_stage=value.get("ci_stage"), ci_stages=_parse_ci_stages(value.get("ci")),
             state_files=tuple(value.get("state_files",ProjectConfig.state_files)),
-            execution_enabled=bool(value.get("execution",{}).get("enabled",True)),
+            execution_enabled=bool(value.get("execution",{}).get("enabled",False)),
             execution_allowed_roots=allowed,
             execution_command_timeout_seconds=float(value.get("execution",{}).get("command_timeout_seconds",300)),
         )

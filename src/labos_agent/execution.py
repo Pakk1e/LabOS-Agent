@@ -9,6 +9,7 @@ class ExecutionPolicy:
     allowed_roots: tuple[Path, ...]
     max_output_chars: int = 12000
     command_timeout_seconds: float = 300.0
+    denied_path_prefixes: tuple[str, ...] = (".git", ".github", ".env", "browser-profile")
 
 @dataclass(frozen=True)
 class ExecutionResult:
@@ -25,9 +26,13 @@ def _rooted_path(root: Path, requested: str, policy: ExecutionPolicy) -> Path:
     allowed_roots = tuple(path.expanduser().resolve() for path in policy.allowed_roots)
     if not any(candidate == allowed or allowed in candidate.parents for allowed in allowed_roots):
         raise PermissionError(f"path is outside configured execution roots: {requested}")
+    relative = candidate.relative_to(root.resolve())
+    if any(relative == Path(prefix) or Path(prefix) in relative.parents for prefix in policy.denied_path_prefixes):
+        raise PermissionError(f"path is reserved by the controller: {requested}")
     return candidate
 
-_BLOCKED_GIT_SUBCOMMANDS = {"push", "commit", "reset", "checkout", "merge", "rebase"}
+_ALLOWED_EXECUTABLES = {"git", "ls", "pwd", "printf", "echo", "grep", "sed", "awk", "head", "tail", "wc", "sort", "uniq", "pytest"}
+_BLOCKED_GIT_SUBCOMMANDS = {"push", "commit", "reset", "checkout", "merge", "rebase", "switch", "restore", "clean", "stash"}
 _BLOCKED_EXECUTABLES = {"rm", "shutdown", "reboot", "poweroff", "mkfs", "mount", "umount", "systemctl"}
 
 def _validate_command(command: list[str]) -> None:
@@ -35,6 +40,8 @@ def _validate_command(command: list[str]) -> None:
         raise ValueError("run_command requires a non-empty argv list")
 
     executable = Path(command[0]).name.casefold()
+    if executable not in _ALLOWED_EXECUTABLES:
+        raise PermissionError(f"executable is not allowlisted for autonomous execution: {executable}")
     if executable in _BLOCKED_EXECUTABLES:
         raise PermissionError("command is reserved for the LabOS controller or human approval")
 
@@ -45,7 +52,12 @@ def _validate_command(command: list[str]) -> None:
         i = 1
         while i < len(command):
             token = command[i]
-            if token in {"-C", "-c", "--git-dir", "--work-tree"}:
+            if token == "-c":
+                if i + 1 < len(command) and command[i + 1].casefold().startswith(("alias.", "core.hookspath")):
+                    raise PermissionError("git configuration aliases and hook paths are not allowed")
+                i += 2
+                continue
+            if token in {"-C", "--git-dir", "--work-tree"}:
                 i += 2
                 continue
             if token.startswith("-"):
@@ -57,8 +69,8 @@ def _validate_command(command: list[str]) -> None:
 
     # These are intentionally rejected because they turn argv execution into
     # an unrestricted code/shell escape around the project-root boundary.
-    if executable in {"sh", "bash", "dash", "zsh", "fish", "ksh", "csh", "tcsh", "cmd", "powershell", "pwsh"}:
-        raise PermissionError("shell interpreters are not allowed through autonomous execution")
+    if executable in {"sh", "bash", "dash", "zsh", "fish", "ksh", "csh", "tcsh", "cmd", "powershell", "pwsh", "env", "find", "xargs", "curl", "wget"}:
+        raise PermissionError("shell, environment, filesystem traversal, and network tools are not allowed through autonomous execution")
 
 def execute_request(root: Path, request: dict, policy: ExecutionPolicy) -> ExecutionResult:
     action = request.get("action")
@@ -74,8 +86,13 @@ def execute_request(root: Path, request: dict, policy: ExecutionPolicy) -> Execu
         command = request.get("command")
         _validate_command(command)
         cwd = _rooted_path(root, str(request.get("cwd", ".")), policy)
-        completed = subprocess.run(command, cwd=cwd, stdin=subprocess.DEVNULL, capture_output=True,
-                                  text=True, timeout=policy.command_timeout_seconds, check=False)
+        try:
+            completed = subprocess.run(command, cwd=cwd, stdin=subprocess.DEVNULL, capture_output=True,
+                                      text=True, timeout=policy.command_timeout_seconds, check=False)
+        except subprocess.TimeoutExpired as exc:
+            return ExecutionResult(action, False, None, str(exc.stdout or "")[-policy.max_output_chars:], f"command timed out after {policy.command_timeout_seconds}s")
+        except OSError as exc:
+            return ExecutionResult(action, False, None, "", f"execution failed: {exc}")
         return ExecutionResult(action, completed.returncode == 0, completed.returncode,
                                completed.stdout[-policy.max_output_chars:], completed.stderr[-policy.max_output_chars:])
     raise ValueError(f"unsupported execution action: {action}")
@@ -85,27 +102,23 @@ def parse_execution_requests(response: str) -> list[dict]:
     marker = chr(96) * 3 + "labos-exec"
     decoder = json.JSONDecoder()
 
-    # Standard fenced execution blocks.
+    # Standard fenced execution blocks. Decode JSON directly so code fences
+    # inside a JSON string do not terminate the request prematurely.
     search_from = 0
     while True:
         marker_start = response.find(marker, search_from)
         if marker_start == -1:
             break
-
         payload_start = marker_start + len(marker)
-        closing = response.find(chr(96) * 3, payload_start)
-
-        if closing == -1:
-            break
-
-        payload = response[payload_start:closing]
-        value = json.loads(payload.strip())
-
+        try:
+            value, consumed = decoder.raw_decode(response[payload_start:].lstrip())
+        except json.JSONDecodeError:
+            search_from = payload_start
+            continue
         if not isinstance(value, dict):
             raise ValueError("labos-exec payload must be an object")
-
         requests.append((marker_start, value))
-        search_from = closing + 3
+        search_from = payload_start + consumed
 
     # Compact form emitted by some ChatGPT responses:
     # labos-exec{"action":"read_file",...}
