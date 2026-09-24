@@ -420,3 +420,30 @@ def test_hard_limit_rollover_preserves_iteration_dirty_recovery(monkeypatch, tmp
     assert response == "resume"
     assert state.pending_ci_fix is True
     assert state.pending_ci_baseline_untracked == ["old.txt"]
+
+
+def test_migrate_legacy_dirty_recovery_adopts_validated_tracked_changes(tmp_path: Path, monkeypatch):
+    from labos_agent.loop import _migrate_legacy_dirty_recovery
+
+    class Snapshot:
+        head = "head"
+        status = " M src/change.py"
+        worktree_fingerprint = "fingerprint"
+        untracked_paths = (".venv/bin/python",)
+
+    state = AgentState(
+        project="weather",
+        run_id="run",
+        pending_ci_fix=True,
+        pending_ci_baseline_untracked=[".venv/bin/python"],
+        iteration_started_sha="head",
+        last_ci_result="stage=test success=True",
+    )
+    monkeypatch.setattr(loop, "can_clear_legacy_dirty_recovery", lambda *args: False)
+    monkeypatch.setattr(loop, "git_snapshot", lambda root: Snapshot())
+
+    _migrate_legacy_dirty_recovery(state, tmp_path)
+
+    assert state.pending_ci_fix is True
+    assert state.pending_ci_worktree_fingerprint == "fingerprint"
+    assert "adopted legacy validated worktree" in state.reason
