@@ -359,9 +359,13 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
                     allow_preexisting_tracked_changes=state.pending_ci_fix,
                     baseline_untracked=_commit_recovery_baseline(state),
                 )
-                if committed_sha:
-                    state.last_action = f"committed and pushed {committed_sha}"
-                    state.last_commit_sha = committed_sha
+                if not committed_sha:
+                    _mark_dirty_recovery(state, before_git)
+                    controller.mark_failure("working tree changed but Git gate produced no commit")
+                    save_state(state_path(project_name), state)
+                    return RunResult(state, response)
+                state.last_action = f"committed and pushed {committed_sha}"
+                state.last_commit_sha = committed_sha
             except GitPushError as exc:
                 _mark_push_failure_recovery(state, before_git)
                 controller.mark_failure(f"validated changes could not be pushed; recovery is pending: {exc}")
@@ -548,9 +552,18 @@ def _run_loop_impl(
                         time.sleep(2)
                         continue
 
-                    if committed_sha:
-                        state.last_action = f"committed and pushed {committed_sha}"
-                        state.last_commit_sha = committed_sha
+                    if not committed_sha:
+                        _mark_dirty_recovery(state, before_git)
+                        controller.mark_failure("working tree changed but Git gate produced no commit")
+                        save_state(state_path(project_name), state)
+                        if state.consecutive_failures >= controller.limits.max_consecutive_failures:
+                            controller.stop("maximum consecutive failures reached")
+                            save_state(state_path(project_name), state)
+                            return RunResult(state, response)
+                        time.sleep(2)
+                        continue
+                    state.last_action = f"committed and pushed {committed_sha}"
+                    state.last_commit_sha = committed_sha
                     controller.mark_success()
                     state.pending_ci_fix = False
                     state.pending_ci_baseline_untracked = []
