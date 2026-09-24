@@ -109,3 +109,10 @@ def test_network_escape_tools_are_blocked(tmp_path: Path):
     for command in (["env","git","push"],["curl","http://example.invalid"],["wget","http://example.invalid"]):
         with pytest.raises(PermissionError):
             execute_request(tmp_path, {"action":"run_command","command":command}, policy(tmp_path))
+
+def test_write_file_json_content_may_contain_markdown_fence():
+    marker = chr(96) * 3
+    content = "before " + marker + "python\\nprint(1)\\n" + marker + " after"
+    response = marker + "labos-exec\\n" + '{"action":"write_file","path":"doc.md","content":"' + content.replace("\\","\\\\").replace('"','\\"').replace("\n","\\n") + '"}' + "\\n" + marker
+    request = parse_execution_requests(response)[0]
+    assert request["content"] == content
