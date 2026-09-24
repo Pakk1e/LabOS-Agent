@@ -284,7 +284,17 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
         with BrowserSession(config.browser.profile_dir, cdp_url=config.browser.cdp_url) as session:
             context = session.context
             chat = ChatGPTPage(_select_chat_page(context, project))
-            chat.assert_ready()
+            if chat.status().rollover_required:
+                controller.rollover()
+                _, _, response = rollover_from_max_length(
+                    chat, project, state_dir(project_name),
+                    timeout_seconds=_remaining_timeout(None, config.browser.response_timeout_seconds),
+                    quiet_seconds=config.browser.quiet_seconds,
+                )
+                save_response(project_name, response)
+                save_state(state_path(project_name), state)
+            else:
+                chat.assert_ready()
             if project.project_name and not chat.project_context_present(project.project_name):
                 controller.block(f"ChatGPT Project context not detected: {project.project_name}")
                 save_state(state_path(project_name), state)
