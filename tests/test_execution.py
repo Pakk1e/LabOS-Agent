@@ -194,3 +194,15 @@ def test_run_command_honors_relative_cwd(tmp_path: Path):
         policy(tmp_path),
     )
     assert result.success
+
+
+def test_git_read_surface_allows_slash_containing_revision_refs(tmp_path: Path):
+    for command in (
+        ["git", "log", "feature/foo"],
+        ["git", "show", "refs/heads/feature/foo"],
+        ["git", "diff", "origin/feature/foo"],
+    ):
+        try:
+            execute_request(tmp_path, {"action": "run_command", "command": command}, policy(tmp_path))
+        except PermissionError as exc:
+            raise AssertionError(f"valid revision ref was rejected: {command}") from exc
