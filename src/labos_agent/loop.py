@@ -188,6 +188,7 @@ def run_once(config:AppConfig,project_name:str)->RunResult:
             committed_sha = commit_and_push(project.project_root, before_git, f"lab-agent: iteration {state.iteration}", branch_name=state.branch_name, allow_preexisting_tracked_changes=state.pending_ci_fix)
             if committed_sha:
                 state.last_action=f"committed and pushed {committed_sha}"
+                state.last_commit_sha=committed_sha
         except Exception as exc:
             controller.mark_failure(f"validated changes could not be committed/pushed: {exc}")
             save_state(state_path(project_name),state)
