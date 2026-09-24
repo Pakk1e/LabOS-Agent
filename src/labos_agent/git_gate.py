@@ -95,10 +95,10 @@ def _parse_untracked(status: str) -> set[str]:
     }
 
 
-def commit_and_push(root: Path, before: GitSnapshot, message: str, *, branch_name: str = "main") -> str | None:
+def commit_and_push(root: Path, before: GitSnapshot, message: str, *, branch_name: str = "main", allow_preexisting_tracked_changes: bool = False) -> str | None:
     assert_unchanged_before_ci(root, before)
     current = snapshot(root)
-    if any(line and not line.startswith("?? ") for line in before.status.splitlines()):
+    if not allow_preexisting_tracked_changes and any(line and not line.startswith("?? ") for line in before.status.splitlines()):
         raise RuntimeError("Git gate refused: tracked working-tree changes existed before the iteration")
     baseline_untracked = _parse_untracked(before.status)
 
