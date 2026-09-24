@@ -251,6 +251,7 @@ def run_loop(config:AppConfig,project_name:str,*,deadline:datetime|None,max_iter
                 committed_sha = commit_and_push(project.project_root, before_git, f"lab-agent: iteration {state.iteration}", branch_name=state.branch_name, allow_preexisting_tracked_changes=state.pending_ci_fix)
                 if committed_sha:
                     state.last_action=f"committed and pushed {committed_sha}"
+                    state.last_commit_sha=committed_sha
                 controller.mark_success()
                 state.pending_ci_fix = False
             except Exception as exc:
