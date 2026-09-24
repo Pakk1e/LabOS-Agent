@@ -191,15 +191,24 @@ def _discard_tracked_sensitive_changes(root: Path, status: str) -> None:
         _git(root, "restore", "--staged", "--worktree", "--", *tracked, check=False)
 
 
-def prepare_repository(root: Path, *, branch_name: str = "main", allow_dirty: bool = False) -> None:
+def prepare_repository(root: Path, *, branch_name: str = "main", allow_dirty: bool = False, expected_dirty_fingerprint: str | None = None) -> None:
     status = _git(root, "status", "--porcelain=v1", "-z", "-uall")
     _discard_tracked_sensitive_changes(root, status)
     status = _git(root, "status", "--porcelain=v1", "-z", "-uall")
     _validate_sensitive_paths(_status_paths_z(status))
-    if not allow_dirty and any(
+    has_tracked_changes = any(
         record and len(record) >= 3 and record[2] == " " and not record.startswith("?? ")
         for record in status.split("\0") if record
-    ):
+    )
+    if allow_dirty:
+        if expected_dirty_fingerprint is None:
+            raise RuntimeError("Git preflight refused: dirty recovery requires an expected worktree fingerprint")
+        current = snapshot(root)
+        if current.worktree_fingerprint != expected_dirty_fingerprint:
+            raise RuntimeError("Git preflight refused: pending recovery worktree changed outside LabOS")
+        if not has_tracked_changes:
+            raise RuntimeError("Git preflight refused: pending recovery expected dirty tracked changes, but none remain")
+    elif has_tracked_changes:
         raise RuntimeError("Git preflight refused: tracked working-tree changes exist before the iteration")
     _git(root, "fetch", "origin", "main")
     current_branch = _git(root, "branch", "--show-current")
@@ -280,8 +289,22 @@ def commit_and_push(
         try:
             _git(root, "push", "--porcelain", "origin", f"HEAD:refs/heads/{branch_name}")
         except Exception as exc:
+            remote_sha = _git(
+                root, "ls-remote", "origin", f"refs/heads/{branch_name}", check=False
+            ).split()[0] if _git(
+                root, "ls-remote", "origin", f"refs/heads/{branch_name}", check=False
+            ) else ""
+            if remote_sha == sha:
+                return sha
             _git(root, "reset", "--mixed", "HEAD~1", check=False)
             raise GitPushError(f"validated commit was created but push failed: {exc}") from exc
+        remote = _git(root, "ls-remote", "origin", f"refs/heads/{branch_name}", check=False)
+        remote_sha = remote.split()[0] if remote else ""
+        if remote_sha != sha:
+            _git(root, "reset", "--mixed", "HEAD~1", check=False)
+            raise GitPushError(
+                f"push completed but remote {branch_name} is {remote_sha or '<missing>'}, expected {sha}"
+            )
         return sha
     except Exception:
         if not committed:
