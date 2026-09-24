@@ -27,28 +27,73 @@ def _rooted_path(root: Path, requested: str, policy: ExecutionPolicy) -> Path:
     if not any(candidate == allowed or allowed in candidate.parents for allowed in allowed_roots):
         raise PermissionError(f"path is outside configured execution roots: {requested}")
     relative = candidate.relative_to(root.resolve())
-    if any(relative == Path(prefix) or Path(prefix) in relative.parents for prefix in policy.denied_path_prefixes):
-        raise PermissionError(f"path is reserved by the controller: {requested}")
+    denied = {prefix.casefold() for prefix in policy.denied_path_prefixes}
+    for part in relative.parts:
+        folded = part.casefold()
+        if folded in denied or folded.startswith(".env"):
+            raise PermissionError(f"path is reserved by the controller: {requested}")
     return candidate
 
-_ALLOWED_EXECUTABLES = {"git", "ls", "pwd", "printf", "echo", "grep", "sed", "awk", "head", "tail", "wc", "sort", "uniq", "pytest"}
+_ALLOWED_GIT_SUBCOMMANDS = {"status", "diff", "log", "show", "ls-files"}
 _BLOCKED_GIT_SUBCOMMANDS = {"push", "commit", "reset", "checkout", "merge", "rebase", "switch", "restore", "clean", "stash"}
-_BLOCKED_EXECUTABLES = {"rm", "shutdown", "reboot", "poweroff", "mkfs", "mount", "umount", "systemctl"}
+_BLOCKED_GIT_OPTIONS = {"-C", "-c", "--git-dir", "--work-tree", "--no-index", "--exec-path", "--upload-pack", "--receive-pack", "--ext-diff", "--textconv"}
+
+def _git_env(root: Path) -> dict[str, str]:
+    import os
+    resolved = root.expanduser().resolve()
+    env = os.environ.copy()
+    env.update({
+        "GIT_DIR": str(resolved / ".git"),
+        "GIT_WORK_TREE": str(resolved),
+        "GIT_CEILING_DIRECTORIES": str(resolved.parent),
+        "GIT_CONFIG_COUNT": "2",
+        "GIT_CONFIG_KEY_0": "core.hooksPath",
+        "GIT_CONFIG_VALUE_0": "/dev/null",
+        "GIT_CONFIG_KEY_1": "core.fsmonitor",
+        "GIT_CONFIG_VALUE_1": "false",
+    })
+    return env
+
+def _validate_git_path(root: Path, raw: str) -> None:
+    if Path(raw).is_absolute():
+        raise PermissionError(f"git path is outside execution root: {raw}")
+    _rooted_path(root, raw, ExecutionPolicy((root,)))
 
 def _validate_command(command: list[str]) -> None:
     if not isinstance(command, list) or not command or not all(isinstance(x, str) and x for x in command):
         raise ValueError("run_command requires a non-empty argv list")
-    executable = Path(command[0]).name.casefold()
-    if executable != "git":
+    if Path(command[0]).name.casefold() != "git":
         raise PermissionError("autonomous run_command only permits read-only git inspection")
-    if len(command) < 2 or command[1] in {"-C", "-c", "--git-dir", "--work-tree", "--no-index"}:
-        raise PermissionError("git global options are not allowed in autonomous execution")
+    if len(command) < 2:
+        raise PermissionError("git subcommand is required")
     subcommand = command[1].casefold()
-    if subcommand not in {"status", "diff", "log", "show", "ls-files"}:
+    if subcommand in _BLOCKED_GIT_SUBCOMMANDS or command[1] in _BLOCKED_GIT_OPTIONS:
+        raise PermissionError("unsafe git operation is not allowed in autonomous execution")
+    if subcommand not in _ALLOWED_GIT_SUBCOMMANDS:
         raise PermissionError(f"git subcommand is not allowed in autonomous execution: {subcommand}")
-    forbidden = {"-C", "-c", "--git-dir", "--work-tree", "--no-index", "--exec-path", "--upload-pack", "--receive-pack"}
-    if any(token in forbidden or token.startswith("--config") for token in command[2:]):
-        raise PermissionError("unsafe git options are not allowed in autonomous execution")
+    separator = False
+    for token in command[2:]:
+        if token == "--":
+            separator = True
+            continue
+        if token in _BLOCKED_GIT_OPTIONS or token.startswith("--config") or token.startswith("--output="):
+            raise PermissionError(f"unsafe git option is not allowed in autonomous execution: {token}")
+        if token.startswith("-"):
+            continue
+        if not separator and subcommand in {"status", "ls-files"}:
+            raise PermissionError(f"git path must be supplied after '--': {token}")
+        if not separator and subcommand in {"diff", "log", "show"}:
+            if token.startswith("/") or token == ".." or token.startswith("../") or token.startswith("./"):
+                raise PermissionError(f"git path must be supplied after '--': {token}")
+
+def _validate_command_paths(command: list[str], root: Path) -> None:
+    separator = False
+    for token in command[2:]:
+        if token == "--":
+            separator = True
+            continue
+        if separator and not token.startswith("-"):
+            _validate_git_path(root, token)
 
 def execute_request(root: Path, request: dict, policy: ExecutionPolicy) -> ExecutionResult:
     action = request.get("action")
@@ -63,10 +108,12 @@ def execute_request(root: Path, request: dict, policy: ExecutionPolicy) -> Execu
     if action == "run_command":
         command = request.get("command")
         _validate_command(command)
-        cwd = _rooted_path(root, str(request.get("cwd", ".")), policy)
+        _validate_command_paths(command, root)
+        _rooted_path(root, str(request.get("cwd", ".")), policy)
         try:
-            completed = subprocess.run(command, cwd=cwd, stdin=subprocess.DEVNULL, capture_output=True,
-                                      text=True, timeout=policy.command_timeout_seconds, check=False)
+            completed = subprocess.run(command, cwd=root, stdin=subprocess.DEVNULL, capture_output=True,
+                                      text=True, timeout=policy.command_timeout_seconds, check=False,
+                                      env=_git_env(root))
         except subprocess.TimeoutExpired as exc:
             return ExecutionResult(action, False, None, str(exc.stdout or "")[-policy.max_output_chars:], f"command timed out after {policy.command_timeout_seconds}s")
         except OSError as exc:

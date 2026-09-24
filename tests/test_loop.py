@@ -113,3 +113,37 @@ def test_prepare_state_recover_preserves_pending_ci_fix(tmp_path: Path, monkeypa
     assert recovered.pending_ci_fix is True
     assert recovered.last_ci_result == "stage=test success=False"
     assert recovered.consecutive_failures == 0
+
+
+def test_prepare_state_recovers_stale_working_state_and_preserves_ci_recovery(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(loop, "state_path", lambda project: tmp_path / project / "current.json")
+    path = tmp_path / "weather" / "current.json"
+    state = AgentState(
+        project="weather",
+        run_id="stale",
+        branch_name="agent/stale",
+        state=RunState.WORKING,
+        iteration=9,
+        pending_ci_fix=True,
+        pending_ci_baseline_untracked=["old.txt"],
+        last_ci_result="stage=test success=False",
+    )
+    save_state(path, state)
+    recovered = loop._prepare_state("weather", recover=True)
+    assert recovered.state == RunState.IDLE
+    assert recovered.run_id == "stale"
+    assert recovered.branch_name == "agent/stale"
+    assert recovered.pending_ci_fix is True
+    assert recovered.pending_ci_baseline_untracked == ["old.txt"]
+    assert recovered.last_ci_result == "stage=test success=False"
+    assert recovered.consecutive_failures == 0
+
+
+def test_project_lock_rejects_concurrent_owner(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(loop, "state_dir", lambda project: tmp_path / project)
+    with loop._project_lock("weather"):
+        try:
+            with loop._project_lock("weather"):
+                raise AssertionError("second lock unexpectedly acquired")
+        except RuntimeError as exc:
+            assert "already running" in str(exc)

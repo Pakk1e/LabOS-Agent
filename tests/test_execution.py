@@ -119,3 +119,44 @@ def test_write_file_json_content_may_contain_markdown_fence():
     response = marker + "labos-exec\n" + '{"action":"write_file","path":"doc.md","content":"' + content.replace("\\","\\\\").replace('"','\\"').replace("\n","\\n") + '"}' + "\\n" + marker
     request = parse_execution_requests(response)[0]
     assert request["content"] == content
+
+
+def test_reserved_paths_are_blocked_at_any_depth_case_insensitively(tmp_path: Path):
+    for path in ("sub/.env.local", "sub/.ENV", "sub/.git/config", "sub/.github/workflows/x.yml"):
+        with pytest.raises(PermissionError):
+            execute_request(tmp_path, {"action": "write_file", "path": path, "content": "blocked"}, policy(tmp_path))
+
+
+def test_git_read_surface_rejects_no_index_output_and_external_paths(tmp_path: Path):
+    for command in (
+        ["git", "diff", "/dev/null", "etc/passwd"],
+        ["git", "diff", "--output=/tmp/labos-out", "HEAD", "--", "file.txt"],
+        ["git", "log", "--output=/tmp/labos-out"],
+        ["git", "diff", "--ext-diff", "HEAD", "--", "file.txt"],
+        ["git", "show", "HEAD", "--", "/etc/passwd"],
+    ):
+        with pytest.raises(PermissionError):
+            execute_request(tmp_path, {"action": "run_command", "command": command}, policy(tmp_path))
+
+
+def test_git_execution_is_rooted_even_from_nested_cwd(tmp_path: Path):
+    subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(tmp_path), "config", "user.name", "LabOS Test"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "config", "user.email", "labos@example.invalid"], check=True)
+    (tmp_path / "tracked.txt").write_text("base\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "tracked.txt"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-m", "base"], check=True, capture_output=True)
+    nested = tmp_path / "sub"
+    nested.mkdir()
+    (nested / ".git").mkdir()
+    (nested / ".git" / "config").write_text(
+        "[core]\nfsmonitor = /bin/sh -c 'echo escaped > /tmp/labos-agent-escape'\n",
+        encoding="utf-8",
+    )
+    result = execute_request(
+        tmp_path,
+        {"action": "run_command", "command": ["git", "status"], "cwd": "sub"},
+        policy(tmp_path),
+    )
+    assert result.success
+    assert not Path("/tmp/labos-agent-escape").exists()
