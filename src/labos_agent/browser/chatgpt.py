@@ -119,10 +119,9 @@ class ChatGPTPage:
                 self.page.wait_for_timeout(250)
                 continue
             try:
-                if not box.is_editable():
-                    self.page.wait_for_timeout(250)
-                    continue
-                box.fill(message,timeout=1000)
+                box.click(force=True, timeout=1000)
+                self.page.keyboard.insert_text(message)
+                self.page.wait_for_timeout(100)
                 box.press("Enter",timeout=1000)
                 return
             except (PlaywrightTimeoutError,PlaywrightError) as exc:
@@ -173,13 +172,13 @@ class ChatGPTPage:
         deadline=time.monotonic()+10
         while time.monotonic()<deadline:
             try:
-                if composer.is_editable():
+                if composer.is_visible():
                     break
             except Exception:
                 pass
             self.page.wait_for_timeout(250)
         else:
-            raise RuntimeError(f"Project composer is not editable for: {project_name}")
+            raise RuntimeError(f"Project composer is not visible for: {project_name}")
         deadline=time.monotonic()+15
         last_error=None
         while time.monotonic()<deadline:
@@ -188,10 +187,9 @@ class ChatGPTPage:
                 self.page.wait_for_timeout(250)
                 continue
             try:
-                if not composer.is_editable():
-                    self.page.wait_for_timeout(250)
-                    continue
-                composer.fill(message,timeout=1000)
+                composer.click(force=True, timeout=1000)
+                self.page.keyboard.insert_text(message)
+                self.page.wait_for_timeout(100)
                 composer.press("Enter",timeout=1000)
                 return self.wait_for_response(before=before,**kwargs)
             except (PlaywrightTimeoutError,PlaywrightError) as exc:
@@ -354,7 +352,7 @@ class ChatGPTPage:
                 composer=self.project_chat_composer(project_name)
                 if composer is not None:
                     try:
-                        if composer.is_editable():
+                        if composer.is_visible():
                             break
                     except Exception:
                         pass
