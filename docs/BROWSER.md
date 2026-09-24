@@ -33,7 +33,7 @@ The DOM of ChatGPT can change. Stop-control selectors are therefore intentionall
 
 Project context is mandatory for Project-scoped runs. The controller can verify a configured Project name from visible page text.
 
-Rollover never falls back to the global New Chat action. A Project URL and a selector verified against the current Project UI must be configured. If the selector is absent or fails, the controller writes a handoff and enters BLOCKED instead of risking loss of Project context.
+Rollover never falls back to the global New Chat action. A configured Project name uses the visible Project-home UI; alternatively, an explicit Project URL or verified selector can be supplied. If the configured Project route cannot be established, the controller writes a handoff and enters BLOCKED instead of risking loss of Project context.
 
 ## Commands
 
