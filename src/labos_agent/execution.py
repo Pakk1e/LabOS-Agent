@@ -42,10 +42,15 @@ def _git_env(root: Path) -> dict[str, str]:
     import os
     resolved = root.expanduser().resolve()
     env = os.environ.copy()
+    for key in ("GIT_EXTERNAL_DIFF", "GIT_DIFF_OPTS", "GIT_SSH_COMMAND", "GIT_PROXY_COMMAND"):
+        env.pop(key, None)
     env.update({
         "GIT_DIR": str(resolved / ".git"),
         "GIT_WORK_TREE": str(resolved),
         "GIT_CEILING_DIRECTORIES": str(resolved.parent),
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_PAGER": "cat",
         "GIT_CONFIG_COUNT": "2",
         "GIT_CONFIG_KEY_0": "core.hooksPath",
         "GIT_CONFIG_VALUE_0": "/dev/null",
