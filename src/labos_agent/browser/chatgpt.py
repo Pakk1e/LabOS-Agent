@@ -207,15 +207,16 @@ class ChatGPTPage:
         if not project_name:
             return None
         expected=f"new chat in {project_name}".casefold()
-        selectors=(
-            '#prompt-textarea[contenteditable="true"]',
-            '[contenteditable="true"][role="textbox"]',
-            '[contenteditable="true"]',
+        # Use one CSS union so the same DOM element is not counted once per
+        # matching selector. This matters for the placeholder-independent
+        # fallback below.
+        loc=self.page.locator(
+            '#prompt-textarea[contenteditable="true"], '
+            '[contenteditable="true"][role="textbox"], '
+            '[contenteditable="true"]'
         )
         visible_candidates=[]
-        for selector in selectors:
-            loc=self.page.locator(selector)
-            for i in range(loc.count()):
+        for i in range(loc.count()):
                 item=loc.nth(i)
                 try:
                     if not item.is_visible():
