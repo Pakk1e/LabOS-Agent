@@ -65,9 +65,6 @@ class Controller:
         self.state.github_ci_verified=True
         self.state.set_iteration_stage(IterationStage.ITERATION_SUCCEEDED)
 
-    def mark_waiting(self)->None:
-        self.state.transition(RunState.WAITING)
-
     def mark_success(self, *, continue_running: bool = True)->None:
         """Record success only after the complete evidence chain."""
         if not (
