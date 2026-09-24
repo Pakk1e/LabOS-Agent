@@ -196,7 +196,7 @@ def commit_and_push(
     ):
         raise RuntimeError("Git gate refused: tracked working-tree changes existed before the iteration")
 
-    baseline = baseline_untracked if baseline_untracked is not None else set(_untracked_paths(root))
+    baseline = baseline_untracked if baseline_untracked is not None else set(before.untracked_paths)
     new_untracked = set(current.untracked_paths) - baseline
     try:
         _validate_sensitive_paths(_status_paths_z(current.status))
