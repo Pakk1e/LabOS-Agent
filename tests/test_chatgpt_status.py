@@ -70,7 +70,7 @@ def test_send_message_uses_keyboard_insertion_for_visible_composer(monkeypatch):
     assert composer.filled == "hello"
     assert composer.pressed == "Enter"
     assert composer.clicked == 1
-    assert page.waits == 500
+    assert page.waits == 100
 
 
 def test_project_message_retries_transient_composer_instability(monkeypatch):
