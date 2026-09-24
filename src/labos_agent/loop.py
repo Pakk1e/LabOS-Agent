@@ -247,6 +247,7 @@ def run_loop(config:AppConfig,project_name:str,*,deadline:datetime|None,max_iter
                     return RunResult(state,response)
                 ci_ok = _run_local_ci(project, state)
                 if not ci_ok:
+                    state.pending_ci_fix = True
                     controller.mark_failure("local CI failed")
                     save_state(state_path(project_name),state)
                     if state.consecutive_failures>=controller.limits.max_consecutive_failures:
