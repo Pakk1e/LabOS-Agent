@@ -267,7 +267,7 @@ def _commit_recovery_baseline(state: AgentState) -> set[str] | None:
 
 def _rollover_and_process_resume(
     chat, project, state: AgentState, project_name: str, config: AppConfig,
-    *, deadline: datetime | None, max_rollovers: int,
+    *, deadline: datetime | None, max_rollovers: int, recovery_baseline=None,
 ) -> tuple[str, str]:
     if state.rollover_count >= max_rollovers:
         raise RuntimeError("maximum rollovers reached")
@@ -283,8 +283,9 @@ def _rollover_and_process_resume(
     response = _resolve_execution(chat, resume_response, project, project_name, config, deadline=deadline)
     save_response(project_name, response)
     after = git_snapshot(project.project_root)
-    if after.worktree_fingerprint != baseline.worktree_fingerprint:
-        _mark_dirty_recovery(state, baseline)
+    recovery_reference = recovery_baseline or baseline
+    if after.worktree_fingerprint != recovery_reference.worktree_fingerprint:
+        _mark_dirty_recovery(state, recovery_reference)
     state.reason = "conversation rolled over and resumed"
     return continuation, response
 
@@ -492,7 +493,7 @@ def _run_loop_impl(
                     if chat.status().rollover_required:
                         continuation, response = _rollover_and_process_resume(
                             chat, project, state, project_name, config,
-                            deadline=deadline, max_rollovers=max_rollovers,
+                            deadline=deadline, max_rollovers=max_rollovers, recovery_baseline=before_git,
                         )
                         save_state(state_path(project_name), state)
                         continue
@@ -594,7 +595,7 @@ def _run_loop_impl(
                             try:
                                 continuation, response = _rollover_and_process_resume(
                                     chat, project, state, project_name, config,
-                                    deadline=deadline, max_rollovers=max_rollovers,
+                                    deadline=deadline, max_rollovers=max_rollovers, recovery_baseline=before_git,
                                 )
                                 save_state(state_path(project_name), state)
                                 continue
