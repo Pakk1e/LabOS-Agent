@@ -436,7 +436,6 @@ def test_migrate_legacy_dirty_recovery_adopts_validated_tracked_changes(tmp_path
         run_id="run",
         pending_ci_fix=True,
         pending_ci_baseline_untracked=[".venv/bin/python"],
-        iteration_started_sha="head",
         last_ci_result="stage=test success=True",
     )
     monkeypatch.setattr(loop, "can_clear_legacy_dirty_recovery", lambda *args: False)
