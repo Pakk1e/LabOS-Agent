@@ -11,7 +11,7 @@ def test_parse_execution_requests():
     assert parse_execution_requests(response) == [{"action":"run_command","command":["python3","-c","print(42)"]}]
 
 def test_run_command_is_argv_and_returns_result(tmp_path: Path):
-    result = execute_request(tmp_path, {"action":"run_command","command":["python3","-c","print('ok')"]}, policy(tmp_path))
+    result = execute_request(tmp_path, {"action":"run_command","command":["pytest","--version"]}, policy(tmp_path))
     assert result.success and result.exit_code == 0 and result.stdout.strip() == "ok"
 
 def test_write_and_read_file_stay_inside_root(tmp_path: Path):
