@@ -82,7 +82,7 @@ def test_project_message_retries_transient_composer_instability(monkeypatch):
     assert composer.pressed == "Enter"
 
 
-class _FakePage:
+class _FakeTab:
     def __init__(self, url):
         self.url = url
 
@@ -93,8 +93,8 @@ class _FakeContext:
 
 
 def test_select_page_prefers_exact_project_url():
-    wrong = _FakePage("https://chatgpt.com/c/wrong")
-    project = _FakePage("https://chatgpt.com/g/g-p-weather/project")
+    wrong = _FakeTab("https://chatgpt.com/c/wrong")
+    project = _FakeTab("https://chatgpt.com/g/g-p-weather/project")
     context = _FakeContext(wrong, project)
 
     selected = ChatGPTPage.select_page(
