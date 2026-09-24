@@ -149,7 +149,7 @@ def run_once(config:AppConfig,project_name:str)->RunResult:
     controller=Controller(state=state,limits=SafetyLimits(max_iterations=state.iteration+1))
     controller.start(); controller.begin_iteration(datetime.now().astimezone())
     save_state(state_path(project_name),state)
-    prepare_repository(project.project_root, branch_name=state.branch_name, allow_preexisting_tracked_changes=bool(state.last_ci_result and "success=False" in state.last_ci_result))
+    prepare_repository(project.project_root, branch_name=state.branch_name, allow_dirty=state.pending_ci_fix)
     snapshot=inspect_project(project.project_root,project.repository,project.state_files)
     before_git = git_snapshot(project.project_root)
     with BrowserSession(config.browser.profile_dir,cdp_url=config.browser.cdp_url) as session:
@@ -169,17 +169,19 @@ def run_once(config:AppConfig,project_name:str)->RunResult:
             save_response(project_name,response)
             assert_unchanged_before_ci(project.project_root, before_git)
             after_git=git_snapshot(project.project_root)
-            if after_git.status == before_git.status:
+            if after_git.worktree_fingerprint == before_git.worktree_fingerprint:
                 _handle_no_progress(controller,state)
                 save_state(state_path(project_name),state)
                 return RunResult(state,response)
             ci_ok = _run_local_ci(project, state)
+            state.pending_ci_fix = not ci_ok
         except Exception as exc:
             controller.mark_failure(str(exc))
             save_state(state_path(project_name),state)
             return RunResult(state,response)
         if not ci_ok:
             controller.mark_failure("local CI failed")
+            state.pending_ci_fix = True
             save_state(state_path(project_name),state)
             return RunResult(state,response)
         try:
@@ -191,6 +193,7 @@ def run_once(config:AppConfig,project_name:str)->RunResult:
             save_state(state_path(project_name),state)
             return RunResult(state,response)
         controller.mark_success()
+        state.pending_ci_fix = False
         save_state(state_path(project_name),state)
         return RunResult(state,response)
 
@@ -212,7 +215,7 @@ def run_loop(config:AppConfig,project_name:str,*,deadline:datetime|None,max_iter
             if state.state==RunState.STOPPED:
                 save_state(state_path(project_name),state); return RunResult(state)
             try:
-                prepare_repository(project.project_root, branch_name=state.branch_name, allow_dirty=bool(state.last_ci_result and "success=False" in state.last_ci_result))
+                prepare_repository(project.project_root, branch_name=state.branch_name, allow_dirty=state.pending_ci_fix)
                 snapshot=inspect_project(project.project_root,project.repository,project.state_files)
                 prompt=build_continuation_prompt(snapshot,continuation,state.last_ci_result,state.last_progress_result,project.execution_enabled)
                 before_git = git_snapshot(project.project_root)
@@ -221,7 +224,7 @@ def run_loop(config:AppConfig,project_name:str,*,deadline:datetime|None,max_iter
                 response = _resolve_execution(chat, response, project, project_name, config)
                 assert_unchanged_before_ci(project.project_root, before_git)
                 after_git=git_snapshot(project.project_root)
-                if after_git.status == before_git.status:
+                if after_git.worktree_fingerprint == before_git.worktree_fingerprint:
                     should_stop=_handle_no_progress(controller,state)
                     save_state(state_path(project_name),state)
                     if should_stop:
@@ -244,10 +247,11 @@ def run_loop(config:AppConfig,project_name:str,*,deadline:datetime|None,max_iter
                     controller.stop("deadline reached before commit")
                     save_state(state_path(project_name),state)
                     return RunResult(state,response)
-                committed_sha = commit_and_push(project.project_root, before_git, f"lab-agent: iteration {state.iteration}", branch_name=state.branch_name)
+                committed_sha = commit_and_push(project.project_root, before_git, f"lab-agent: iteration {state.iteration}", branch_name=state.branch_name, allow_preexisting_tracked_changes=state.pending_ci_fix)
                 if committed_sha:
                     state.last_action=f"committed and pushed {committed_sha}"
                 controller.mark_success()
+                state.pending_ci_fix = False
             except Exception as exc:
                 controller.mark_failure(str(exc))
                 save_state(state_path(project_name),state)
