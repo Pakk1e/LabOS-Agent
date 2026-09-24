@@ -13,6 +13,7 @@ class _FakeComposer:
         self.editable_checks = 0
         self.filled = None
         self.pressed = None
+        self.clicked = 0
 
     def count(self):
         return 1
@@ -24,9 +25,10 @@ class _FakeComposer:
         self.editable_checks += 1
         return self.editable_checks >= 3
 
-    def fill(self, value, timeout=None):
+    def click(self, force=False, timeout=None):
+        assert force is True
         assert timeout == 1000
-        self.filled = value
+        self.clicked += 1
 
     def press(self, value, timeout=None):
         assert timeout == 1000
@@ -49,8 +51,15 @@ class _FakePage:
     def wait_for_timeout(self, milliseconds):
         self.waits += milliseconds
 
+    @property
+    def keyboard(self):
+        return self
 
-def test_send_message_waits_for_visible_composer_to_become_editable(monkeypatch):
+    def insert_text(self, value):
+        self.composer.filled = value
+
+
+def test_send_message_uses_keyboard_insertion_for_visible_composer(monkeypatch):
     composer = _FakeComposer()
     page = _FakePage(composer)
     chat = ChatGPTPage(page)
@@ -60,6 +69,7 @@ def test_send_message_waits_for_visible_composer_to_become_editable(monkeypatch)
 
     assert composer.filled == "hello"
     assert composer.pressed == "Enter"
+    assert composer.clicked == 1
     assert page.waits == 500
 
 
@@ -80,6 +90,7 @@ def test_project_message_retries_transient_composer_instability(monkeypatch):
     assert result == "response"
     assert composer.filled == "hello"
     assert composer.pressed == "Enter"
+    assert composer.clicked == 1
 
 
 class _FakeTab:
