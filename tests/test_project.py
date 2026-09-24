@@ -43,3 +43,14 @@ def test_continuation_prompt_corrects_no_progress():
     assert "Do not repeat a baseline test-only iteration" in prompt
     assert "implement the smallest concrete source/documentation change now" in prompt
     assert "A passing LocalCI run without a corresponding repository change is not progress." in prompt
+
+
+def test_continuation_prompt_requires_execution_or_done_marker(tmp_path, monkeypatch):
+    from labos_agent.project import inspect_project, build_continuation_prompt
+    monkeypatch.setattr("labos_agent.project.git_status", lambda root: "")
+    snapshot = inspect_project(tmp_path, "Pakk1e/example", ())
+    prompt = build_continuation_prompt(snapshot, "Continue", execution_enabled=True)
+    assert "Every non-final implementation response MUST contain at least one executable" in prompt
+    assert "LABOS_DONE" in prompt
+    assert "Do not finish with prose such as 'I will make...'" in prompt
+    assert "LocalCI is run automatically by LabOS" in prompt
