@@ -145,6 +145,8 @@ def run_once(config:AppConfig,project_name:str)->RunResult:
             controller.mark_failure(str(exc)); save_state(state_path(project_name),state); return RunResult(state)
         save_response(project_name,response)
         try:
+            response = _resolve_execution(chat, response, project, project_name, config)
+            save_response(project_name,response)
             assert_unchanged_before_ci(project.project_root, before_git)
             after_git=git_snapshot(project.project_root)
             if after_git.status == before_git.status:
