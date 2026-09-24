@@ -210,6 +210,8 @@ def _resolve_execution(chat, response: str, project, project_name: str, config: 
             )
             save_response(project_name, response)
             continue
+        if project.execution_enabled:
+            continue
         return response
     if project.execution_enabled:
         raise RuntimeError("server execution is required but the assistant produced no executable request")
