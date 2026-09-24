@@ -259,3 +259,51 @@ def test_prepare_repository_still_refuses_untracked_sensitive_path(tmp_path: Pat
         assert "sensitive path" in str(exc)
     else:
         raise AssertionError("untracked sensitive path was not rejected")
+
+
+def test_commit_and_push_requires_expected_branch(tmp_path: Path):
+    remote = tmp_path / "remote.git"
+    root = tmp_path / "repo"
+    subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True)
+    subprocess.run(["git", "init", str(root)], check=True, capture_output=True)
+    _git(root, "config", "user.name", "LabOS Test")
+    _git(root, "config", "user.email", "labos@example.invalid")
+    (root / "base.txt").write_text("base")
+    _git(root, "add", "base.txt")
+    _git(root, "commit", "-m", "base")
+    _git(root, "branch", "-M", "main")
+    _git(root, "remote", "add", "origin", str(remote))
+    _git(root, "push", "-u", "origin", "main")
+    before = snapshot(root)
+    (root / "change.txt").write_text("change")
+    try:
+        commit_and_push(root, before, "wrong branch", branch_name="agent/test")
+    except RuntimeError as exc:
+        assert "does not match expected branch" in str(exc)
+    else:
+        raise AssertionError("branch mismatch was not rejected")
+    assert _git(root, "rev-parse", "HEAD") == before.head
+    assert _git(root, "status", "--short") == "?? change.txt"
+
+
+def test_commit_and_push_resets_commit_when_push_fails(tmp_path: Path):
+    root = tmp_path / "repo"
+    remote = tmp_path / "missing-remote.git"
+    subprocess.run(["git", "init", str(root)], check=True, capture_output=True)
+    _git(root, "config", "user.name", "LabOS Test")
+    _git(root, "config", "user.email", "labos@example.invalid")
+    (root / "base.txt").write_text("base")
+    _git(root, "add", "base.txt")
+    _git(root, "commit", "-m", "base")
+    _git(root, "branch", "-M", "main")
+    _git(root, "remote", "add", "origin", str(remote))
+    before = snapshot(root)
+    (root / "change.txt").write_text("change")
+    try:
+        commit_and_push(root, before, "push failure")
+    except Exception as exc:
+        assert "push" in str(exc).lower() or "remote" in str(exc).lower()
+    else:
+        raise AssertionError("push failure was not surfaced")
+    assert _git(root, "rev-parse", "HEAD") == before.head
+    assert _git(root, "status", "--short") == "?? change.txt"
