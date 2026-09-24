@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from pathlib import Path
 import subprocess
 
+MAX_STATE_FILE_CHARS = 24000
+
 @dataclass(frozen=True)
 class ProjectSnapshot:
     root: Path
@@ -17,7 +19,15 @@ def inspect_project(root: Path, repository: str, state_files: tuple[str,...]) ->
     files={}
     for name in state_files:
         path=root/name
-        if path.is_file(): files[name]=path.read_text(encoding="utf-8",errors="replace")
+        if path.is_file():
+            content=path.read_text(encoding="utf-8",errors="replace")
+            if len(content) > MAX_STATE_FILE_CHARS:
+                content = (
+                    content[:MAX_STATE_FILE_CHARS]
+                    + "\n\n[LabOS-Agent: state file truncated for prompt-size safety; "
+                    "inspect the repository file directly if more context is required.]"
+                )
+            files[name]=content
     result=subprocess.run(["git","-C",str(root),"status","--short"],check=True,capture_output=True,text=True,timeout=20)
     return ProjectSnapshot(root,repository,files,result.stdout.strip())
 
