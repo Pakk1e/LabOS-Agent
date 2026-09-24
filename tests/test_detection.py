@@ -21,3 +21,8 @@ def test_observe_detects_stop_control():
 
 def test_observe_without_stop_is_not_generating():
     assert not observe(FakePage(stop=False)).generating
+
+
+def test_observe_does_not_report_generation_without_stop_control():
+    obs = observe(FakePage(stop=False))
+    assert not obs.generating
