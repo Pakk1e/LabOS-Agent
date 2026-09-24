@@ -18,11 +18,21 @@ class Controller:
         if not decision.allowed: self.stop(decision.reason or "safety limit reached"); return
         self.state.iteration+=1; self.state.transition(RunState.WORKING)
     def mark_waiting(self)->None: self.state.transition(RunState.WAITING)
-    def mark_success(self)->None:
+    def mark_success(self, *, continue_running: bool = True)->None:
+        """Record a fully committed/pushed iteration."""
         self.state.consecutive_failures=0
         self.state.consecutive_no_progress=0
         self.state.last_progress_result="progress confirmed"
-        self.state.transition(RunState.WAITING,reason="response completed")
+        if continue_running:
+            self.state.transition(
+                RunState.WAITING,
+                reason="iteration committed and pushed successfully",
+            )
+        else:
+            self.state.transition(
+                RunState.COMPLETED,
+                reason="iteration committed and pushed successfully",
+            )
     def mark_no_progress(self,reason:str)->None:
         self.state.consecutive_no_progress+=1
         self.state.record_failure(reason)
