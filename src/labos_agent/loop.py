@@ -323,7 +323,12 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
         controller.begin_iteration(datetime.now().astimezone())
         save_state(state_path(project_name), state)
 
-        prepare_repository(project.project_root, branch_name=state.branch_name, allow_dirty=state.pending_ci_fix)
+        prepare_repository(
+            project.project_root,
+            branch_name=state.branch_name,
+            allow_dirty=state.pending_ci_fix,
+            expected_dirty_fingerprint=state.pending_ci_worktree_fingerprint,
+        )
         snapshot = inspect_project(project.project_root, project.repository, project.state_files)
         before_git = git_snapshot(project.project_root)
 
@@ -425,6 +430,7 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
             controller.mark_success(continue_running=False)
             state.pending_ci_fix = False
             state.pending_ci_baseline_untracked = []
+            state.pending_ci_worktree_fingerprint = None
             save_state(state_path(project_name), state)
             return RunResult(state, response)
 
@@ -607,6 +613,7 @@ def _run_loop_impl(
                     controller.mark_success(continue_running=True)
                     state.pending_ci_fix = False
                     state.pending_ci_baseline_untracked = []
+                    state.pending_ci_worktree_fingerprint = None
                 except Exception as exc:
                     if before_git is not None:
                         try:
