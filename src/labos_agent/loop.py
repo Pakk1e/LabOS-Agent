@@ -422,6 +422,7 @@ def _run_loop_impl(
                     save_state(state_path(project_name), state)
                     return RunResult(state)
 
+                before_git = None
                 try:
                     prepare_repository(
                         project.project_root,
@@ -441,6 +442,22 @@ def _run_loop_impl(
                         project.execution_enabled,
                     )
                     before_git = git_snapshot(project.project_root)
+                    if chat.status().rollover_required:
+                        controller.rollover()
+                        save_state(state_path(project_name), state)
+                        continuation, _, response = rollover_from_max_length(
+                            chat,
+                            project,
+                            state_dir(project_name),
+                            timeout_seconds=_remaining_timeout(deadline, config.browser.response_timeout_seconds),
+                            quiet_seconds=config.browser.quiet_seconds,
+                        )
+                        save_response(project_name, response)
+                        state.reason = "conversation reached hard maximum; rolled over and resumed"
+                        save_state(state_path(project_name), state)
+                        continue
+                    if deadline is not None and datetime.now().astimezone() >= deadline:
+                        raise DeadlineReached("deadline reached before ChatGPT request")
                     response = chat.send_and_wait_for_response(
                         prompt,
                         timeout_seconds=config.browser.response_timeout_seconds,
@@ -512,6 +529,29 @@ def _run_loop_impl(
                     state.pending_ci_fix = False
                     state.pending_ci_baseline_untracked = []
                 except Exception as exc:
+                    if before_git is not None:
+                        try:
+                            after_git = git_snapshot(project.project_root)
+                            if after_git.worktree_fingerprint != before_git.worktree_fingerprint:
+                                _mark_dirty_recovery(state, before_git)
+                        except Exception:
+                            pass
+                    if _is_browser_connection_error(exc):
+                        try:
+                            context = session.reconnect()
+                            chat = ChatGPTPage(_select_chat_page(context, project))
+                            chat.assert_ready()
+                            if project.project_name and not chat.project_context_present(project.project_name):
+                                raise RuntimeError("ChatGPT Project context not detected: " + project.project_name)
+                            save_state(state_path(project_name), state)
+                            time.sleep(1)
+                            continue
+                        except Exception as reconnect_exc:
+                            exc = reconnect_exc
+                    if isinstance(exc, DeadlineReached):
+                        controller.stop(str(exc))
+                        save_state(state_path(project_name), state)
+                        return RunResult(state)
                     controller.mark_failure(str(exc))
                     save_state(state_path(project_name), state)
                     if state.consecutive_failures >= controller.limits.max_consecutive_failures:
