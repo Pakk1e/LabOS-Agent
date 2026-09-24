@@ -200,14 +200,15 @@ def prepare_repository(root: Path, *, branch_name: str = "main", allow_dirty: bo
         record and len(record) >= 3 and record[2] == " " and not record.startswith("?? ")
         for record in status.split("\0") if record
     )
+    has_changes = bool(status)
     if allow_dirty:
         if expected_dirty_fingerprint is None:
             raise RuntimeError("Git preflight refused: dirty recovery requires an expected worktree fingerprint")
         current = snapshot(root)
         if current.worktree_fingerprint != expected_dirty_fingerprint:
             raise RuntimeError("Git preflight refused: pending recovery worktree changed outside LabOS")
-        if not has_tracked_changes:
-            raise RuntimeError("Git preflight refused: pending recovery expected dirty tracked changes, but none remain")
+        if not has_changes:
+            raise RuntimeError("Git preflight refused: pending recovery expected dirty worktree changes, but none remain")
     elif has_tracked_changes:
         raise RuntimeError("Git preflight refused: tracked working-tree changes exist before the iteration")
     _git(root, "fetch", "origin", "main")
