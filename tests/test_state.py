@@ -54,3 +54,17 @@ def test_state_loads_without_local_ci_result(tmp_path):
     state = load_state(path)
     assert state is not None
     assert state.last_ci_result is None
+
+
+def test_pending_recovery_fingerprint_round_trip(tmp_path:Path):
+    state=AgentState(
+        project="weather",
+        run_id="x",
+        pending_ci_fix=True,
+        pending_ci_worktree_fingerprint="abc123",
+    )
+    path=tmp_path/"state.json"
+    save_state(path,state)
+    restored=load_state(path)
+    assert restored is not None
+    assert restored.pending_ci_worktree_fingerprint=="abc123"
