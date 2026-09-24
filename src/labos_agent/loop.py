@@ -308,11 +308,9 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
             context = session.context
             chat = ChatGPTPage(_select_chat_page(context, project))
             if chat.status().rollover_required:
-                controller.rollover()
-                _, _, response = rollover_from_max_length(
-                    chat, project, state_dir(project_name),
-                    timeout_seconds=_remaining_timeout(None, config.browser.response_timeout_seconds),
-                    quiet_seconds=config.browser.quiet_seconds,
+                continuation, response = _rollover_and_process_resume(
+                    chat, project, state, project_name, config,
+                    deadline=None, max_rollovers=controller.limits.max_rollovers,
                 )
                 save_response(project_name, response)
                 save_state(state_path(project_name), state)
