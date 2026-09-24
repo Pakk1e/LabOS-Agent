@@ -137,13 +137,14 @@ def _validate_command(command: list[str]) -> None:
 
         if subcommand in {"status", "ls-files"}:
             raise PermissionError(f"git path must be supplied after '--': {token}")
-        _validate_git_revision_token(subcommand, token)
+        _validate_git_revision_token(root, subcommand, token)
 
-def _validate_git_revision_token(subcommand: str, token: str) -> None:
+def _validate_git_revision_token(root: Path, subcommand: str, token: str) -> None:
     if subcommand not in {"diff", "log", "show"}:
         return
-    # Exclude Git revision:path forms and traversal-like tokens. Actual
-    # pathspecs must be supplied after -- and are validated separately.
+    # Revision/path forms and traversal-like tokens are rejected. For
+    # slash-containing names, require Git itself to resolve the token as a
+    # commit-ish revision; actual pathspecs must be supplied after --.
     if (
         ":" in token
         or token.startswith("/")
@@ -153,6 +154,17 @@ def _validate_git_revision_token(subcommand: str, token: str) -> None:
         or ".." in token
     ):
         raise PermissionError(f"git revision/path token is not allowed: {token}")
+    if "/" in token:
+        result = subprocess.run(
+            ["git", "rev-parse", "--verify", "--end-of-options", f"{token}^{{commit}}"],
+            cwd=root,
+            env=_git_env(root),
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            raise PermissionError(f"git revision/path token is not a known revision: {token}")
 
 
 def _validate_command_paths(command: list[str], root: Path) -> None:
