@@ -81,6 +81,8 @@ class FakeChat:
     def select_page(context, **kwargs): return context.pages[0]
     def __init__(self,page): pass
     def assert_ready(self): pass
+    def status(self):
+        return type("Status", (), {"rollover_required": False})()
     def project_context_present(self,name): return True
     def send_and_wait_for_response(self,*args,**kwargs): return "no execution request"
 
