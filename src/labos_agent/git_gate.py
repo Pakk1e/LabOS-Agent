@@ -47,7 +47,7 @@ def snapshot(root: Path) -> GitSnapshot:
     diff = _git(root, "diff", "HEAD", "--binary", "--")
     return GitSnapshot(
         head=_git(root, "rev-parse", "HEAD"),
-        upstream=_git(root, "rev-parse", "--verify", "@{upstream}"),
+        upstream=_git(root, "rev-parse", "--verify", "@{upstream}", check=False),
         status=status,
         worktree_fingerprint=hashlib.sha256((status + "\0" + diff).encode()).hexdigest(),
     )
