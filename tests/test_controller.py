@@ -36,6 +36,6 @@ def test_success_requires_all_evidence_gates():
     try:
         Controller(state=state, limits=SafetyLimits()).mark_success(continue_running=False)
     except RuntimeError as exc:
-        assert "complete evidence chain" in str(exc)
+        assert "all verification gates" in str(exc)
     else:
         raise AssertionError("incomplete evidence was accepted")
