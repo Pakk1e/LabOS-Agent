@@ -316,8 +316,9 @@ def test_max_length_error_detection():
     assert not loop._is_max_length_error(RuntimeError("browser target closed"))
 
 
-def test_project_state_prompt_is_bounded(tmp_path):
+def test_project_state_prompt_is_bounded(tmp_path, monkeypatch):
     from labos_agent.project import inspect_project, MAX_STATE_FILE_CHARS
+    monkeypatch.setattr("labos_agent.project.git_status", lambda root: "")
     path = tmp_path / "AGENTS.md"
     path.write_text("x" * (MAX_STATE_FILE_CHARS + 100), encoding="utf-8")
     snapshot = inspect_project(tmp_path, "example/repo", ("AGENTS.md",))
