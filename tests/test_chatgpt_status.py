@@ -138,3 +138,30 @@ def test_select_page_prefers_project_context_when_urls_are_not_exact(monkeypatch
         project_name="Vadovsky Tech — Weather",
         project_url="https://chatgpt.com/g/g-p-weather/project",
     ) is project
+
+
+class _BodyLocator:
+    def __init__(self, text):
+        self.text = text
+
+    def inner_text(self, timeout=None):
+        return self.text
+
+
+class _ContextPage:
+    def __init__(self, text):
+        self.body = _BodyLocator(text)
+
+    def locator(self, selector):
+        assert selector == "body"
+        return self.body
+
+
+def test_project_context_requires_exact_visible_name():
+    chat = ChatGPTPage(_ContextPage("Vadovsky Tech — Weather dashboard\n"))
+    assert chat.project_context_present("Vadovsky Tech — Weather")
+
+
+def test_project_context_rejects_name_as_unrelated_substring():
+    chat = ChatGPTPage(_ContextPage("Open Vadovsky Tech — Weathering tools\n"))
+    assert not chat.project_context_present("Vadovsky Tech — Weather")
