@@ -178,6 +178,7 @@ class ChatGPTPage:
             '[contenteditable="true"][role="textbox"]',
             '[contenteditable="true"]',
         )
+        visible_candidates=[]
         for selector in selectors:
             loc=self.page.locator(selector)
             for i in range(loc.count()):
@@ -185,6 +186,7 @@ class ChatGPTPage:
                 try:
                     if not item.is_visible():
                         continue
+                    visible_candidates.append(item)
                     found=item.evaluate(
                         """(el, expected) => {
                             const values = [
@@ -204,6 +206,19 @@ class ChatGPTPage:
                         return item
                 except Exception:
                     continue
+
+        # ChatGPT has changed the composer placeholder several times. On a
+        # verified Project home, a single visible editable textbox is a safe
+        # fallback when the semantic placeholder is absent.
+        editable=[]
+        for item in visible_candidates:
+            try:
+                if item.is_editable():
+                    editable.append(item)
+            except Exception:
+                continue
+        if len(editable)==1:
+            return editable[0]
         return None
 
     def project_chat_composer_present(self,project_name:str)->bool:
