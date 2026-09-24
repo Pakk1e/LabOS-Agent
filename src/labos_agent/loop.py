@@ -82,12 +82,12 @@ def _select_chat_page(context, project):
         project_url=project.project_url,
     )
 
-def _prepare_state(project_name:str)->AgentState:
+def _prepare_state(project_name:str, *, recover: bool=False)->AgentState:
     state=load_state(state_path(project_name))
     if state is None:
         run_id=uuid.uuid4().hex
         return AgentState(project=project_name,run_id=run_id,branch_name=f"agent/{run_id[:12]}")
-    if state.state in {RunState.STOPPED,RunState.COMPLETED,RunState.ERROR,RunState.BLOCKED}:
+    if recover and state.state in {RunState.STOPPED,RunState.ERROR}:\n        state.run_id=state.run_id or uuid.uuid4().hex\n        state.state=RunState.IDLE\n        state.consecutive_failures=0\n        state.consecutive_no_progress=0\n        state.started_at=None\n        state.stopped_at=None\n        state.last_action=None\n        state.reason=None\n    elif state.state in {RunState.STOPPED,RunState.COMPLETED,RunState.ERROR,RunState.BLOCKED}:
         # A new run is a new execution, not a recovery of the previous run.
         # Keep failure_history for diagnostics, but reset execution counters and
         # per-run results so stale failures cannot immediately stop the new run.
@@ -185,7 +185,7 @@ def run_once(config:AppConfig,project_name:str)->RunResult:
             save_state(state_path(project_name),state)
             return RunResult(state,response)
         try:
-            committed_sha = commit_and_push(project.project_root, before_git, f"lab-agent: iteration {state.iteration}", branch_name=state.branch_name, allow_preexisting_tracked_changes=bool(state.last_ci_result and "success=False" in state.last_ci_result))
+            committed_sha = commit_and_push(project.project_root, before_git, f"lab-agent: iteration {state.iteration}", branch_name=state.branch_name, allow_preexisting_tracked_changes=state.pending_ci_fix)
             if committed_sha:
                 state.last_action=f"committed and pushed {committed_sha}"
         except Exception as exc:
