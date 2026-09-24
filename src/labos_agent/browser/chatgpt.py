@@ -38,6 +38,42 @@ class ChatGPTPage:
         except ValueError: return False
         return host=="chatgpt.com" or host.endswith(".chatgpt.com")
 
+    @classmethod
+    def select_page(cls,context,*,project_name:str|None=None,project_url:str|None=None):
+        """Select the ChatGPT page belonging to the requested Project.
+
+        Multiple ChatGPT tabs are common during long-running browser sessions.
+        Never blindly use the first tab when a Project can be identified.
+        """
+        pages=[p for p in context.pages if cls._is_chatgpt_url(p.url)]
+        if not pages:
+            raise RuntimeError("No ChatGPT page is attached")
+        if len(pages)==1:
+            return pages[0]
+
+        best_page=None
+        best_score=-1
+        for page in pages:
+            score=0
+            try:
+                if project_url and page.url.rstrip("/") == project_url.rstrip("/"):
+                    score += 100
+                chat=cls(page)
+                if project_name:
+                    if chat.project_context_present(project_name):
+                        score += 20
+                    if chat.project_chat_composer(project_name) is not None:
+                        score += 40
+            except Exception:
+                continue
+            if score > best_score:
+                best_score=score
+                best_page=page
+
+        if best_page is None:
+            raise RuntimeError("No usable ChatGPT page was found")
+        return best_page
+
     def _find_input(self):
         for selector in ('[contenteditable="true"][role="textbox"]','#prompt-textarea[contenteditable="true"]','[contenteditable="true"]','textarea'):
             loc=self.page.locator(selector).first
@@ -82,8 +118,6 @@ class ChatGPTPage:
                 if not box.is_editable():
                     self.page.wait_for_timeout(250)
                     continue
-                # Keep the action timeout short so a transient ChatGPT
-                # re-render cannot consume the full Playwright default.
                 box.fill(message,timeout=1000)
                 box.press("Enter",timeout=1000)
                 return
@@ -207,9 +241,6 @@ class ChatGPTPage:
                 except Exception:
                     continue
 
-        # ChatGPT has changed the composer placeholder several times. On a
-        # verified Project home, a single visible editable textbox is a safe
-        # fallback when the semantic placeholder is absent.
         editable=[]
         for item in visible_candidates:
             try:
@@ -285,7 +316,6 @@ class ChatGPTPage:
                 continue
 
     def _project_home_button(self, project_name: str):
-        """Find the Project-home button in the exact named Project row."""
         if not project_name:
             return None
         option=self.page.locator(
@@ -307,7 +337,6 @@ class ChatGPTPage:
         return None
 
     def start_new_project_chat(self,*,project_name:str|None,project_url:str|None,selector:str|None)->None:
-        """Navigate to a fresh Project composer using the visible Project UI."""
         if project_name:
             home=self._project_home_button(project_name)
             if home is None:
