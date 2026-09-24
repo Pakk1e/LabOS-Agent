@@ -80,4 +80,4 @@ def observe(page: Page) -> ResponseObservation:
         available=False
     stop=any(_visible(page,s) for s in _STOP_SELECTORS)
     count=page.locator('[data-message-author-role="assistant"]').count()
-    return ResponseObservation(generating=stop,input_available=available,stop_control_visible=stop,assistant_count=count)
+    return ResponseObservation(generating=stop and not available,input_available=available,stop_control_visible=stop,assistant_count=count)
