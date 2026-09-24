@@ -200,9 +200,14 @@ class ChatGPTPage:
 
     def project_context_present(self,project_name:str)->bool:
         if not project_name: return True
-        try: body=self.page.locator("body").inner_text(timeout=3000)
-        except Exception: return False
-        return project_name.casefold() in body.casefold()
+        try:
+            body=self.page.locator("body").inner_text(timeout=3000)
+        except Exception:
+            return False
+        target=project_name.casefold().strip()
+        if not target:
+            return True
+        return any(line.strip().casefold() == target for line in body.splitlines())
 
     def project_chat_composer(self,project_name:str):
         """Return the visible Project-home composer, identified by its rendered placeholder."""
