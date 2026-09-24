@@ -52,7 +52,12 @@ def _validate_command(command: list[str]) -> None:
         i = 1
         while i < len(command):
             token = command[i]
-            if token in {"-C", "-c", "--git-dir", "--work-tree"}:
+            if token == "-c":
+                if i + 1 < len(command) and command[i + 1].casefold().startswith(("alias.", "core.hookspath")):
+                    raise PermissionError("git configuration aliases and hook paths are not allowed")
+                i += 2
+                continue
+            if token in {"-C", "--git-dir", "--work-tree"}:
                 i += 2
                 continue
             if token.startswith("-"):
