@@ -214,10 +214,10 @@ def browser_project_new_chat_test_command(args):
         if composer is None:
             raise RuntimeError("Project composer is unavailable for the requested test message")
         print("Sending one controlled Project chat test message.")
-        before=chat._assistant_texts()
-        composer.fill(args.test_message)
-        composer.press("Enter")
-        response=chat.wait_for_response(before=before)
+        response=chat.send_project_message_and_wait_for_response(
+            args.project_name,
+            args.test_message,
+        )
         print("Project chat test completed.")
         print(f"Result URL: {page.url}")
         print(f"Result title: {page.title()}")
@@ -256,11 +256,11 @@ def browser_project_rollover_test_command(args):
         composer=chat.project_chat_composer(args.project_name)
         if composer is None:
             raise RuntimeError("Project composer is unavailable after rollover navigation")
-        before=chat._assistant_texts()
         print("Sending supplied handoff to the fresh Project chat.")
-        composer.fill(args.handoff_message)
-        composer.press("Enter")
-        response=chat.wait_for_response(before=before)
+        response=chat.send_project_message_and_wait_for_response(
+            args.project_name,
+            args.handoff_message,
+        )
         if page.url == before_url:
             raise RuntimeError("rollover did not produce a new conversation URL")
         print("Controlled Project rollover completed.")
