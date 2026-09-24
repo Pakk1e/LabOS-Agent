@@ -250,6 +250,70 @@ def test_run_loop_source_has_dedicated_git_push_recovery_path():
     assert "_mark_push_failure_recovery" in names
 
 
+def test_resolve_execution_reprompts_when_response_promises_work_without_request(monkeypatch, tmp_path):
+    class Project:
+        execution_enabled = True
+
+    class Config:
+        browser = BrowserConfig(profile_dir=tmp_path, response_timeout_seconds=1, quiet_seconds=0)
+
+    class Chat:
+        def __init__(self):
+            self.calls = 0
+        def send_and_wait_for_response(self, *args, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                return "I will make the remaining source change now."
+            return "final response\nLABOS_DONE"
+
+    responses = iter([
+        ("feedback 1", True),
+        ("feedback 2", True),
+        ("final response\nLABOS_DONE", False),
+    ])
+    monkeypatch.setattr(loop, "_execute_agent_requests", lambda response, project: next(responses))
+    monkeypatch.setattr(loop, "save_response", lambda *args, **kwargs: None)
+
+    chat = Chat()
+    result = loop._resolve_execution(chat, "initial execution request", Project(), "test", Config())
+
+    assert result.endswith("LABOS_DONE")
+    assert chat.calls == 2
+
+
+def test_resolve_execution_requires_done_marker_after_execution(monkeypatch, tmp_path):
+    class Project:
+        execution_enabled = True
+
+    class Config:
+        browser = BrowserConfig(profile_dir=tmp_path, response_timeout_seconds=1, quiet_seconds=0)
+
+    class Chat:
+        def __init__(self):
+            self.calls = 0
+        def send_and_wait_for_response(self, *args, **kwargs):
+            self.calls += 1
+            return "still prose"
+
+    responses = iter([
+        ("feedback", True),
+        ("still prose", False),
+        ("still prose", False),
+        ("still prose", False),
+    ])
+    monkeypatch.setattr(loop, "_execute_agent_requests", lambda response, project: next(responses))
+    monkeypatch.setattr(loop, "save_response", lambda *args, **kwargs: None)
+
+    chat = Chat()
+    try:
+        loop._resolve_execution(chat, "initial execution request", Project(), "test", Config())
+    except RuntimeError as exc:
+        assert "handshake did not complete" in str(exc)
+    else:
+        raise AssertionError("prose-only completion was accepted")
+    assert chat.calls == 4
+
+
 def test_resolve_execution_returns_after_execution_round_completes(monkeypatch, tmp_path):
     class Project:
         execution_enabled = True
@@ -263,7 +327,7 @@ def test_resolve_execution_returns_after_execution_round_completes(monkeypatch, 
 
         def send_and_wait_for_response(self, *args, **kwargs):
             self.calls += 1
-            return "next execution request" if self.calls == 1 else "final response"
+            return "next execution request" if self.calls == 1 else "final response\nLABOS_DONE"
 
     responses = iter([
         ("feedback 1", True),
