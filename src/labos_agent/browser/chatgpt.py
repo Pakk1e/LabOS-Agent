@@ -75,8 +75,8 @@ class ChatGPTPage:
                 best_score=score
                 best_page=page
 
-        if best_page is None:
-            raise RuntimeError("No usable ChatGPT page was found")
+        if best_page is None or (project_name and best_score <= 0):
+            raise RuntimeError("No ChatGPT page matching the requested Project was found")
         return best_page
 
     def _find_input(self):

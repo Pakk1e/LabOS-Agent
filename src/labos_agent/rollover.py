@@ -65,3 +65,43 @@ def rollover(chat: ChatGPTPage, project: ProjectConfig, state_dir: Path, *,
     if chat.page.url == before_url:
         raise RuntimeError("Project rollover did not create a new conversation")
     return continuation,path,response
+
+def rollover_from_max_length(
+    chat: ChatGPTPage,
+    project: ProjectConfig,
+    state_dir: Path,
+    *,
+    timeout_seconds: float,
+    quiet_seconds: float,
+) -> tuple[str, Path, str]:
+    """Recover from ChatGPT's hard maximum by starting a fresh Project chat.
+
+    The old conversation cannot accept a handoff once the hard limit UI is
+    active, so persist an explicit machine-generated handoff and continue from
+    repository state rather than pretending a summary was generated.
+    """
+    project_name = project.project_name or project.name
+    handoff = (
+        f"Automatic rollover for {project.name}: the previous ChatGPT conversation "
+        "reached the hard maximum-length UI before a handoff could be generated. "
+        "No summary of unavailable conversation content is claimed here. Treat the "
+        "repository and persistent LabOS state as authoritative, inspect the current "
+        "working tree, and continue the existing task from there."
+    )
+    path = persist_handoff(state_dir, handoff)
+    before_url = chat.page.url
+    chat.start_new_project_chat(
+        project_name=project.project_name,
+        project_url=project.project_url,
+        selector=project.new_chat_selector,
+    )
+    continuation = resume_prompt(project, handoff)
+    response = chat.send_project_message_and_wait_for_response(
+        project_name,
+        continuation,
+        timeout_seconds=timeout_seconds,
+        quiet_seconds=quiet_seconds,
+    )
+    if chat.page.url == before_url:
+        raise RuntimeError("Project rollover did not create a new conversation")
+    return continuation, path, response
