@@ -133,7 +133,7 @@ def _prepare_state(project_name: str, *, recover: bool = False) -> AgentState:
         run_id = uuid.uuid4().hex
         return AgentState(project=project_name, run_id=run_id, branch_name=f"agent/{run_id[:12]}")
 
-    if recover and state.state == RunState.WORKING:
+    if recover and state.state in {RunState.WORKING, RunState.STARTING, RunState.ROLLOVER, RunState.WAITING}:
         state.failure_history.append({
             "timestamp": datetime.now().astimezone().isoformat(),
             "iteration": state.iteration,
@@ -141,8 +141,6 @@ def _prepare_state(project_name: str, *, recover: bool = False) -> AgentState:
         })
         state.failure_history = state.failure_history[-20:]
         state.state = RunState.IDLE
-        state.consecutive_failures = 0
-        state.consecutive_no_progress = 0
         state.started_at = None
         state.stopped_at = None
         state.last_action = None
@@ -212,7 +210,11 @@ def _resolve_execution(chat, response: str, project, project_name: str, config: 
             )
             save_response(project_name, response)
             continue
+        if project.execution_enabled:
+            continue
         return response
+    if project.execution_enabled:
+        raise RuntimeError("server execution is required but the assistant produced no executable request")
     return response
 
 
@@ -222,7 +224,7 @@ def _commit_recovery_baseline(state: AgentState) -> set[str] | None:
     return set(state.pending_ci_baseline_untracked)
 
 
-def run_once(config: AppConfig, project_name: str) -> RunResult:
+def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
     project = config.projects.get(project_name)
     if project is None:
         raise RuntimeError(f"unknown project: {project_name}")
@@ -312,7 +314,21 @@ def run_once(config: AppConfig, project_name: str) -> RunResult:
             return RunResult(state, response)
 
 
-def run_loop(
+def run_once(config: AppConfig, project_name: str) -> RunResult:
+    try:
+        return _run_once_impl(config, project_name)
+    except Exception as exc:
+        state = load_state(state_path(project_name))
+        if state is not None and state.state in {RunState.WORKING, RunState.STARTING, RunState.ROLLOVER}:
+            state.record_failure(str(exc))
+            state.consecutive_failures += 1
+            state.transition(RunState.ERROR, reason=str(exc))
+            save_state(state_path(project_name), state)
+            return RunResult(state)
+        raise
+
+
+def _run_loop_impl(
     config: AppConfig,
     project_name: str,
     *,
@@ -458,3 +474,23 @@ def run_loop(
                         controller.block(f"conversation rollover failed: {exc}")
                         save_state(state_path(project_name), state)
                         return RunResult(state)
+
+def run_loop(
+    config: AppConfig,
+    project_name: str,
+    *,
+    deadline: datetime | None,
+    max_iterations: int,
+    max_rollovers: int,
+) -> RunResult:
+    try:
+        return _run_loop_impl(config, project_name, deadline=deadline, max_iterations=max_iterations, max_rollovers=max_rollovers)
+    except Exception as exc:
+        state = load_state(state_path(project_name))
+        if state is not None and state.state in {RunState.WORKING, RunState.STARTING, RunState.ROLLOVER, RunState.WAITING}:
+            state.record_failure(str(exc))
+            state.consecutive_failures += 1
+            state.transition(RunState.ERROR, reason=str(exc))
+            save_state(state_path(project_name), state)
+            return RunResult(state)
+        raise

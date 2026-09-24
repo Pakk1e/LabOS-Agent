@@ -138,6 +138,9 @@ def test_git_read_surface_rejects_no_index_output_and_external_paths(tmp_path: P
         ["git", "show", "--output", "/tmp/labos-out", "HEAD"],
         ["git", "diff", "--ext-diff", "HEAD", "--", "file.txt"],
         ["git", "show", "HEAD", "--", "/etc/passwd"],
+        ["git", "diff", "src/foo.py"],
+        ["git", "log", "HEAD:../outside"],
+        ["git", "show", "origin/../outside"],
     ):
         with pytest.raises(PermissionError):
             execute_request(tmp_path, {"action": "run_command", "command": command}, policy(tmp_path))
@@ -179,3 +182,15 @@ def test_git_execution_is_rooted_even_from_nested_cwd(tmp_path: Path):
     )
     assert result.success
     assert not Path("/tmp/labos-agent-escape").exists()
+
+
+def test_run_command_honors_relative_cwd(tmp_path: Path):
+    subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True)
+    nested = tmp_path / "nested"
+    nested.mkdir()
+    result = execute_request(
+        tmp_path,
+        {"action": "run_command", "command": ["git", "status", "--short"], "cwd": "nested"},
+        policy(tmp_path),
+    )
+    assert result.success

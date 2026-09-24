@@ -147,3 +147,62 @@ def test_project_lock_rejects_concurrent_owner(tmp_path: Path, monkeypatch):
                 raise AssertionError("second lock unexpectedly acquired")
         except RuntimeError as exc:
             assert "already running" in str(exc)
+
+
+def test_prepare_state_recovers_rollover_and_waiting_without_resetting_counters(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(loop, "state_path", lambda project: tmp_path / project / "current.json")
+    for transient in (RunState.ROLLOVER, RunState.WAITING):
+        path = tmp_path / "weather" / "current.json"
+        state = AgentState(
+            project="weather", run_id="same-run", branch_name="agent/same-run",
+            state=transient, iteration=8, rollover_count=2, consecutive_failures=2,
+            consecutive_no_progress=1, pending_ci_fix=True,
+        )
+        save_state(path, state)
+        recovered = loop._prepare_state("weather", recover=True)
+        assert recovered.state == RunState.IDLE
+        assert recovered.run_id == "same-run"
+        assert recovered.branch_name == "agent/same-run"
+        assert recovered.iteration == 8
+        assert recovered.rollover_count == 2
+        assert recovered.consecutive_failures == 2
+        assert recovered.consecutive_no_progress == 1
+        assert recovered.pending_ci_fix is True
+
+
+def test_run_once_records_unexpected_post_iteration_exception(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(loop, "state_path", lambda project: tmp_path / project / "current.json")
+    path = tmp_path / "weather" / "current.json"
+    save_state(path, AgentState(project="weather", run_id="run", state=RunState.WORKING, iteration=3))
+    def explode(*args, **kwargs):
+        raise RuntimeError("unexpected setup failure")
+    monkeypatch.setattr(loop, "_run_once_impl", explode)
+    config = AppConfig(browser=BrowserConfig(profile_dir=tmp_path), projects={})
+    result = loop.run_once(config, "weather")
+    assert result.state.state == RunState.ERROR
+    assert result.state.reason == "unexpected setup failure"
+    assert result.state.consecutive_failures == 1
+    assert result.state.failure_history[-1]["reason"] == "unexpected setup failure"
+
+
+def test_required_execution_cannot_fall_back_to_prose(monkeypatch, tmp_path):
+    class Project:
+        execution_enabled = True
+    class Config:
+        browser = BrowserConfig(profile_dir=tmp_path, response_timeout_seconds=1, quiet_seconds=0)
+    class Chat:
+        def __init__(self):
+            self.calls = 0
+        def send_and_wait_for_response(self, *args, **kwargs):
+            self.calls += 1
+            return "still prose"
+    chat = Chat()
+    monkeypatch.setattr(loop, "_execute_agent_requests", lambda response, project: (response, False))
+    monkeypatch.setattr(loop, "save_response", lambda *args, **kwargs: None)
+    try:
+        loop._resolve_execution(chat, "initial prose", Project(), "test", Config())
+    except RuntimeError as exc:
+        assert "server execution is required" in str(exc)
+    else:
+        raise AssertionError("required execution was allowed to fall back to prose")
+    assert chat.calls == 1

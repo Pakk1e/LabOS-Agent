@@ -235,8 +235,14 @@ def commit_and_push(
 
     baseline = baseline_untracked if baseline_untracked is not None else set(before.untracked_paths)
     new_untracked = set(current.untracked_paths) - baseline
+    current_branch = _git(root, "branch", "--show-current")
+    committed = False
     try:
         _validate_sensitive_paths(_status_paths_z(current.status))
+        if current_branch != branch_name:
+            raise RuntimeError(
+                f"Git gate refused: current branch {current_branch!r} does not match expected branch {branch_name!r}"
+            )
         if new_untracked:
             _git(root, "add", "--", *sorted(new_untracked))
         _git(root, "add", "-u", "--")
@@ -245,9 +251,15 @@ def commit_and_push(
         if not staged:
             return None
         _git(root, "commit", "-m", message)
+        committed = True
         sha = _git(root, "rev-parse", "HEAD")
-        _git(root, "push", "--porcelain", "origin", f"HEAD:refs/heads/{branch_name}")
+        try:
+            _git(root, "push", "--porcelain", "origin", f"HEAD:refs/heads/{branch_name}")
+        except Exception:
+            _git(root, "reset", "--mixed", "HEAD~1", check=False)
+            raise
         return sha
     except Exception:
-        _git(root, "reset", "--mixed", "HEAD", "--", check=False)
+        if not committed:
+            _git(root, "reset", "--mixed", "HEAD", "--", check=False)
         raise
