@@ -299,11 +299,8 @@ def commit_and_push(
         try:
             _git(root, "push", "--porcelain", "origin", f"HEAD:refs/heads/{branch_name}")
         except Exception as exc:
-            remote_sha = _git(
-                root, "ls-remote", "origin", f"refs/heads/{branch_name}", check=False
-            ).split()[0] if _git(
-                root, "ls-remote", "origin", f"refs/heads/{branch_name}", check=False
-            ) else ""
+            remote = _git(root, "ls-remote", "origin", f"refs/heads/{branch_name}", check=False)
+            remote_sha = remote.split()[0] if remote else ""
             if remote_sha == sha:
                 return sha
             _git(root, "reset", "--mixed", "HEAD~1", check=False)
