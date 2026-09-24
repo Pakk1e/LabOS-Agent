@@ -185,9 +185,11 @@ def _handle_no_progress(controller: Controller, state: AgentState) -> bool:
 
 
 def _resolve_execution(chat, response: str, project, project_name: str, config: AppConfig) -> str:
+    had_execution = False
     for attempt in range(4):
         execution_feedback, requested_execution = _execute_agent_requests(response, project)
         if requested_execution:
+            had_execution = True
             response = chat.send_and_wait_for_response(
                 "The LabOS controller executed your requested server operations. Use these real results and continue the implementation; do not claim execution that is not shown here.\n\n"
                 + execution_feedback,
@@ -210,18 +212,21 @@ def _resolve_execution(chat, response: str, project, project_name: str, config: 
             )
             save_response(project_name, response)
             continue
-        if project.execution_enabled:
+        if project.execution_enabled and not had_execution:
             raise RuntimeError("server execution is required but the assistant produced no executable request after the enforcement re-prompt")
         return response
-    if project.execution_enabled:
-        raise RuntimeError("server execution is required but the assistant produced no executable request")
     return response
+
+
+def _mark_dirty_recovery(state: AgentState, before_git) -> None:
+    """Preserve dirty worktree changes for the next recovery iteration."""
+    state.pending_ci_fix = True
+    state.pending_ci_baseline_untracked = list(before_git.untracked_paths)
 
 
 def _mark_push_failure_recovery(state: AgentState, before_git) -> None:
     """Preserve rolled-back validated changes for the next recovery iteration."""
-    state.pending_ci_fix = True
-    state.pending_ci_baseline_untracked = list(before_git.untracked_paths)
+    _mark_dirty_recovery(state, before_git)
 
 
 def _commit_recovery_baseline(state: AgentState) -> set[str] | None:
@@ -418,6 +423,7 @@ def _run_loop_impl(
                         continue
 
                     if deadline is not None and datetime.now().astimezone() >= deadline:
+                        _mark_dirty_recovery(state, before_git)
                         controller.stop("deadline reached before LocalCI")
                         save_state(state_path(project_name), state)
                         return RunResult(state, response)
@@ -436,6 +442,7 @@ def _run_loop_impl(
                         continue
 
                     if deadline is not None and datetime.now().astimezone() >= deadline:
+                        _mark_dirty_recovery(state, before_git)
                         controller.stop("deadline reached before commit")
                         save_state(state_path(project_name), state)
                         return RunResult(state, response)
