@@ -211,6 +211,23 @@ def _discard_tracked_sensitive_changes(root: Path, status: str) -> None:
         _git(root, "restore", "--staged", "--worktree", "--", *tracked, check=False)
 
 
+def can_clear_legacy_dirty_recovery(root: Path, baseline_untracked: set[str] | tuple[str, ...]) -> bool:
+    """Return whether legacy recovery metadata can be cleared without trusting unknown changes.
+
+    Older persisted states could mark recovery pending without recording the exact
+    worktree fingerprint.  We may only migrate that state when the current tree
+    contains no tracked changes and no untracked paths that appeared after the
+    recorded baseline.  Otherwise the caller must keep the hard recovery gate.
+    """
+    status = _git(root, "status", "--porcelain=v1", "-z", "-uall")
+    records = [record for record in status.split("\\0") if record]
+    tracked_changes = [record for record in records if not record.startswith("?? ")]
+    if tracked_changes:
+        return False
+    current_untracked = set(_untracked_paths(root))
+    return current_untracked.issubset(set(baseline_untracked))
+
+
 def prepare_repository(root: Path, *, branch_name: str = "main", allow_dirty: bool = False, expected_dirty_fingerprint: str | None = None) -> None:
     status = _git(root, "status", "--porcelain=v1", "-z", "-uall")
     _discard_tracked_sensitive_changes(root, status)
