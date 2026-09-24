@@ -12,7 +12,7 @@ def test_parse_execution_requests():
 
 def test_run_command_is_argv_and_returns_result(tmp_path: Path):
     result = execute_request(tmp_path, {"action":"run_command","command":["pytest","--version"]}, policy(tmp_path))
-    assert result.success and result.exit_code == 0 and result.stdout.strip() == "ok"
+    assert result.success and result.exit_code == 0 and result.stdout.strip().startswith("pytest")
 
 def test_write_and_read_file_stay_inside_root(tmp_path: Path):
     execute_request(tmp_path, {"action":"write_file","path":"x.txt","content":"hello"}, policy(tmp_path))
@@ -23,7 +23,7 @@ def test_rejects_path_escape(tmp_path: Path):
         execute_request(tmp_path, {"action":"read_file","path":"../secret.txt"}, policy(tmp_path))
 
 def test_format_results():
-    result = execute_request(Path("."), {"action":"run_command","command":["python3","-c","print('ok')"]}, policy(Path(".")))
+    result = execute_request(Path("."), {"action":"run_command","command":["pytest","--version"]}, policy(Path(".")))
     text = format_execution_results([result])
     assert "LabOS server execution results:" in text and "success=True" in text
 
