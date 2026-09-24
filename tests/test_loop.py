@@ -282,3 +282,44 @@ def test_run_loop_source_marks_deadline_dirty_worktree_for_recovery():
     source = loop._run_loop_impl.__code__
     names = set(source.co_names)
     assert "_mark_dirty_recovery" in names
+
+
+def test_remaining_timeout_respects_deadline():
+    from datetime import datetime, timedelta, timezone
+    deadline = datetime.now(timezone.utc) + timedelta(seconds=10)
+    value = loop._remaining_timeout(deadline, 300)
+    assert 0 < value <= 10
+
+
+def test_remaining_timeout_rejects_expired_deadline():
+    from datetime import datetime, timedelta, timezone
+    deadline = datetime.now(timezone.utc) - timedelta(seconds=1)
+    try:
+        loop._remaining_timeout(deadline, 300)
+    except loop.DeadlineReached as exc:
+        assert "deadline" in str(exc)
+    else:
+        raise AssertionError("expired deadline was accepted")
+
+
+def test_long_run_recovery_hooks_are_present():
+    source = loop._run_loop_impl.__code__
+    names = set(source.co_names)
+    assert "rollover_from_max_length" in names
+    assert "_is_browser_connection_error" in names
+    assert "_mark_dirty_recovery" in names
+    assert "reconnect" in names
+
+
+def test_max_length_error_detection():
+    assert loop._is_max_length_error(RuntimeError("ChatGPT conversation has reached maximum length"))
+    assert not loop._is_max_length_error(RuntimeError("browser target closed"))
+
+
+def test_project_state_prompt_is_bounded(tmp_path):
+    from labos_agent.project import inspect_project, MAX_STATE_FILE_CHARS
+    path = tmp_path / "AGENTS.md"
+    path.write_text("x" * (MAX_STATE_FILE_CHARS + 100), encoding="utf-8")
+    snapshot = inspect_project(tmp_path, "example/repo", ("AGENTS.md",))
+    assert len(snapshot.files["AGENTS.md"]) < MAX_STATE_FILE_CHARS + 300
+    assert "state file truncated" in snapshot.files["AGENTS.md"]
