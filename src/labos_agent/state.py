@@ -105,7 +105,7 @@ def utc_now()->str: return datetime.now(timezone.utc).isoformat()
 def load_state(path:Path)->AgentState|None:
     if not path.exists(): return None
     data=json.loads(path.read_text(encoding="utf-8"))
-    data["state"]=RunState(data["state"])
+    data["state"]=RunState("ITERATION_SUCCEEDED" if data["state"]=="WAITING" else data["state"])
     data["iteration_stage"]=IterationStage(data.get("iteration_stage","IDLE"))
     data.setdefault("branch_name","main")
     data.setdefault("iteration_at_last_rollover",0)
