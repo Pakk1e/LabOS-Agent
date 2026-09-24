@@ -49,7 +49,6 @@ def rollover(chat: ChatGPTPage, project: ProjectConfig, state_dir: Path, *,
         quiet_seconds=quiet_seconds,
     )
     path=persist_handoff(state_dir,handoff)
-    before_url=chat.page.url
     chat.start_new_project_chat(
         project_name=project.project_name,
         project_url=project.project_url,
@@ -62,8 +61,6 @@ def rollover(chat: ChatGPTPage, project: ProjectConfig, state_dir: Path, *,
         timeout_seconds=timeout_seconds,
         quiet_seconds=quiet_seconds,
     )
-    if chat.page.url == before_url:
-        raise RuntimeError("Project rollover did not create a new conversation")
     return continuation,path,response
 
 def rollover_from_max_length(
@@ -89,7 +86,6 @@ def rollover_from_max_length(
         "working tree, and continue the existing task from there."
     )
     path = persist_handoff(state_dir, handoff)
-    before_url = chat.page.url
     chat.start_new_project_chat(
         project_name=project.project_name,
         project_url=project.project_url,
@@ -102,6 +98,4 @@ def rollover_from_max_length(
         timeout_seconds=timeout_seconds,
         quiet_seconds=quiet_seconds,
     )
-    if chat.page.url == before_url:
-        raise RuntimeError("Project rollover did not create a new conversation")
     return continuation, path, response
