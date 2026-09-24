@@ -104,7 +104,7 @@ def _git_option_allowed(subcommand: str, token: str) -> bool:
     return any(token.startswith(prefix) for prefix in _GIT_SAFE_OPTION_PREFIXES.get(subcommand, ()))
 
 
-def _validate_command(command: list[str]) -> None:
+def _validate_command(command: list[str], root: Path) -> None:
     if not isinstance(command, list) or not command or not all(isinstance(x, str) and x for x in command):
         raise ValueError("run_command requires a non-empty argv list")
     if Path(command[0]).name.casefold() != "git":
@@ -188,7 +188,7 @@ def execute_request(root: Path, request: dict, policy: ExecutionPolicy) -> Execu
         return ExecutionResult(action, True, 0, f"wrote {path}", "")
     if action == "run_command":
         command = request.get("command")
-        _validate_command(command)
+        _validate_command(command, root)
         _validate_command_paths(command, root)
         execution_cwd = _rooted_path(root, str(request.get("cwd", ".")), policy)
         try:
