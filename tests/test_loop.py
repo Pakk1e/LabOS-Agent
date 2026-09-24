@@ -1,6 +1,7 @@
 from pathlib import Path
 from labos_agent.config import AppConfig, BrowserConfig, ProjectConfig
 from labos_agent.loop import run_loop
+from contextlib import contextmanager
 
 import labos_agent.loop as loop
 from labos_agent.state import AgentState, RunState, save_state
@@ -206,3 +207,35 @@ def test_required_execution_cannot_fall_back_to_prose(monkeypatch, tmp_path):
     else:
         raise AssertionError("required execution was allowed to fall back to prose")
     assert chat.calls == 1
+
+
+def test_push_failure_recovery_marks_pending_ci_fix():
+    state = AgentState(
+        project="weather",
+        run_id="run",
+        pending_ci_fix=False,
+        pending_ci_baseline_untracked=[],
+    )
+    before = type("Snapshot", (), {"untracked_paths": ("preexisting.txt",)})()
+    loop._mark_push_failure_recovery(state, before)
+    assert state.pending_ci_fix is True
+    assert state.pending_ci_baseline_untracked == ["preexisting.txt"]
+
+
+def test_run_once_outer_exception_records_failure_under_project_lock(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(loop, "state_path", lambda project: tmp_path / project / "current.json")
+    path = tmp_path / "weather" / "current.json"
+    save_state(path, AgentState(project="weather", run_id="run", state=RunState.WORKING, iteration=3))
+    acquired = {"value": False}
+
+    @contextmanager
+    def fake_lock(project):
+        acquired["value"] = True
+        yield
+
+    monkeypatch.setattr(loop, "_project_lock", fake_lock)
+    monkeypatch.setattr(loop, "_run_once_impl", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("unexpected")))
+    config = AppConfig(browser=BrowserConfig(profile_dir=tmp_path), projects={})
+    result = loop.run_once(config, "weather")
+    assert acquired["value"] is True
+    assert result.state.state == RunState.ERROR
