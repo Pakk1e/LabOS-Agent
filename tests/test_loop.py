@@ -1,4 +1,6 @@
 from pathlib import Path
+from labos_agent.config import AppConfig, BrowserConfig, ProjectConfig
+from labos_agent.loop import run_loop
 
 import labos_agent.loop as loop
 from labos_agent.state import AgentState, RunState, save_state
@@ -66,6 +68,17 @@ def test_prepare_state_preserves_active_run_state(tmp_path: Path, monkeypatch):
     assert prepared.consecutive_failures == 1
     assert prepared.iteration_at_last_rollover == 3
     assert prepared.last_ci_result == "stage=test success=False"
+
+class FakeSession:
+    def __init__(self,*args,**kwargs): self.context=type("Context",(),{"pages":[object()]})()
+    def __enter__(self): return self
+    def __exit__(self,*args): pass
+
+class FakeChat:
+    def __init__(self,page): pass
+    def assert_ready(self): pass
+    def project_context_present(self,name): return True
+    def send_and_wait_for_response(self,*args,**kwargs): return "no execution request"
 
 def test_run_loop_selects_project_page_and_stops_at_iteration_limit(monkeypatch,tmp_path):
     project=ProjectConfig(name="test",repository="x",project_root=tmp_path,continuation_message="continue",project_name="Test",execution_enabled=False)
