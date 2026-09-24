@@ -30,7 +30,7 @@ def snapshot(root: Path) -> GitSnapshot:
     return GitSnapshot(
         head=_git(root, "rev-parse", "HEAD"),
         upstream=_git(root, "rev-parse", "--verify", "@{upstream}"),
-        status=_git(root, "status", "--short"),
+        status=_git(root, "status", "--porcelain=v1", "-uall"),
     )
 
 
@@ -47,41 +47,44 @@ def assert_unchanged_before_ci(root: Path, before: GitSnapshot) -> None:
             "the implementation iteration pushed changes early"
         )
 
-def prepare_repository(root: Path) -> None:
-    """Validate and safely synchronize the target repository before an iteration."""
-    status = _git(root, "status", "--short")
-    if any(line and not line.startswith("?? ") for line in status.splitlines()):
-        raise RuntimeError(
-            "Git preflight refused: tracked working-tree changes exist before the iteration"
-        )
+def prepare_repository(root: Path, *, branch_name: str = "main", allow_dirty: bool = False) -> None:
+    """Synchronize the controller's working branch and reject unsafe history."""
+    status = _git(root, "status", "--porcelain=v1", "-uall")
+    if not allow_dirty and any(line and not line.startswith("?? ") for line in status.splitlines()):
+        raise RuntimeError("Git preflight refused: tracked working-tree changes exist before the iteration")
 
-    subprocess.run(
-        ["git", "-C", str(root), "fetch", "origin", "main"],
-        check=True,
-        timeout=120,
-    )
+    subprocess.run(["git", "-C", str(root), "fetch", "origin", "main"], check=True, timeout=120)
+
+    current_branch = _git(root, "branch", "--show-current")
+    if branch_name != "main":
+        if current_branch != branch_name:
+            local_exists = subprocess.run(["git", "-C", str(root), "show-ref", "--verify", "--quiet", f"refs/heads/{branch_name}"], check=False).returncode == 0
+            if local_exists:
+                subprocess.run(["git", "-C", str(root), "switch", branch_name], check=True, timeout=60)
+            else:
+                subprocess.run(["git", "-C", str(root), "switch", "-c", branch_name, "origin/main"], check=True, timeout=60)
+        subprocess.run(["git", "-C", str(root), "fetch", "origin", branch_name], check=False, timeout=120)
+        remote = _git(root, "rev-parse", f"origin/{branch_name}", check=False)
+        if remote:
+            head = _git(root, "rev-parse", "HEAD")
+            merge_base = _git(root, "merge-base", "HEAD", f"origin/{branch_name}")
+            if merge_base == head and head != remote:
+                subprocess.run(["git", "-C", str(root), "merge", "--ff-only", f"origin/{branch_name}"], check=True, timeout=60)
+            elif merge_base != remote and merge_base != head:
+                raise RuntimeError(f"Git preflight refused: local branch {branch_name} diverged from its remote")
+        return
+
     head = _git(root, "rev-parse", "HEAD")
     remote = _git(root, "rev-parse", "origin/main")
     if head == remote:
         return
-
     merge_base = _git(root, "merge-base", "HEAD", "origin/main")
     if merge_base == head:
-        subprocess.run(
-            ["git", "-C", str(root), "merge", "--ff-only", "origin/main"],
-            check=True,
-            timeout=60,
-        )
+        subprocess.run(["git", "-C", str(root), "merge", "--ff-only", "origin/main"], check=True, timeout=60)
         return
     if merge_base == remote:
-        raise RuntimeError(
-            "Git preflight refused: local repository is ahead of origin/main; "
-            "inspect the local commit before autonomous work"
-        )
-    raise RuntimeError(
-        "Git preflight refused: local repository has diverged from origin/main; "
-        "resolve the history before autonomous work"
-    )
+        raise RuntimeError("Git preflight refused: local repository is ahead of origin/main")
+    raise RuntimeError("Git preflight refused: local repository has diverged from origin/main")
 
 
 def _parse_untracked(status: str) -> set[str]:
@@ -92,7 +95,7 @@ def _parse_untracked(status: str) -> set[str]:
     }
 
 
-def commit_and_push(root: Path, before: GitSnapshot, message: str) -> str | None:
+def commit_and_push(root: Path, before: GitSnapshot, message: str, *, branch_name: str = "main") -> str | None:
     assert_unchanged_before_ci(root, before)
     current = snapshot(root)
     if any(line and not line.startswith("?? ") for line in before.status.splitlines()):
@@ -114,13 +117,13 @@ def commit_and_push(root: Path, before: GitSnapshot, message: str) -> str | None
         return None
 
     subprocess.run(
-        ["git", "-C", str(root), "commit", "-m", message],
+        ["git", "-C", str(root), "-c", "core.hooksPath=/dev/null", "commit", "-m", message],
         check=True,
         timeout=60,
     )
     sha = _git(root, "rev-parse", "HEAD")
     subprocess.run(
-        ["git", "-C", str(root), "push", "origin", "HEAD:refs/heads/main"],
+        ["git", "-C", str(root), "push", "--porcelain", "origin", f"HEAD:refs/heads/{branch_name}"],
         check=True,
         timeout=120,
     )
