@@ -216,6 +216,10 @@ def prepare_repository(root: Path, *, branch_name: str = "main", allow_dirty: bo
     raise RuntimeError("Git preflight refused: local repository has diverged from origin/main")
 
 
+class GitPushError(RuntimeError):
+    """Raised when a validated commit was created but the push failed and was rolled back."""
+
+
 def commit_and_push(
     root: Path,
     before: GitSnapshot,
@@ -255,9 +259,9 @@ def commit_and_push(
         sha = _git(root, "rev-parse", "HEAD")
         try:
             _git(root, "push", "--porcelain", "origin", f"HEAD:refs/heads/{branch_name}")
-        except Exception:
+        except Exception as exc:
             _git(root, "reset", "--mixed", "HEAD~1", check=False)
-            raise
+            raise GitPushError(f"validated commit was created but push failed: {exc}") from exc
         return sha
     except Exception:
         if not committed:
