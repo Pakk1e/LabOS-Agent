@@ -86,7 +86,7 @@ class Controller:
         self.state.last_progress_result="progress confirmed"
         reason="iteration committed, pushed, and exact-SHA CI verified"
         if continue_running:
-            self.state.transition(RunState.WAITING,reason=reason)
+            self.state.transition(RunState.ITERATION_SUCCEEDED,reason=reason)
             self.state.set_iteration_stage(IterationStage.ITERATION_SUCCEEDED)
         else:
             self.state.transition(RunState.COMPLETED,reason=reason)
