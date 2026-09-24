@@ -311,6 +311,7 @@ def test_long_run_recovery_hooks_are_present():
     assert "_is_browser_connection_error" in names
     assert "_mark_dirty_recovery" in names
     assert "reconnect" in names
+    assert "RolloverLimitReached" in names
 
 
 def test_max_length_error_detection():

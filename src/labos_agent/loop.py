@@ -32,6 +32,10 @@ class DeadlineReached(RuntimeError):
     """The configured hard stop was reached while an operation was in flight."""
 
 
+class RolloverLimitReached(RuntimeError):
+    """The configured conversation rollover budget was exhausted."""
+
+
 def _remaining_timeout(deadline: datetime | None, configured: float) -> float:
     if deadline is None:
         return configured
@@ -270,7 +274,7 @@ def _rollover_and_process_resume(
     *, deadline: datetime | None, max_rollovers: int, recovery_baseline=None,
 ) -> tuple[str, str]:
     if state.rollover_count >= max_rollovers:
-        raise RuntimeError("maximum rollovers reached")
+        raise RolloverLimitReached("maximum rollovers reached")
     baseline = git_snapshot(project.project_root)
     state.rollover_count += 1
     state.iteration_at_last_rollover = state.iteration
@@ -450,10 +454,15 @@ def _run_loop_impl(
             context = session.context
             chat = ChatGPTPage(_select_chat_page(context, project))
             if chat.status().rollover_required:
-                continuation, resume_response = _rollover_and_process_resume(
-                    chat, project, state, project_name, config,
-                    deadline=deadline, max_rollovers=max_rollovers,
-                )
+                try:
+                    continuation, resume_response = _rollover_and_process_resume(
+                        chat, project, state, project_name, config,
+                        deadline=deadline, max_rollovers=max_rollovers,
+                    )
+                except RolloverLimitReached as exc:
+                    controller.stop(str(exc))
+                    save_state(state_path(project_name), state)
+                    return RunResult(state)
                 save_response(project_name, resume_response)
                 save_state(state_path(project_name), state)
             else:
@@ -586,6 +595,10 @@ def _run_loop_impl(
                                 _mark_dirty_recovery(state, before_git)
                         except Exception:
                             pass
+                    if isinstance(exc, RolloverLimitReached):
+                        controller.stop(str(exc))
+                        save_state(state_path(project_name), state)
+                        return RunResult(state)
                     if _is_max_length_error(exc):
                         try:
                             rollover_required = chat.status().rollover_required
@@ -605,6 +618,15 @@ def _run_loop_impl(
                         try:
                             context = session.reconnect()
                             chat = ChatGPTPage(_select_chat_page(context, project))
+                            if chat.status().rollover_required:
+                                continuation, response = _rollover_and_process_resume(
+                                    chat, project, state, project_name, config,
+                                    deadline=deadline, max_rollovers=max_rollovers,
+                                    recovery_baseline=before_git,
+                                )
+                                save_response(project_name, response)
+                                save_state(state_path(project_name), state)
+                                continue
                             chat.assert_ready()
                             if project.project_name and not chat.project_context_present(project.project_name):
                                 raise RuntimeError("ChatGPT Project context not detected: " + project.project_name)
