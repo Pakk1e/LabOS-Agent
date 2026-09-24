@@ -42,10 +42,13 @@ def build_continuation_prompt(snapshot: ProjectSnapshot, message: str, ci_feedba
     if execution_enabled:
         tick=chr(96)
         parts += ["","Server execution protocol:",
-                  f"You may request controlled operations on the configured LabOS server using a fenced {tick}{tick}{tick}labos-exec JSON block, one request per block.",
-                  'Supported actions: {"action":"read_file","path":"..."}, {"action":"write_file","path":"...","content":"..."}, {"action":"run_command","command":["..."],"cwd":"..."}.',
-                  "Paths are restricted to the configured project execution roots. Commands are executed without a shell. Do not use server execution to commit or push; the controller Git gate owns commit/push.",
-                  "After requesting execution, wait for the controller to return the real stdout/stderr/exit code before claiming that a command ran."]
+                  f"Source changes must be made through a controlled {tick}{tick}{tick}labos-exec JSON block. The controller is the only component with write access to the server checkout.",
+                  f"Every non-final implementation response MUST contain at least one executable {tick}{tick}{tick}labos-exec request. When the implementation is complete, end the response with the exact marker LABOS_DONE.",
+                  'Supported actions: {"action":"read_file","path":"..."}, {"action":"write_file","path":"...","content":"..."}, {"action":"run_command","command":["git","status","--short"],"cwd":"..."}.',
+                  "The autonomous run_command surface is intentionally read-only Git inspection; do not use it to execute tests, write files, commit, push, or run arbitrary programs.",
+                  "Use write_file for source/documentation changes. Do not claim a write happened until the controller returns its real execution result.",
+                  "LocalCI is run automatically by LabOS after a real working-tree change. If LocalCI fails, fix the reported failure with write_file and request another execution round.",
+                  "Do not finish with prose such as 'I will make...' or 'I am updating...' without an execution request. If there is genuinely nothing left to change, issue a final read/inspection request and then end with LABOS_DONE."]
     state_budget = MAX_PROMPT_STATE_CHARS
     for name,content in snapshot.files.items():
         if state_budget <= 0:
