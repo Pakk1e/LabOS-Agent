@@ -29,6 +29,8 @@ class ProjectConfig:
     execution_enabled: bool = False
     execution_allowed_roots: tuple[Path, ...] = ()
     execution_command_timeout_seconds: float = 300.0
+    remote_ci_timeout_seconds: float = 1200.0
+    remote_ci_poll_seconds: float = 5.0
 
 @dataclass(frozen=True)
 class AppConfig:
@@ -76,5 +78,7 @@ def load_config(path: Path) -> AppConfig:
             execution_enabled=bool(value.get("execution",{}).get("enabled",False)),
             execution_allowed_roots=allowed,
             execution_command_timeout_seconds=float(value.get("execution",{}).get("command_timeout_seconds",300)),
+            remote_ci_timeout_seconds=float(value.get("remote_ci",{}).get("timeout_seconds",1200)),
+            remote_ci_poll_seconds=float(value.get("remote_ci",{}).get("poll_seconds",5)),
         )
     return AppConfig(browser=browser, projects=projects)
