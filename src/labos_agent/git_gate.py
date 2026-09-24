@@ -236,6 +236,7 @@ def commit_and_push(
     baseline = baseline_untracked if baseline_untracked is not None else set(before.untracked_paths)
     new_untracked = set(current.untracked_paths) - baseline
     current_branch = _git(root, "branch", "--show-current")
+    committed = False
     try:
         _validate_sensitive_paths(_status_paths_z(current.status))
         if current_branch != branch_name:
