@@ -307,3 +307,35 @@ def test_commit_and_push_resets_commit_when_push_fails(tmp_path: Path):
         raise AssertionError("push failure was not surfaced")
     assert _git(root, "rev-parse", "HEAD") == before.head
     assert _git(root, "status", "--short") == "?? change.txt"
+
+
+def test_prepare_repository_rejects_changed_pending_recovery_worktree(tmp_path: Path):
+    from labos_agent.git_gate import prepare_repository
+
+    remote = tmp_path / "remote.git"
+    root = tmp_path / "repo"
+    subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True)
+    subprocess.run(["git", "init", str(root)], check=True, capture_output=True)
+    _git(root, "config", "user.name", "LabOS Test")
+    _git(root, "config", "user.email", "labos@example.invalid")
+    (root / "base.txt").write_text("base")
+    _git(root, "add", "base.txt")
+    _git(root, "commit", "-m", "base")
+    _git(root, "branch", "-M", "main")
+    _git(root, "remote", "add", "origin", str(remote))
+    _git(root, "push", "-u", "origin", "main")
+
+    (root / "fix.txt").write_text("agent fix")
+    expected = snapshot(root).worktree_fingerprint
+    (root / "fix.txt").write_text("unexpected mutation")
+
+    try:
+        prepare_repository(
+            root,
+            allow_dirty=True,
+            expected_dirty_fingerprint=expected,
+        )
+    except RuntimeError as exc:
+        assert "changed outside LabOS" in str(exc)
+    else:
+        raise AssertionError("changed recovery worktree was accepted")
