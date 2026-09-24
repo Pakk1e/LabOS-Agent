@@ -440,14 +440,28 @@ def _run_loop_impl(
                         save_state(state_path(project_name), state)
                         return RunResult(state, response)
 
-                    committed_sha = commit_and_push(
-                        project.project_root,
-                        before_git,
-                        f"lab-agent: iteration {state.iteration}",
-                        branch_name=state.branch_name,
-                        allow_preexisting_tracked_changes=state.pending_ci_fix,
-                        baseline_untracked=_commit_recovery_baseline(state),
-                    )
+                    try:
+                        committed_sha = commit_and_push(
+                            project.project_root,
+                            before_git,
+                            f"lab-agent: iteration {state.iteration}",
+                            branch_name=state.branch_name,
+                            allow_preexisting_tracked_changes=state.pending_ci_fix,
+                            baseline_untracked=_commit_recovery_baseline(state),
+                        )
+                    except GitPushError as exc:
+                        _mark_push_failure_recovery(state, before_git)
+                        controller.mark_failure(
+                            f"validated changes could not be pushed; recovery is pending: {exc}"
+                        )
+                        save_state(state_path(project_name), state)
+                        if state.consecutive_failures >= controller.limits.max_consecutive_failures:
+                            controller.stop("maximum consecutive failures reached")
+                            save_state(state_path(project_name), state)
+                            return RunResult(state, response)
+                        time.sleep(2)
+                        continue
+
                     if committed_sha:
                         state.last_action = f"committed and pushed {committed_sha}"
                         state.last_commit_sha = committed_sha
