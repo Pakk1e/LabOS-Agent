@@ -62,7 +62,9 @@ def parse_deadline(value,now):
     except ValueError as exc: raise ValueError("--until must be HH:MM") from exc
     if not 0<=hour<=23 or not 0<=minute<=59: raise ValueError("--until must be HH:MM")
     deadline=now.replace(hour=hour,minute=minute,second=0,microsecond=0)
-    if deadline<=now: raise ValueError("--until must be later today")
+    if deadline<=now:
+        from datetime import timedelta
+        deadline += timedelta(days=1)
     return deadline
 
 def ci_command(args):
@@ -96,6 +98,8 @@ def run_command(args):
     result=run_loop(config,args.project,deadline=deadline,max_iterations=args.max_iterations,max_rollovers=args.max_rollovers)
     print(f"LabOS-Agent finished: state={result.state.state.value} iteration={result.state.iteration} rollovers={result.state.rollover_count}")
     if result.state.reason: print(f"Reason: {result.state.reason}")
+    if result.state.state.value in {"ERROR", "BLOCKED"}:
+        raise SystemExit(1)
 
 def continue_command(args):
     config=load_config(Path(args.config))
