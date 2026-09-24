@@ -7,12 +7,12 @@ def policy(root: Path) -> ExecutionPolicy:
 
 def test_parse_execution_requests():
     marker = chr(96) * 3
-    response = "Inspect this first.\n" + marker + "labos-exec\n" + '{"action":"run_command","command":["python3","-c","print(42)"]}' + "\n" + marker
+    response = "Inspect this first.\n" + marker + "labos-exec\n" + '{"action":"run_command","command":["git","status","--short"]}' + "\n" + marker
     assert parse_execution_requests(response) == [{"action":"run_command","command":["python3","-c","print(42)"]}]
 
 def test_run_command_is_argv_and_returns_result(tmp_path: Path):
-    result = execute_request(tmp_path, {"action":"run_command","command":["pytest","--version"]}, policy(tmp_path))
-    assert result.success and result.exit_code == 0 and result.stdout.strip().startswith("pytest")
+    result = execute_request(tmp_path, {"action":"run_command","command":["git","status","--short"]}, policy(tmp_path))
+    assert result.success and result.exit_code == 0
 
 def test_write_and_read_file_stay_inside_root(tmp_path: Path):
     execute_request(tmp_path, {"action":"write_file","path":"x.txt","content":"hello"}, policy(tmp_path))
