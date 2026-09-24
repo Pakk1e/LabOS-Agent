@@ -212,6 +212,10 @@ def prepare_repository(root: Path, *, branch_name: str = "main", allow_dirty: bo
         raise RuntimeError("Git preflight refused: tracked working-tree changes exist before the iteration")
     _git(root, "fetch", "origin", "main")
     current_branch = _git(root, "branch", "--show-current")
+    if allow_dirty and current_branch != branch_name:
+        raise RuntimeError(
+            f"Git preflight refused: pending recovery is on {branch_name!r}, but checkout is {current_branch!r}"
+        )
     if branch_name != "main":
         if current_branch != branch_name:
             exists = subprocess.run(
@@ -226,6 +230,10 @@ def prepare_repository(root: Path, *, branch_name: str = "main", allow_dirty: bo
         remote = _git(root, "rev-parse", f"origin/{branch_name}", check=False)
         if remote:
             head = _git(root, "rev-parse", "HEAD")
+            if allow_dirty and head != remote:
+                raise RuntimeError(
+                    f"Git preflight refused: pending recovery cannot synchronize branch {branch_name} while dirty"
+                )
             merge_base = _git(root, "merge-base", "HEAD", f"origin/{branch_name}")
             if merge_base == head and head != remote:
                 _git(root, "merge", "--ff-only", f"origin/{branch_name}")
@@ -234,6 +242,8 @@ def prepare_repository(root: Path, *, branch_name: str = "main", allow_dirty: bo
         return
     head = _git(root, "rev-parse", "HEAD")
     remote = _git(root, "rev-parse", "origin/main")
+    if allow_dirty and head != remote:
+        raise RuntimeError("Git preflight refused: pending recovery cannot synchronize main while dirty")
     if head == remote:
         return
     merge_base = _git(root, "merge-base", "HEAD", "origin/main")
