@@ -208,7 +208,7 @@ def test_required_execution_cannot_fall_back_to_prose(monkeypatch, tmp_path):
         assert "server execution is required" in str(exc)
     else:
         raise AssertionError("required execution was allowed to fall back to prose")
-    assert chat.calls == 1
+    assert chat.calls == 4
 
 
 def test_push_failure_recovery_marks_pending_ci_fix():
@@ -332,7 +332,7 @@ def test_resolve_execution_returns_after_execution_round_completes(monkeypatch, 
     responses = iter([
         ("feedback 1", True),
         ("feedback 2", True),
-        ("final response", False),
+        ("final response\nLABOS_DONE", False),
     ])
     monkeypatch.setattr(loop, "_execute_agent_requests", lambda response, project: next(responses))
     monkeypatch.setattr(loop, "save_response", lambda *args, **kwargs: None)
@@ -340,7 +340,7 @@ def test_resolve_execution_returns_after_execution_round_completes(monkeypatch, 
     chat = Chat()
     result = loop._resolve_execution(chat, "initial execution request", Project(), "test", Config())
 
-    assert result == "final response"
+    assert result == "final response\nLABOS_DONE"
     assert chat.calls == 2
 
 
