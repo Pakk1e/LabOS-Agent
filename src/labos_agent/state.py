@@ -28,6 +28,8 @@ class AgentState:
     failure_history:list[dict[str,str|int]]=field(default_factory=list)
     last_ci_result:str|None=None
     last_progress_result:str|None=None
+    pending_ci_fix:bool=False
+    last_commit_sha:str|None=None
 
     def transition(self,state:RunState,*,reason:str|None=None)->None:
         self.state=state; self.reason=reason; self.last_action=state.value
@@ -52,6 +54,8 @@ def load_state(path:Path)->AgentState|None:
     data.setdefault("last_ci_result",None)
     data.setdefault("consecutive_no_progress",0)
     data.setdefault("last_progress_result",None)
+    data.setdefault("pending_ci_fix",False)
+    data.setdefault("last_commit_sha",None)
     return AgentState(**data)
 
 def save_state(path:Path,state:AgentState)->None:

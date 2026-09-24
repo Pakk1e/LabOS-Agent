@@ -25,6 +25,7 @@ def test_prepare_state_resets_execution_counters_but_preserves_failure_history(t
             }
         ],
         last_ci_result="stage=test success=False",
+        pending_ci_fix=True,
     )
     save_state(path, state)
 
@@ -90,8 +91,25 @@ def test_run_loop_selects_project_page_and_stops_at_iteration_limit(monkeypatch,
     monkeypatch.setattr("labos_agent.loop.ChatGPTPage",FakeChat)
     monkeypatch.setattr("labos_agent.loop.prepare_repository",lambda *args,**kwargs: None)
     monkeypatch.setattr("labos_agent.loop.inspect_project",lambda *args,**kwargs: "snapshot")
-    monkeypatch.setattr("labos_agent.loop.git_snapshot",lambda *args,**kwargs: type("S",(),{"head":"h","upstream":"u","status":""})())
+    monkeypatch.setattr("labos_agent.loop.git_snapshot",lambda *args,**kwargs: type("S",(),{"head":"h","upstream":"u","status":"","worktree_fingerprint":"same"})())
     monkeypatch.setattr("labos_agent.loop.build_continuation_prompt",lambda *args,**kwargs: "prompt")
     result=run_loop(config,"test",deadline=None,max_iterations=1,max_rollovers=1)
     assert result.state.iteration == 1
     assert result.state.reason == "maximum iterations reached"
+
+def test_prepare_state_recover_preserves_pending_ci_fix(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(loop, "state_path", lambda project: tmp_path / project / "current.json")
+    path = tmp_path / "weather" / "current.json"
+    state = AgentState(
+        project="weather", run_id="recover-me", branch_name="agent/recover-me",
+        state=RunState.STOPPED, iteration=7, consecutive_failures=3,
+        pending_ci_fix=True, last_ci_result="stage=test success=False",
+    )
+    save_state(path, state)
+    recovered = loop._prepare_state("weather", recover=True)
+    assert recovered.state == RunState.IDLE
+    assert recovered.run_id == "recover-me"
+    assert recovered.branch_name == "agent/recover-me"
+    assert recovered.pending_ci_fix is True
+    assert recovered.last_ci_result == "stage=test success=False"
+    assert recovered.consecutive_failures == 0

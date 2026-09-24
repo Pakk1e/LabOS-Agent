@@ -38,39 +38,17 @@ _BLOCKED_EXECUTABLES = {"rm", "shutdown", "reboot", "poweroff", "mkfs", "mount",
 def _validate_command(command: list[str]) -> None:
     if not isinstance(command, list) or not command or not all(isinstance(x, str) and x for x in command):
         raise ValueError("run_command requires a non-empty argv list")
-
     executable = Path(command[0]).name.casefold()
-    if executable not in _ALLOWED_EXECUTABLES:
-        raise PermissionError(f"executable is not allowlisted for autonomous execution: {executable}")
-    if executable in _BLOCKED_EXECUTABLES:
-        raise PermissionError("command is reserved for the LabOS controller or human approval")
-
-    if executable == "git":
-        # Git global options can appear before the subcommand, e.g.
-        # git -C /repo push. Inspect the first non-option token after
-        # consuming the common global options that take a value.
-        i = 1
-        while i < len(command):
-            token = command[i]
-            if token == "-c":
-                if i + 1 < len(command) and command[i + 1].casefold().startswith(("alias.", "core.hookspath")):
-                    raise PermissionError("git configuration aliases and hook paths are not allowed")
-                i += 2
-                continue
-            if token in {"-C", "--git-dir", "--work-tree"}:
-                i += 2
-                continue
-            if token.startswith("-"):
-                i += 1
-                continue
-            if token.casefold() in _BLOCKED_GIT_SUBCOMMANDS:
-                raise PermissionError("git history mutation or push is reserved for the LabOS controller")
-            break
-
-    # These are intentionally rejected because they turn argv execution into
-    # an unrestricted code/shell escape around the project-root boundary.
-    if executable in {"sh", "bash", "dash", "zsh", "fish", "ksh", "csh", "tcsh", "cmd", "powershell", "pwsh", "env", "find", "xargs", "curl", "wget"}:
-        raise PermissionError("shell, environment, filesystem traversal, and network tools are not allowed through autonomous execution")
+    if executable != "git":
+        raise PermissionError("autonomous run_command only permits read-only git inspection")
+    if len(command) < 2 or command[1] in {"-C", "-c", "--git-dir", "--work-tree", "--no-index"}:
+        raise PermissionError("git global options are not allowed in autonomous execution")
+    subcommand = command[1].casefold()
+    if subcommand not in {"status", "diff", "log", "show", "ls-files"}:
+        raise PermissionError(f"git subcommand is not allowed in autonomous execution: {subcommand}")
+    forbidden = {"-C", "-c", "--git-dir", "--work-tree", "--no-index", "--exec-path", "--upload-pack", "--receive-pack"}
+    if any(token in forbidden or token.startswith("--config") for token in command[2:]):
+        raise PermissionError("unsafe git options are not allowed in autonomous execution")
 
 def execute_request(root: Path, request: dict, policy: ExecutionPolicy) -> ExecutionResult:
     action = request.get("action")
