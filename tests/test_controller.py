@@ -39,3 +39,28 @@ def test_success_requires_all_evidence_gates():
         assert "all verification gates" in str(exc)
     else:
         raise AssertionError("incomplete evidence was accepted")
+
+
+def test_happy_path_evidence_chain_reaches_iteration_succeeded():
+    state = AgentState(project="weather", run_id="run", state=RunState.WORKING, iteration=1)
+    controller = Controller(state=state, limits=SafetyLimits())
+    state.start_iteration("base-sha")
+    controller.chatgpt_working()
+    controller.execution_required()
+    controller.execution_applied()
+    controller.progress_verified(meaningful=True)
+    controller.ci_running()
+    controller.ci_passed()
+    state.commit_created = True
+    controller.committing()
+    controller.pushing()
+    controller.remote_verified("new-sha")
+    controller.github_ci_verified()
+    controller.mark_success(continue_running=True)
+    assert state.state == RunState.ITERATION_SUCCEEDED
+    assert state.iteration_stage == IterationStage.ITERATION_SUCCEEDED
+    assert state.execution_requested and state.execution_applied
+    assert state.files_changed and state.meaningful_progress
+    assert state.local_ci_ran and state.local_ci_passed
+    assert state.commit_created and state.push_verified
+    assert state.remote_sha == "new-sha" and state.github_ci_verified
