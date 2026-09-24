@@ -410,19 +410,19 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
                     baseline_untracked=_commit_recovery_baseline(state),
                 )
                 if not committed_sha:
-                    _mark_dirty_recovery(state, before_git)
+                    _mark_dirty_recovery(state, before_git, git_snapshot(project.project_root))
                     controller.mark_failure("working tree changed but Git gate produced no commit")
                     save_state(state_path(project_name), state)
                     return RunResult(state, response)
                 state.last_action = f"committed and pushed {committed_sha}"
                 state.last_commit_sha = committed_sha
             except GitPushError as exc:
-                _mark_push_failure_recovery(state, before_git)
+                _mark_push_failure_recovery(state, before_git, git_snapshot(project.project_root))
                 controller.mark_failure(f"validated changes could not be pushed; recovery is pending: {exc}")
                 save_state(state_path(project_name), state)
                 return RunResult(state, response)
             except Exception as exc:
-                _mark_dirty_recovery(state, before_git)
+                _mark_dirty_recovery(state, before_git, git_snapshot(project.project_root))
                 controller.mark_failure(f"validated changes could not be committed/pushed: {exc}")
                 save_state(state_path(project_name), state)
                 return RunResult(state, response)
@@ -586,7 +586,7 @@ def _run_loop_impl(
                             baseline_untracked=_commit_recovery_baseline(state),
                         )
                     except GitPushError as exc:
-                        _mark_push_failure_recovery(state, before_git)
+                        _mark_push_failure_recovery(state, before_git, git_snapshot(project.project_root))
                         controller.mark_failure(
                             f"validated changes could not be pushed; recovery is pending: {exc}"
                         )
@@ -599,7 +599,7 @@ def _run_loop_impl(
                         continue
 
                     if not committed_sha:
-                        _mark_dirty_recovery(state, before_git)
+                        _mark_dirty_recovery(state, before_git, git_snapshot(project.project_root))
                         controller.mark_failure("working tree changed but Git gate produced no commit")
                         save_state(state_path(project_name), state)
                         if state.consecutive_failures >= controller.limits.max_consecutive_failures:
@@ -619,7 +619,7 @@ def _run_loop_impl(
                         try:
                             after_git = git_snapshot(project.project_root)
                             if after_git.worktree_fingerprint != before_git.worktree_fingerprint:
-                                _mark_dirty_recovery(state, before_git)
+                                _mark_dirty_recovery(state, before_git, after_git)
                         except Exception:
                             pass
                     if isinstance(exc, RolloverLimitReached):
