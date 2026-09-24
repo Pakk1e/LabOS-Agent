@@ -154,7 +154,7 @@ def test_project_lock_rejects_concurrent_owner(tmp_path: Path, monkeypatch):
 
 def test_prepare_state_recovers_rollover_and_waiting_without_resetting_counters(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(loop, "state_path", lambda project: tmp_path / project / "current.json")
-    for transient in (RunState.ROLLOVER, RunState.WAITING):
+    for transient in (RunState.ROLLOVER, RunState.ITERATION_SUCCEEDED):
         path = tmp_path / "weather" / "current.json"
         state = AgentState(
             project="weather", run_id="same-run", branch_name="agent/same-run",
