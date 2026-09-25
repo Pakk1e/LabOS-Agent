@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 import fcntl
+import subprocess
 import time
 import uuid
 
@@ -320,7 +321,6 @@ def _migrate_legacy_dirty_recovery(state: AgentState, project_root: Path) -> Non
 
 
 def _git_remote_branch_sha(root: Path, branch: str) -> str:
-    import subprocess
     result = subprocess.run(
         ["git", "ls-remote", "origin", f"refs/heads/{branch}"],
         cwd=root,
@@ -346,7 +346,6 @@ def _reconcile_committed_recovery(state: AgentState, project) -> None:
     # manual recovery push, even though LabOS is operating on an agent branch.
     # Recovery must therefore reason about the persisted recovery commit and
     # the actual target branch, not the checkout's generic upstream.
-    remote_main = git_snapshot(project.project_root)
     if current.head == state.last_commit_sha:
         remote_sha = current.upstream
         if not remote_sha or remote_sha != current.head:
