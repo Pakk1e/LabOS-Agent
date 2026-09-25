@@ -3,9 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 import time
+import uuid
 from urllib.parse import urlparse
 from playwright.sync_api import Error as PlaywrightError, Page, TimeoutError as PlaywrightTimeoutError
 from .detection import observe, rollover_required
+from .transport import BrowserTransport
 from ..trace import dom_enabled, trace
 
 @dataclass(frozen=True)
@@ -20,10 +22,16 @@ class ChatStatus:
     rollover_required: bool
 
 class ChatGPTPage:
-    def __init__(self,page:Page)->None: self.page=page
+    def __init__(self,page:Page)->None:
+        self.page=page
+        self.transport=BrowserTransport(retry_limit=1)
 
     def open(self,url="https://chatgpt.com/")->ChatStatus:
-        self.page.goto(url,wait_until="domcontentloaded",timeout=60000)
+        self.transport.request(
+            f"navigate:{url}",
+            lambda: self.page.goto(url,wait_until="domcontentloaded",timeout=60000),
+            is_transient=lambda exc: isinstance(exc, PlaywrightError),
+        )
         return self.status()
 
     def status(self)->ChatStatus:
@@ -166,6 +174,33 @@ class ChatGPTPage:
                 return texts
         return []
 
+    def _assistant_message_ids(self)->list[str]:
+        """Return stable ChatGPT message identifiers when the live DOM exposes them."""
+        selectors=(
+            '[data-chatgpt-selection-message-id]',
+            '[data-chatgpt-search-message-ids]',
+            '[data-content-search-unit-key$=":assistant"]',
+        )
+        for selector in selectors:
+            try:
+                loc=self.page.locator(selector)
+                count=loc.count()
+                values=[]
+                for index in range(count):
+                    item=loc.nth(index)
+                    value=item.get_attribute("data-chatgpt-selection-message-id")
+                    if not value:
+                        value=item.get_attribute("data-chatgpt-search-message-ids")
+                    if not value:
+                        value=item.get_attribute("data-content-search-unit-key")
+                    if value:
+                        values.append(value)
+                if values:
+                    return values
+            except Exception:
+                continue
+        return []
+
     def _user_texts(self)->list[str]:
         selectors=(
             '[data-message-author-role="user"] .whitespace-pre-wrap',
@@ -228,7 +263,7 @@ class ChatGPTPage:
         except Exception:
             return False
 
-    def wait_for_response(self,*,before:list[str],timeout_seconds=300,quiet_seconds=3,poll_seconds=.5,require_input_available=True)->str:
+    def wait_for_response(self,*,before:list[str],before_ids:list[str]|None=None,timeout_seconds=300,quiet_seconds=3,poll_seconds=.5,require_input_available=True)->str:
         trace("chat.response_wait.start", before_count=len(before), timeout_seconds=timeout_seconds,
               quiet_seconds=quiet_seconds, url=self.page.url)
         deadline=time.monotonic()+timeout_seconds
@@ -239,11 +274,13 @@ class ChatGPTPage:
         last_trace=0.0
         while time.monotonic()<deadline:
             texts=self._assistant_texts()
+            message_ids=self._assistant_message_ids()
             now=time.monotonic()
             if texts:
                 candidate=texts[-1]
                 previous=before[-1] if before else ""
-                if len(texts)>len(before) or candidate!=previous:
+                ids_changed=bool(before_ids) and bool(message_ids) and message_ids != before_ids
+                if ids_changed or len(texts)>len(before) or candidate!=previous:
                     if not saw:
                         trace("chat.response_wait.detected", assistant_count=len(texts),
                               candidate_chars=len(candidate))
@@ -316,9 +353,12 @@ class ChatGPTPage:
         return result
 
     def send_and_wait_for_response(self,message:str,**kwargs)->str:
+        request_id=uuid.uuid4().hex
+        trace("chat.request", request_id=request_id, message_chars=len(message))
         before=self._assistant_texts()
+        before_ids=self._assistant_message_ids()
         self.send_message(message)
-        return self.wait_for_response(before=before,**kwargs)
+        return self.wait_for_response(before=before, before_ids=before_ids, **kwargs)
 
     def send_project_message_and_wait_for_response(self,project_name:str,message:str,**kwargs)->str:
         """Send through the visible Project-home composer without requiring generic chat readiness."""
@@ -327,6 +367,7 @@ class ChatGPTPage:
         if composer is None:
             raise RuntimeError(f"Project composer is unavailable for: {project_name}")
         before=self._assistant_texts()
+        before_ids=self._assistant_message_ids()
         trace("chat.project_send.start", project=project_name, before_count=len(before),
               message_chars=len(message), url=getattr(self.page, "url", ""))
         deadline=time.monotonic()+10
@@ -354,7 +395,7 @@ class ChatGPTPage:
                 trace("chat.project_send.enter", project=project_name)
                 self._wait_for_submission(before,composer,message)
                 trace("chat.project_send.submitted", project=project_name, url=getattr(self.page, "url", ""))
-                return self.wait_for_response(before=before,**kwargs)
+                return self.wait_for_response(before=before, before_ids=before_ids, **kwargs)
             except (PlaywrightTimeoutError,PlaywrightError) as exc:
                 last_error=exc
                 self.page.wait_for_timeout(250)

@@ -23,6 +23,9 @@ from .remote_ci import verify_github_actions
 from .safety import SafetyLimits
 from .state import AgentState, IterationStage, RunState, load_state, save_state
 from .trace import trace
+from .trajectory import append_event, trajectory_path
+from .runtime import ExecutionRuntime
+from .verification import RepositoryVerifier
 
 
 @dataclass(frozen=True)
@@ -37,6 +40,22 @@ class DeadlineReached(RuntimeError):
 
 class RolloverLimitReached(RuntimeError):
     """The configured conversation rollover budget was exhausted."""
+
+
+def _trajectory_event(state: AgentState, project_name: str, phase: str, event: str, **data) -> None:
+    """Persist an append-only event without making trajectory logging fatal."""
+    try:
+        append_event(
+            trajectory_path(state_dir(project_name)),
+            run_id=state.run_id,
+            project=project_name,
+            iteration=state.iteration,
+            phase=phase,
+            event=event,
+            **data,
+        )
+    except OSError as exc:
+        trace("trajectory.error", error=type(exc).__name__, detail=str(exc))
 
 
 def _remaining_timeout(deadline: datetime | None, configured: float) -> float:
@@ -101,6 +120,7 @@ def _run_local_ci(project, state: AgentState, deadline: datetime | None = None) 
     if commands is None:
         raise RuntimeError(f"configured CI stage is not defined: {stage}")
     trace("ci.start", project=project.name, stage=stage, root=str(project.project_root))
+    _trajectory_event(state, project.name, "verification", "local_ci.started", stage=stage)
     result = LocalCI().run(
         project=project.name,
         stage=stage,
@@ -117,6 +137,7 @@ def _run_local_ci(project, state: AgentState, deadline: datetime | None = None) 
             lines.append(command.stderr.rstrip())
         lines.append(f"exit_code={command.returncode} duration={command.duration_seconds:.2f}s")
     state.last_ci_result = "\n".join(lines)[-12000:]
+    _trajectory_event(state, project.name, "verification", "local_ci.completed", stage=stage, success=result.success)
     trace("ci.complete", project=project.name, stage=stage, success=result.success,
           result_tail=state.last_ci_result[-1500:])
     return result.success
@@ -143,24 +164,12 @@ def _execute_agent_requests(response: str, project) -> tuple[str, bool]:
     )
     trace("execution.requests", count=len(requests),
           actions=[str(request.get("action", "unknown")) for request in requests])
-    results = []
-    for request in requests:
-        try:
-            results.append(execute_request(project.project_root, request, policy))
-        except Exception as exc:
-            results.append(
-                ExecutionResult(
-                    action=str(request.get("action", "unknown")),
-                    success=False,
-                    exit_code=None,
-                    stdout="",
-                    stderr=f"request rejected: {type(exc).__name__}: {exc}",
-                )
-            )
-    formatted = format_execution_results(results)
+    runtime = ExecutionRuntime(project.project_root, policy)
+    observation = runtime.apply(requests)
+    formatted = format_execution_results(observation.results)
     trace("execution.complete", results=[
         {"action": result.action, "success": result.success, "exit_code": result.exit_code}
-        for result in results
+        for result in observation.results
     ])
     return formatted, True
 
@@ -261,7 +270,8 @@ def _resolve_execution(chat, response: str, project, project_name: str, config: 
                 quiet_seconds=config.browser.quiet_seconds,
                 require_input_available=False,
             )
-            save_response(project_name, response)
+            _trajectory_event(state, project_name, "reasoning", "reasoning.completed", response_chars=len(response))
+        save_response(project_name, response)
             continue
 
         if not project.execution_enabled:
@@ -432,6 +442,7 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
         controller = Controller(state=state, limits=SafetyLimits(max_iterations=state.iteration + 1))
         controller.start()
         controller.begin_iteration(datetime.now().astimezone())
+        _trajectory_event(state, project_name, "iteration", "iteration.started", started_head=git_snapshot(project.project_root).head)
         save_state(state_path(project_name), state)
 
         _migrate_legacy_dirty_recovery(state, project.project_root)
@@ -502,14 +513,24 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
                 response = _resolve_execution(chat, response, project, project_name, config, deadline=None, state=state)
                 save_response(project_name, response)
                 assert_unchanged_before_ci(project.project_root, before_git)
-                after_git = git_snapshot(project.project_root)
+                verifier = RepositoryVerifier(project.project_root)
+                verification = verifier.compare(before_git)
+                after_git = verification.after
                 recovery_pending = state.pending_ci_fix
-                if after_git.worktree_fingerprint == before_git.worktree_fingerprint and not recovery_pending:
+                _trajectory_event(
+                    state,
+                    project_name,
+                    "verification",
+                    "repository.observed",
+                    changed=not verification.clean_relative_to_baseline,
+                    meaningful=verification.meaningful_change,
+                    recovery_pending=recovery_pending,
+                )
+                if verification.clean_relative_to_baseline and not recovery_pending:
                     _handle_no_progress(controller, state)
                     save_state(state_path(project_name), state)
                     return RunResult(state, response)
-                paths = changed_paths(project.project_root, before_git)
-                meaningful = meaningful_change(paths) or recovery_pending
+                meaningful = verification.meaningful_change or recovery_pending
                 controller.progress_verified(meaningful=meaningful)
                 if not state.meaningful_progress:
                     _handle_no_progress(controller, state)
@@ -556,10 +577,12 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
                     save_state(state_path(project_name), state)
                     return RunResult(state, response)
                 state.commit_created = True
+                _trajectory_event(state, project_name, "commit", "commit.created", sha=committed_sha)
                 controller.pushing()
                 state.last_action = f"committed and pushed {committed_sha}"
                 state.last_commit_sha = committed_sha
                 controller.remote_verified(committed_sha)
+                _trajectory_event(state, project_name, "remote_verification", "push.verified", sha=committed_sha)
                 remote_ci = verify_github_actions(
                     project.repository,
                     committed_sha,
@@ -567,6 +590,7 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
                     poll_seconds=project.remote_ci_poll_seconds,
                 )
                 state.pending_remote_ci_result = remote_ci.summary
+                _trajectory_event(state, project_name, "remote_verification", "github_ci.completed", sha=committed_sha, success=remote_ci.success, summary=remote_ci.summary)
                 if not remote_ci.success:
                     state.pending_remote_ci_fix = True
                     state.pending_remote_ci_sha = committed_sha
