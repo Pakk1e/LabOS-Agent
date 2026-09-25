@@ -86,8 +86,8 @@ def test_project_message_retries_transient_composer_instability(monkeypatch):
     )
     monkeypatch.setattr(
         chat,
-        "_wait_for_sent_message",
-        lambda message, timeout_seconds=15: None,
+        "_wait_for_submission",
+        lambda before, composer, message, timeout_seconds=15: None,
     )
 
     result = chat.send_project_message_and_wait_for_response("Weather", "hello")
