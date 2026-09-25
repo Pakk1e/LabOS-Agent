@@ -52,3 +52,96 @@ def test_recovery_manager_clear_removes_pending_recovery(tmp_path: Path):
     assert state.pending_ci_baseline_untracked == []
     assert state.pending_ci_worktree_fingerprint is None
     assert state.reason == "test clear"
+
+
+def test_recover_interrupted_iteration_requires_same_persisted_observation():
+    from labos_agent.git_gate import GitSnapshot
+
+    baseline = GitSnapshot(
+        head="base",
+        upstream="base",
+        status="",
+        worktree_fingerprint="baseline",
+        untracked_paths=(),
+    )
+    observed = GitSnapshot(
+        head="base",
+        upstream="base",
+        status=" M docs/START_HERE.md\\0",
+        worktree_fingerprint="observed",
+        untracked_paths=(),
+    )
+    project = SimpleNamespace(project_root=Path("/project"))
+    state = SimpleNamespace(
+        pending_ci_fix=False,
+        pending_ci_baseline_untracked=[],
+        pending_ci_worktree_fingerprint=None,
+        iteration_baseline_worktree_fingerprint=baseline.worktree_fingerprint,
+        iteration_baseline_untracked=[],
+        iteration_observed_worktree_fingerprint=observed.worktree_fingerprint,
+        execution_requested=True,
+        reason=None,
+    )
+    manager = RecoveryManager(state, project, snapshot_fn=lambda _: observed)
+
+    event = manager.recover_interrupted_iteration()
+
+    assert event is not None
+    assert event.kind == "interrupted_worktree_recovered"
+    assert state.pending_ci_fix is True
+    assert state.pending_ci_worktree_fingerprint == "observed"
+
+
+def test_recover_interrupted_iteration_rejects_post_observation_mutation():
+    from labos_agent.git_gate import GitSnapshot
+
+    observed = GitSnapshot(
+        head="base",
+        upstream="base",
+        status=" M docs/START_HERE.md\\0",
+        worktree_fingerprint="observed",
+        untracked_paths=(),
+    )
+    mutated = GitSnapshot(
+        head="base",
+        upstream="base",
+        status=" M docs/START_HERE.md\\0",
+        worktree_fingerprint="mutated",
+        untracked_paths=(),
+    )
+    project = SimpleNamespace(project_root=Path("/project"))
+    state = SimpleNamespace(
+        pending_ci_fix=False,
+        pending_ci_baseline_untracked=[],
+        pending_ci_worktree_fingerprint=None,
+        iteration_baseline_worktree_fingerprint="baseline",
+        iteration_baseline_untracked=[],
+        iteration_observed_worktree_fingerprint="observed",
+        execution_requested=True,
+        reason=None,
+    )
+    manager = RecoveryManager(state, project, snapshot_fn=lambda _: mutated)
+
+    event = manager.recover_interrupted_iteration()
+
+    assert event is not None
+    assert event.kind == "interrupted_worktree_conflict"
+    assert state.pending_ci_fix is False
+    assert "changed after" in state.reason
+
+
+def test_recover_interrupted_iteration_ignores_iterations_without_observation():
+    project = SimpleNamespace(project_root=Path("/project"))
+    state = SimpleNamespace(
+        pending_ci_fix=False,
+        pending_ci_baseline_untracked=[],
+        pending_ci_worktree_fingerprint=None,
+        iteration_baseline_worktree_fingerprint="baseline",
+        iteration_baseline_untracked=[],
+        iteration_observed_worktree_fingerprint=None,
+        execution_requested=True,
+        reason=None,
+    )
+    manager = RecoveryManager(state, project, snapshot_fn=lambda _: None)
+
+    assert manager.recover_interrupted_iteration() is None
