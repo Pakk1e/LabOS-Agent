@@ -275,3 +275,15 @@ def test_parse_stripped_json_requires_supported_whole_response():
     assert parse_execution_requests('JSON  {"action":"example","path":"README.md"}') == []
     assert parse_execution_requests('JSON  {"action":"read_file","path":"README.md"} extra') == []
     assert parse_execution_requests('Here is JSON  {"action":"read_file","path":"README.md"}') == []
+
+def test_parse_bare_json_execution_response():
+    response = '{"action":"read_file","path":"README.md"}'
+    assert parse_execution_requests(response) == [{
+        "action": "read_file",
+        "path": "README.md",
+    }]
+
+
+def test_parse_bare_json_requires_supported_whole_response():
+    assert parse_execution_requests('{"action":"example","path":"README.md"}') == []
+    assert parse_execution_requests('{"action":"read_file","path":"README.md"} extra') == []
