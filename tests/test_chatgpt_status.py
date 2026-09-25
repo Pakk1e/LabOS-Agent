@@ -186,12 +186,12 @@ class _AssistantFallbackPage:
 
     def locator(self, selector):
         self.calls.append(selector)
+        if selector == '[data-role="assistant"] .markdown':
+            return _TextLocator(["fallback reply"])
         if selector.endswith(" .markdown"):
             return _TextLocator([])
         if selector == '[data-message-author-role="assistant"]':
             return _TextLocator([])
-        if selector == '[data-role="assistant"] .markdown':
-            return _TextLocator(["fallback reply"])
         raise AssertionError(f"unexpected selector: {selector}")
 
 
