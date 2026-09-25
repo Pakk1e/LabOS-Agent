@@ -183,8 +183,28 @@ def execute_request(root: Path, request: dict, policy: ExecutionPolicy) -> Execu
         return ExecutionResult(action, True, 0, path.read_text(encoding="utf-8", errors="replace")[:policy.max_output_chars], "")
     if action == "write_file":
         path = _rooted_path(root, str(request["path"]), policy)
+        content = str(request["content"])
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(str(request["content"]), encoding="utf-8")
+        # Replace atomically so a controller crash cannot leave a truncated source file.
+        fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.labos-", dir=path.parent)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(content)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temp_name, path)
+            try:
+                directory_fd = os.open(path.parent, os.O_DIRECTORY)
+            except OSError:
+                directory_fd = None
+            if directory_fd is not None:
+                try:
+                    os.fsync(directory_fd)
+                finally:
+                    os.close(directory_fd)
+        finally:
+            if os.path.exists(temp_name):
+                os.unlink(temp_name)
         return ExecutionResult(action, True, 0, f"wrote {path}", "")
     if action == "run_command":
         command = request.get("command")
