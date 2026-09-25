@@ -102,6 +102,23 @@ class BrowserSession:
         with self._request_lock:
             return self._active_request_id
 
+    def reconnect(self) -> BrowserContext:
+        """Reattach after a transient CDP/browser disconnect."""
+        with self._request_lock:
+            if not self.cdp_url:
+                raise RuntimeError("browser session has no CDP URL to reconnect")
+            self._active_request_id = None
+            if self._playwright is not None:
+                try:
+                    self._playwright.stop()
+                except Exception:
+                    pass
+            self._playwright = None
+            self._browser = None
+            self._context = None
+            self._attached = False
+            return self.connect_over_cdp(self.cdp_url)
+
     @property
     def context(self) -> BrowserContext:
         if self._context is None:
