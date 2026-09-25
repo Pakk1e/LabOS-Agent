@@ -480,6 +480,7 @@ def test_reconcile_committed_recovery_accepts_pushed_descendant_with_new_untrack
     monkeypatch.setattr(loop, "is_ancestor", lambda root, ancestor, descendant: (
         ancestor == state.last_commit_sha and descendant == current.head
     ))
+    monkeypatch.setattr(loop, "_git_remote_branch_sha", lambda root, branch: state.last_commit_sha)
     monkeypatch.setattr(loop, "_run_local_ci", lambda project, state: (
         setattr(state, "last_ci_result", "stage=test success=True") or True
     ))
