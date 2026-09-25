@@ -245,11 +245,12 @@ def test_run_once_outer_exception_records_failure_under_project_lock(tmp_path: P
     assert result.state.state == RunState.ERROR
 
 
-def test_run_loop_source_has_dedicated_git_push_recovery_path():
-    source = loop._run_loop_impl.__code__
-    names = set(source.co_names)
-    assert "GitPushError" in names
-    assert "_mark_push_failure_recovery" in names
+def test_delivery_phase_owns_git_push_recovery_path():
+    loop_names = set(loop._run_loop_impl.__code__.co_names)
+    phase_names = set(phases.verify_and_deliver.__code__.co_names)
+    assert "GitPushError" not in loop_names
+    assert "GitPushError" in phase_names
+    assert "mark_push_failure_recovery" in phase_names
 
 
 def test_resolve_execution_reprompts_when_response_promises_work_without_request(monkeypatch, tmp_path):
