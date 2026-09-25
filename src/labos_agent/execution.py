@@ -227,6 +227,7 @@ def parse_execution_requests(response: str) -> list[dict]:
     requests = []
     marker = chr(96) * 3 + "labos-exec"
     decoder = json.JSONDecoder()
+    fence = chr(96) * 3
 
     # Standard fenced execution blocks. Decode JSON directly so code fences
     # inside a JSON string do not terminate the request prematurely.
@@ -267,16 +268,53 @@ def parse_execution_requests(response: str) -> list[dict]:
                 raise ValueError("labos-exec payload must be an object")
 
             # Ignore a marker that is actually the fenced form.
-            if marker_start == 0 or response[marker_start - 3:marker_start] != chr(96) * 3:
+            if marker_start == 0 or response[marker_start - 3:marker_start] != fence:
                 requests.append((marker_start, value))
 
             search_from = payload_start + consumed
         else:
             search_from = payload_start
 
+    # ChatGPT can emit the same executable request as an ordinary JSON fence
+    # instead of the explicit labos-exec protocol. Accept only ```json fences
+    # and only supported execution actions; arbitrary JSON/code examples must
+    # never become executable requests.
+    supported_actions = {"read_file", "write_file", "run_command"}
+    search_from = 0
+    while True:
+        fence_start = response.find(fence, search_from)
+        if fence_start == -1:
+            break
+
+        language_end = response.find("\n", fence_start + len(fence))
+        if language_end == -1:
+            break
+
+        language = response[fence_start + len(fence):language_end].strip().casefold()
+        if language != "json":
+            search_from = language_end + 1
+            continue
+
+        payload_start = language_end + 1
+        leading = len(response[payload_start:]) - len(response[payload_start:].lstrip())
+        json_start = payload_start + leading
+        try:
+            value, consumed = decoder.raw_decode(response[json_start:])
+        except json.JSONDecodeError:
+            search_from = language_end + 1
+            continue
+
+        if isinstance(value, dict) and value.get("action") in supported_actions:
+            closing_start = json_start + consumed
+            trailing = response[closing_start:]
+            whitespace = len(trailing) - len(trailing.lstrip())
+            if trailing[whitespace:].startswith(fence):
+                requests.append((fence_start, value))
+
+        search_from = json_start + consumed
+
     requests.sort(key=lambda item: item[0])
     return [value for _, value in requests]
-
 def format_execution_results(results: list[ExecutionResult]) -> str:
     lines=["LabOS server execution results:"]
     for i,result in enumerate(results,1):
