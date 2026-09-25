@@ -476,15 +476,13 @@ def test_reconcile_committed_recovery_accepts_pushed_descendant_with_new_untrack
         },
     )()
 
-    class Result:
-        success = True
-        summary = "exact SHA CI success"
-
     monkeypatch.setattr(loop, "git_snapshot", lambda root: current)
     monkeypatch.setattr(loop, "is_ancestor", lambda root, ancestor, descendant: (
         ancestor == state.last_commit_sha and descendant == current.head
     ))
-    monkeypatch.setattr(loop, "verify_github_actions", lambda *args, **kwargs: Result())
+    monkeypatch.setattr(loop, "_run_local_ci", lambda project, state: (
+        setattr(state, "last_ci_result", "stage=test success=True") or True
+    ))
 
     loop._reconcile_committed_recovery(state, Project())
 
@@ -494,5 +492,6 @@ def test_reconcile_committed_recovery_accepts_pushed_descendant_with_new_untrack
     assert state.pending_remote_ci_fix is False
     assert state.pending_remote_ci_sha is None
     assert state.github_ci_verified is True
-    assert state.pending_remote_ci_result == "exact SHA CI success"
-    assert "reconciled committed recovery" in state.reason
+    assert state.pending_remote_ci_result is None
+    assert state.github_ci_verified is False
+    assert "reconciled pushed recovery descendant" in state.reason
