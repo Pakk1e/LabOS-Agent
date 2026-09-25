@@ -671,19 +671,28 @@ def _run_loop_impl(
                     save_response(project_name, response)
                     response = _resolve_execution(chat, response, project, project_name, config, deadline=deadline, state=state)
                     assert_unchanged_before_ci(project.project_root, before_git)
-                    after_git = git_snapshot(project.project_root)
+                    verifier = RepositoryVerifier(project.project_root)
+                    verification = verifier.compare(before_git)
+                    after_git = verification.after
                     recovery_pending = state.pending_ci_fix
-                    if after_git.worktree_fingerprint == before_git.worktree_fingerprint and not recovery_pending:
+                    _trajectory_event(
+                        state,
+                        project_name,
+                        "verification",
+                        "repository.observed",
+                        changed=not verification.clean_relative_to_baseline,
+                        meaningful=verification.meaningful_change,
+                        changed_paths=list(verification.changed_paths),
+                        recovery_pending=recovery_pending,
+                    )
+                    if verification.clean_relative_to_baseline and not recovery_pending:
                         should_stop = _handle_no_progress(controller, state)
                         save_state(state_path(project_name), state)
                         if should_stop:
                             return RunResult(state, response)
                         time.sleep(2)
                         continue
-                    paths = changed_paths(project.project_root, before_git)
-                    trace("git.after_chat", project=project_name, iteration=state.iteration,
-                          changed_paths=paths, recovery_pending=recovery_pending)
-                    meaningful = meaningful_change(paths) or recovery_pending
+                    meaningful = verification.meaningful_change or recovery_pending
                     controller.progress_verified(meaningful=meaningful)
                     if not state.meaningful_progress:
                         should_stop = _handle_no_progress(controller, state)
