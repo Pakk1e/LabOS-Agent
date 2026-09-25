@@ -639,6 +639,11 @@ def _run_loop_impl(
                 before_git = None
                 try:
                     _migrate_legacy_dirty_recovery(state, project.project_root)
+                    # Reconcile a previously validated/pushed recovery before the
+                    # dirty-worktree gate. The one-shot path already does this;
+                    # the autonomous continue path must do the same or it can
+                    # reject a valid recovery fingerprint after a restart.
+                    _reconcile_committed_recovery(state, project)
                     prepare_repository(
                         project.project_root,
                         branch_name=state.branch_name,
