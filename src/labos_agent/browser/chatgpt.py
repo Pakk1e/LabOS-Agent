@@ -3,9 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 import time
+import uuid
 from urllib.parse import urlparse
 from playwright.sync_api import Error as PlaywrightError, Page, TimeoutError as PlaywrightTimeoutError
 from .detection import observe, rollover_required
+from .transport import BrowserTransport
 from ..trace import dom_enabled, trace
 
 @dataclass(frozen=True)
@@ -20,10 +22,16 @@ class ChatStatus:
     rollover_required: bool
 
 class ChatGPTPage:
-    def __init__(self,page:Page)->None: self.page=page
+    def __init__(self,page:Page)->None:
+        self.page=page
+        self.transport=BrowserTransport(retry_limit=1)
 
     def open(self,url="https://chatgpt.com/")->ChatStatus:
-        self.page.goto(url,wait_until="domcontentloaded",timeout=60000)
+        self.transport.request(
+            f"navigate:{url}",
+            lambda: self.page.goto(url,wait_until="domcontentloaded",timeout=60000),
+            is_transient=lambda exc: isinstance(exc, PlaywrightError),
+        )
         return self.status()
 
     def status(self)->ChatStatus:
@@ -345,6 +353,8 @@ class ChatGPTPage:
         return result
 
     def send_and_wait_for_response(self,message:str,**kwargs)->str:
+        request_id=uuid.uuid4().hex
+        trace("chat.request", request_id=request_id, message_chars=len(message))
         before=self._assistant_texts()
         before_ids=self._assistant_message_ids()
         self.send_message(message)
