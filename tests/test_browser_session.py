@@ -51,3 +51,30 @@ def test_context_manager_attaches_over_cdp_without_launching(tmp_path, monkeypat
         assert factory.instance.chromium.cdp_calls == ["http://127.0.0.1:9222"]
 
     assert factory.instance.stop_calls == 1
+
+
+def test_browser_request_has_identity_and_is_cleared(tmp_path):
+    session = BrowserSession(Path(tmp_path), cdp_url="http://127.0.0.1:9222")
+
+    seen = []
+
+    result = session.request(
+        lambda request: (seen.append(request), "ok")[1],
+        is_transient=lambda exc: False,
+    )
+
+    assert result == "ok"
+    assert len(seen) == 1
+    assert seen[0].request_id
+    assert seen[0].attempt == 1
+    assert session.active_request_id is None
+
+
+def test_reconnect_requires_cdp_url(tmp_path):
+    session = BrowserSession(Path(tmp_path))
+    try:
+        session.reconnect()
+    except RuntimeError as exc:
+        assert "CDP URL" in str(exc)
+    else:
+        raise AssertionError("expected reconnect without CDP URL to fail")
