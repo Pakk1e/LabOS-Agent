@@ -174,15 +174,46 @@ class ChatGPTPage:
                 return texts
         return []
 
-    def _wait_for_sent_message(self,message:str,timeout_seconds=15)->None:
-        """Prove the browser accepted the submitted user turn before waiting."""
+    def _wait_for_submission(self,before:list[str],composer,message:str,timeout_seconds=15)->None:
+        """Wait for browser-visible evidence that Enter submitted the turn.
+
+        The user-turn DOM is not a stable contract in ChatGPT. Do not require a
+        particular user-message selector before starting the assistant detector.
+        """
         deadline=time.monotonic()+timeout_seconds
         target=message.strip()
         while time.monotonic()<deadline:
-            if target in self._user_texts():
+            if self._submission_evidence(before,composer,target):
                 return
             time.sleep(.25)
-        raise TimeoutError("ChatGPT accepted the send action but the submitted user message was not rendered")
+
+    def _submission_evidence(self,before:list[str],composer,message:str)->bool:
+        try:
+            if observe(self.page).generating:
+                return True
+        except Exception:
+            pass
+        try:
+            current=self._assistant_texts()
+            if len(current)>len(before) or (current and before and current[-1]!=before[-1]):
+                return True
+        except Exception:
+            pass
+        try:
+            value=composer.input_value(timeout=300)
+            if not value.strip():
+                return True
+        except Exception:
+            try:
+                text=composer.inner_text(timeout=300)
+                if not text.strip():
+                    return True
+            except Exception:
+                pass
+        try:
+            return message.strip() in self._user_texts()
+        except Exception:
+            return False
 
     def wait_for_response(self,*,before:list[str],timeout_seconds=300,quiet_seconds=3,poll_seconds=.5,require_input_available=True)->str:
         deadline=time.monotonic()+timeout_seconds
@@ -247,7 +278,7 @@ class ChatGPTPage:
                 self.page.keyboard.insert_text(message)
                 self.page.wait_for_timeout(100)
                 composer.press("Enter",timeout=1000)
-                self._wait_for_sent_message(message)
+                self._wait_for_submission(before,composer,message)
                 return self.wait_for_response(before=before,**kwargs)
             except (PlaywrightTimeoutError,PlaywrightError) as exc:
                 last_error=exc
