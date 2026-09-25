@@ -319,6 +319,33 @@ def _migrate_legacy_dirty_recovery(state: AgentState, project_root: Path) -> Non
         state.reason = "adopted legacy validated worktree using prior CI evidence"
 
 
+def _reconcile_committed_recovery(state: AgentState, project) -> None:
+    """Clear stale dirty-recovery metadata when its commit is already remote and CI-verified."""
+    if not state.pending_ci_fix or not state.last_commit_sha:
+        return
+    current = git_snapshot(project.project_root)
+    if current.status or current.head != state.last_commit_sha:
+        return
+    remote_sha = current.upstream
+    if not remote_sha or remote_sha != current.head:
+        return
+    result = verify_github_actions(
+        project.repository,
+        current.head,
+        timeout_seconds=project.remote_ci_timeout_seconds,
+        poll_seconds=project.remote_ci_poll_seconds,
+    )
+    if not result.success:
+        return
+    state.pending_ci_fix = False
+    state.pending_ci_baseline_untracked = []
+    state.pending_ci_worktree_fingerprint = None
+    state.pending_remote_ci_fix = False
+    state.pending_remote_ci_sha = None
+    state.pending_remote_ci_result = result.summary
+    state.github_ci_verified = True
+    state.reason = "reconciled committed recovery after exact-SHA GitHub Actions success"
+
 def _commit_recovery_baseline(state: AgentState) -> set[str] | None:
     if not state.pending_ci_fix:
         return None
@@ -362,6 +389,7 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
         save_state(state_path(project_name), state)
 
         _migrate_legacy_dirty_recovery(state, project.project_root)
+        _reconcile_committed_recovery(state, project)
         prepare_repository(
             project.project_root,
             branch_name=state.branch_name,
