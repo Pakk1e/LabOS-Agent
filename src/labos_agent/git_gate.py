@@ -41,14 +41,15 @@ def _env(root: Path) -> dict[str, str]:
 
 
 GIT_COMMAND_TIMEOUT_SECONDS = 120
-GIT_FETCH_RETRIES = 2
-GIT_FETCH_RETRY_DELAY_SECONDS = 2.0
+GIT_NETWORK_RETRIES = 2
+GIT_NETWORK_RETRY_DELAY_SECONDS = 2.0
+GIT_NETWORK_COMMANDS = frozenset({"fetch", "ls-remote"})
 
 
 def _git(root: Path, *args: str, check: bool = True) -> str:
     command = ["git", *args]
-    is_fetch = bool(args) and args[0] == "fetch"
-    attempts = GIT_FETCH_RETRIES + 1 if is_fetch else 1
+    is_network_command = bool(args) and args[0] in GIT_NETWORK_COMMANDS
+    attempts = GIT_NETWORK_RETRIES + 1 if is_network_command else 1
 
     for attempt in range(1, attempts + 1):
         started = time.monotonic()
@@ -83,7 +84,7 @@ def _git(root: Path, *args: str, check: bool = True) -> str:
                 stderr_tail=str(exc.stderr or "")[-1000:],
             )
             if attempt < attempts:
-                time.sleep(GIT_FETCH_RETRY_DELAY_SECONDS)
+                time.sleep(GIT_NETWORK_RETRY_DELAY_SECONDS)
                 continue
             raise
         except Exception as exc:
