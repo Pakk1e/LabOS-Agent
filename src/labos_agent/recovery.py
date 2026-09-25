@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import subprocess
 
+from .execution import parse_execution_requests
 from .git_gate import (
     GitSnapshot,
     can_clear_legacy_dirty_recovery,
@@ -45,38 +46,117 @@ class RecoveryManager:
         return self.record_dirty(before, current, reason=reason)
 
     def recover_interrupted_iteration(self) -> RecoveryEvent | None:
-        """Recover only when the worktree still matches the last persisted execution observation."""
+        """Recover an interrupted iteration only from persisted execution evidence."""
         if self.state.pending_ci_fix:
             return None
         if getattr(self.state, "iteration_stage", None) == IterationStage.ITERATION_SUCCEEDED:
             return None
+
         baseline = getattr(self.state, "iteration_baseline_worktree_fingerprint", None)
         observed = getattr(self.state, "iteration_observed_worktree_fingerprint", None)
-        if not baseline or not observed or not self.state.execution_requested:
+        if baseline and observed and self.state.execution_requested:
+            current = self._snapshot(self.project.project_root)
+            if current.worktree_fingerprint != observed:
+                self.state.reason = "interrupted iteration worktree changed after the last persisted execution observation"
+                trace(
+                    "recovery.interrupted_conflict",
+                    expected=observed,
+                    actual=current.worktree_fingerprint,
+                )
+                return RecoveryEvent("interrupted_worktree_conflict", self.state.reason)
+
+            if current.worktree_fingerprint == baseline:
+                trace("recovery.interrupted_no_change", fingerprint=current.worktree_fingerprint)
+                return RecoveryEvent("interrupted_no_change", "persisted execution observation matches clean iteration baseline")
+
+            self.state.pending_ci_fix = True
+            self.state.pending_ci_baseline_untracked = list(
+                getattr(self.state, "iteration_baseline_untracked", [])
+            )
+            self.state.pending_ci_worktree_fingerprint = current.worktree_fingerprint
+            self.state.reason = "recovered interrupted iteration from persisted worktree observation"
+            trace("recovery.interrupted_recovered", fingerprint=current.worktree_fingerprint)
+            return RecoveryEvent("interrupted_worktree_recovered", self.state.reason)
+
+        return self._recover_legacy_execution_evidence()
+
+    def _recover_legacy_execution_evidence(self) -> RecoveryEvent | None:
+        """Recover old runs that predate persisted execution/worktree evidence.
+
+        This is deliberately narrow: the recorded assistant response must contain
+        write_file requests, the current HEAD must equal the recorded iteration
+        start, every tracked dirty path must be one of those requests, and each
+        requested file must still contain exactly the requested content. Untracked
+        files are treated as external baseline so local virtual environments and
+        other operator files are never committed by recovery.
+        """
+        if getattr(self.state, "execution_requested", False):
+            return None
+        if getattr(self.state, "iteration_stage", None) != IterationStage.ITERATION_STARTED:
+            return None
+        started_sha = getattr(self.state, "iteration_started_sha", None)
+        if not started_sha:
             return None
 
         current = self._snapshot(self.project.project_root)
-        if current.worktree_fingerprint != observed:
-            self.state.reason = "interrupted iteration worktree changed after the last persisted execution observation"
-            trace(
-                "recovery.interrupted_conflict",
-                expected=observed,
-                actual=current.worktree_fingerprint,
-            )
-            return RecoveryEvent("interrupted_worktree_conflict", self.state.reason)
+        if current.head != started_sha:
+            return None
 
-        if current.worktree_fingerprint == baseline:
-            trace("recovery.interrupted_no_change", fingerprint=current.worktree_fingerprint)
-            return RecoveryEvent("interrupted_no_change", "persisted execution observation matches clean iteration baseline")
+        evidence_path = Path("state") / self.state.project / "last_response.md"
+        try:
+            response = evidence_path.read_text(encoding="utf-8")
+            requests = parse_execution_requests(response)
+        except (OSError, ValueError):
+            return None
+
+        writes = {
+            str(request.get("path")): str(request.get("content"))
+            for request in requests
+            if request.get("action") == "write_file"
+            and isinstance(request.get("path"), str)
+            and isinstance(request.get("content"), str)
+        }
+        if not writes:
+            return None
+
+        tracked_paths: set[str] = set()
+        for record in current.status.split("\0"):
+            if not record or record.startswith("?? "):
+                continue
+            if len(record) < 4 or " -> " in record:
+                return None
+            tracked_paths.add(record[3:])
+
+        if not tracked_paths or tracked_paths != set(writes):
+            return None
+
+        root = self.project.project_root.resolve()
+        for relative, expected in writes.items():
+            candidate = (root / relative).resolve()
+            if candidate != root and root not in candidate.parents:
+                return None
+            if any(part.casefold() in {".git", ".env"} or part.casefold().startswith(".env") for part in candidate.relative_to(root).parts):
+                return None
+            try:
+                actual = candidate.read_text(encoding="utf-8")
+            except OSError:
+                return None
+            if actual != expected:
+                return None
 
         self.state.pending_ci_fix = True
-        self.state.pending_ci_baseline_untracked = list(
-            getattr(self.state, "iteration_baseline_untracked", [])
-        )
+        self.state.pending_ci_baseline_untracked = list(current.untracked_paths)
         self.state.pending_ci_worktree_fingerprint = current.worktree_fingerprint
-        self.state.reason = "recovered interrupted iteration from persisted worktree observation"
-        trace("recovery.interrupted_recovered", fingerprint=current.worktree_fingerprint)
-        return RecoveryEvent("interrupted_worktree_recovered", self.state.reason)
+        self.state.reason = "recovered legacy interrupted execution from exact assistant write evidence"
+        trace(
+            "recovery.legacy_interrupted_recovered",
+            fingerprint=current.worktree_fingerprint,
+            paths=sorted(writes),
+        )
+        return RecoveryEvent(
+            "legacy_interrupted_worktree_recovered",
+            self.state.reason,
+        )
 
     def migrate_legacy(self) -> RecoveryEvent | None:
         if not self.state.pending_ci_fix or self.state.pending_ci_worktree_fingerprint is not None:
