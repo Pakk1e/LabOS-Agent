@@ -3,9 +3,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
-from .git_gate import GitSnapshot, snapshot
+from .git_gate import GitSnapshot, snapshot, changed_paths, meaningful_change
 from .trace import trace
 
 
@@ -26,14 +25,10 @@ class RepositoryVerifier:
     def capture(self) -> GitSnapshot:
         return snapshot(self.root)
 
-    def compare(
-        self,
-        before: GitSnapshot,
-        *,
-        meaningful_change_fn: Callable[[GitSnapshot, GitSnapshot], bool],
-    ) -> VerificationResult:
+    def compare(self, before: GitSnapshot) -> VerificationResult:
         after = self.capture()
-        meaningful = meaningful_change_fn(before, after)
+        paths = changed_paths(self.root, before)
+        meaningful = meaningful_change(paths)
         result = VerificationResult(
             clean_relative_to_baseline=after.worktree_fingerprint == before.worktree_fingerprint,
             meaningful_change=meaningful,
