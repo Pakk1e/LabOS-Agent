@@ -12,6 +12,7 @@ from .trace import trace
 class VerificationResult:
     clean_relative_to_baseline: bool
     meaningful_change: bool
+    changed_paths: tuple[str, ...]
     before: GitSnapshot
     after: GitSnapshot
 
@@ -32,6 +33,7 @@ class RepositoryVerifier:
         result = VerificationResult(
             clean_relative_to_baseline=after.worktree_fingerprint == before.worktree_fingerprint,
             meaningful_change=meaningful,
+            changed_paths=tuple(paths),
             before=before,
             after=after,
         )
