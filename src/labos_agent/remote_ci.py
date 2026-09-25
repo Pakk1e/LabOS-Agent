@@ -48,7 +48,14 @@ def verify_github_actions(
     while True:
         try:
             payload = _request(url)
-        except (HTTPError, URLError, TimeoutError) as exc:
+        except HTTPError as exc:
+            last_summary = f"GitHub Actions query failed: HTTP {exc.code}: {exc.reason}"
+            if exc.code == 404:
+                return RemoteCIResult(False,False,False,last_summary)
+            if time.monotonic() >= deadline:
+                return RemoteCIResult(False,False,False,last_summary)
+            time.sleep(min(poll_seconds, max(0.1, deadline-time.monotonic())))
+        except (URLError, TimeoutError) as exc:
             last_summary = f"GitHub Actions query failed: {type(exc).__name__}: {exc}"
             if time.monotonic() >= deadline:
                 return RemoteCIResult(False,False,False,last_summary)
