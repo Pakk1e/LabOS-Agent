@@ -51,6 +51,14 @@ def test_parse_inline_execution_request():
     }]
 
 
+def test_parse_inline_execution_request_allows_whitespace_after_marker():
+    response = 'labos-exec  {"action":"read_file","path":"backend/test/weather.test.js"}'
+    assert parse_execution_requests(response) == [{
+        "action": "read_file",
+        "path": "backend/test/weather.test.js",
+    }]
+
+
 def test_parse_mixed_execution_requests():
     response = (
         'labos-exec{"action":"read_file","path":"a.txt"}'
