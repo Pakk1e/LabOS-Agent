@@ -353,7 +353,7 @@ class ChatGPTPage:
                 composer.press("Enter",timeout=1000)
                 trace("chat.project_send.enter", project=project_name)
                 self._wait_for_submission(before,composer,message)
-                trace("chat.project_send.submitted", project=project_name, url=self.page.url)
+                trace("chat.project_send.submitted", project=project_name, url=getattr(self.page, "url", ""))
                 return self.wait_for_response(before=before,**kwargs)
             except (PlaywrightTimeoutError,PlaywrightError) as exc:
                 last_error=exc
