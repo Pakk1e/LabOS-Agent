@@ -26,6 +26,7 @@ from .trace import trace
 from .trajectory import append_event, trajectory_path
 from .runtime import ExecutionRuntime
 from .verification import RepositoryVerifier
+from .recovery import RecoveryManager
 
 
 @dataclass(frozen=True)
@@ -301,112 +302,35 @@ def _resolve_execution(chat, response: str, project, project_name: str, config: 
     raise RuntimeError("server execution handshake did not complete within the maximum protocol rounds")
 
 
-def _mark_dirty_recovery(state: AgentState, before_git, current_git=None) -> None:
-    """Persist an exact recovery fingerprint so only LabOS-owned dirty work can resume."""
-    state.pending_ci_fix = True
-    state.pending_ci_baseline_untracked = list(before_git.untracked_paths)
-    state.pending_ci_worktree_fingerprint = (
-        current_git.worktree_fingerprint if current_git is not None else None
-    )
+def _recovery(state: AgentState, project) -> RecoveryManager:
+    return RecoveryManager(state, project)
 
 
-def _mark_push_failure_recovery(state: AgentState, before_git, current_git=None) -> None:
-    """Preserve rolled-back validated changes for the next recovery iteration."""
-    _mark_dirty_recovery(state, before_git, current_git)
+def _mark_dirty_recovery(state: AgentState, before_git, current_git=None, *, project=None) -> None:
+    """Compatibility wrapper; recovery ownership lives in RecoveryManager."""
+    if project is None:
+        raise RuntimeError("project is required for recovery coordination")
+    _recovery(state, project).record_dirty(before_git, current_git)
 
 
-def _migrate_legacy_dirty_recovery(state: AgentState, project_root: Path) -> None:
-    """Migrate pre-fingerprint recovery state only when the current tree is evidenced as LabOS work."""
-    if not state.pending_ci_fix or state.pending_ci_worktree_fingerprint is not None:
-        return
-    baseline_untracked = set(state.pending_ci_baseline_untracked)
-    if can_clear_legacy_dirty_recovery(project_root, baseline_untracked):
-        state.pending_ci_fix = False
-        state.pending_ci_baseline_untracked = []
-        state.pending_ci_worktree_fingerprint = None
-        state.reason = "migrated stale recovery metadata with verified clean worktree"
-        return
-
-    # Legacy states may contain validated tracked changes but no persisted
-    # fingerprint. The legacy pending_ci_fix flag was written by the agent
-    # after it observed a dirty tree; require that evidence plus a successful
-    # LocalCI result and an unchanged set of baseline untracked paths before
-    # adopting the current fingerprint. Do not infer ownership from the
-    # current tree alone, and never discard the tracked changes.
-    current = git_snapshot(project_root)
-    if (
-        "success=True" in (state.last_ci_result or "")
-        and set(current.untracked_paths).issubset(baseline_untracked)
-        and current.status
-    ):
-        state.pending_ci_worktree_fingerprint = current.worktree_fingerprint
-        state.reason = "adopted legacy validated worktree using prior CI evidence"
+def _mark_push_failure_recovery(state: AgentState, before_git, current_git=None, *, project=None) -> None:
+    if project is None:
+        raise RuntimeError("project is required for recovery coordination")
+    _recovery(state, project).record_push_failure(before_git, current_git)
 
 
-def _git_remote_branch_sha(root: Path, branch: str) -> str:
-    result = subprocess.run(
-        ["git", "ls-remote", "origin", f"refs/heads/{branch}"],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    return result.stdout.split()[0] if result.returncode == 0 and result.stdout.strip() else ""
+def _migrate_legacy_dirty_recovery(state: AgentState, project) -> None:
+    _recovery(state, project).migrate_legacy()
 
 
 def _reconcile_committed_recovery(state: AgentState, project) -> None:
-    """Clear stale dirty-recovery metadata when its commit is already remote and CI-verified."""
-    if not state.pending_ci_fix or not state.last_commit_sha:
-        return
-    current = git_snapshot(project.project_root)
-    # A recovery commit may already have been followed by one or more legitimate
-    # LabOS iterations before the controller process resumed. Accept the current
-    # HEAD only when the persisted recovery commit is its ancestor; never adopt
-    # an unrelated branch or rewritten history.
-    if not is_ancestor(project.project_root, state.last_commit_sha, current.head):
-        return
-    # The checkout's configured upstream can point at origin/main after a
-    # manual recovery push, even though LabOS is operating on an agent branch.
-    # Recovery must therefore reason about the persisted recovery commit and
-    # the actual target branch, not the checkout's generic upstream.
-    if current.head == state.last_commit_sha:
-        remote_sha = current.upstream
-        if not remote_sha or remote_sha != current.head:
-            return
-    else:
-        # A descendant is safe to reconcile when the persisted recovery commit
-        # itself is already the remote main commit. The descendant remains in
-        # the local agent branch and is not discarded.
-        remote_main_sha = _git_remote_branch_sha(project.project_root, "main")
-        if remote_main_sha != state.last_commit_sha:
-            return
-    # We only clear recovery when the tracked worktree is clean. Untracked files
-    # are intentionally ignored here: they are not modified, staged, or deleted
-    # by reconciliation, so externally-created untracked files must not wedge a
-    # recovery whose validated descendant is already remote and CI-verified.
-    if any(
-        record and len(record) >= 3 and record[2] == " " and not record.startswith("?? ")
-        for record in current.status.split("\0") if record
-    ):
-        return
-    # Agent branches may not have a push-triggered workflow in the target
-    # repository. Re-validate the actual descendant locally before clearing
-    # recovery instead of trusting an unavailable remote CI result.
-    if not _run_local_ci(project, state):
-        return
-    state.pending_ci_fix = False
-    state.pending_ci_baseline_untracked = []
-    state.pending_ci_worktree_fingerprint = None
-    state.pending_remote_ci_fix = False
-    state.pending_remote_ci_sha = None
-    state.pending_remote_ci_result = None
-    state.github_ci_verified = False
-    state.reason = "reconciled pushed recovery descendant after successful LocalCI validation"
+    _recovery(state, project).reconcile_committed(
+        revalidate=lambda: _run_local_ci(project, state)
+    )
 
-def _commit_recovery_baseline(state: AgentState) -> set[str] | None:
-    if not state.pending_ci_fix:
-        return None
-    return set(state.pending_ci_baseline_untracked)
+
+def _commit_recovery_baseline(state: AgentState, project) -> set[str] | None:
+    return _recovery(state, project).baseline()
 
 
 def _rollover_and_process_resume(
@@ -429,7 +353,7 @@ def _rollover_and_process_resume(
     after = git_snapshot(project.project_root)
     recovery_reference = recovery_baseline or baseline
     if after.worktree_fingerprint != recovery_reference.worktree_fingerprint:
-        _mark_dirty_recovery(state, recovery_reference)
+        _mark_dirty_recovery(state, recovery_reference, project=project)
     state.reason = "conversation rolled over and resumed"
     return continuation, response
 
@@ -446,7 +370,7 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
         _trajectory_event(state, project_name, "iteration", "iteration.started", started_head=git_snapshot(project.project_root).head)
         save_state(state_path(project_name), state)
 
-        _migrate_legacy_dirty_recovery(state, project.project_root)
+        _migrate_legacy_dirty_recovery(state, project)
         _reconcile_committed_recovery(state, project)
         prepare_repository(
             project.project_root,
@@ -543,7 +467,7 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
                 try:
                     after_git = git_snapshot(project.project_root)
                     if after_git.worktree_fingerprint != before_git.worktree_fingerprint:
-                        _mark_dirty_recovery(state, before_git)
+                        _mark_dirty_recovery(state, before_git, project=project)
                 except Exception:
                     pass
                 if isinstance(exc, DeadlineReached):
@@ -570,10 +494,10 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
                     f"lab-agent: iteration {state.iteration}",
                     branch_name=state.branch_name,
                     allow_preexisting_tracked_changes=state.pending_ci_fix,
-                    baseline_untracked=_commit_recovery_baseline(state),
+                    baseline_untracked=_commit_recovery_baseline(state, project),
                 )
                 if not committed_sha:
-                    _mark_dirty_recovery(state, before_git, git_snapshot(project.project_root))
+                    _mark_dirty_recovery(state, before_git, git_snapshot(project.project_root), project=project)
                     controller.mark_failure("working tree changed but Git gate produced no commit")
                     save_state(state_path(project_name), state)
                     return RunResult(state, response)
@@ -601,7 +525,7 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
                     return RunResult(state, response)
                 controller.github_ci_verified()
             except GitPushError as exc:
-                _mark_push_failure_recovery(state, before_git, git_snapshot(project.project_root))
+                _mark_push_failure_recovery(state, before_git, git_snapshot(project.project_root), project=project)
                 controller.mark_failure(f"validated changes could not be pushed; recovery is pending: {exc}")
                 save_state(state_path(project_name), state)
                 return RunResult(state, response)
@@ -871,7 +795,7 @@ def _run_loop_impl(
                         try:
                             after_git = git_snapshot(project.project_root)
                             if after_git.worktree_fingerprint != before_git.worktree_fingerprint:
-                                _mark_dirty_recovery(state, before_git, after_git)
+                                _mark_dirty_recovery(state, before_git, after_git, project=project)
                         except Exception:
                             pass
                     if isinstance(exc, RolloverLimitReached):
@@ -950,7 +874,7 @@ def _run_loop_impl(
                         save_response(project_name, resume_response)
                         after = git_snapshot(project.project_root)
                         if after.worktree_fingerprint != baseline.worktree_fingerprint:
-                            _mark_dirty_recovery(state, baseline)
+                            _mark_dirty_recovery(state, baseline, project=project)
                         state.reason = "conversation rolled over and resumed"
                         save_state(state_path(project_name), state)
                     except Exception as exc:
