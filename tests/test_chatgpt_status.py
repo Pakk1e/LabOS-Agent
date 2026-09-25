@@ -165,3 +165,42 @@ def test_project_context_requires_exact_visible_name():
 def test_project_context_rejects_name_as_unrelated_substring():
     chat = ChatGPTPage(_ContextPage("Open Vadovsky Tech — Weathering tools\n"))
     assert not chat.project_context_present("Vadovsky Tech — Weather")
+
+
+class _TextLocator:
+    def __init__(self, texts):
+        self.texts = texts
+
+    def all_text_contents(self):
+        return self.texts
+
+
+class _AssistantFallbackPage:
+    def __init__(self):
+        self.calls = []
+
+    def locator(self, selector):
+        self.calls.append(selector)
+        if selector.endswith(" .markdown"):
+            return _TextLocator([])
+        if selector == '[data-message-author-role="assistant"]':
+            return _TextLocator([])
+        if selector == '[data-role="assistant"] .markdown':
+            return _TextLocator(["fallback reply"])
+        raise AssertionError(f"unexpected selector: {selector}")
+
+
+def test_assistant_text_extraction_falls_back_to_rendered_role_selector():
+    chat = ChatGPTPage(_AssistantFallbackPage())
+    assert chat._assistant_texts() == ["fallback reply"]
+
+
+def test_continuation_prompt_identifies_github_as_implementation_target(monkeypatch):
+    from pathlib import Path
+    from labos_agent.project import inspect_project, build_continuation_prompt
+    monkeypatch.setattr("labos_agent.project.git_status", lambda root: "")
+    snapshot = inspect_project(Path("."), "Pakk1e/VilaPro-Weather", ())
+    prompt = build_continuation_prompt(snapshot, "Continue", execution_enabled=True)
+    assert "GitHub repository is the implementation target" in prompt
+    assert "server checkout is only a controlled working clone" in prompt
+    assert "Do not make server-only implementation changes" in prompt
