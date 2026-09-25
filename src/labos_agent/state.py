@@ -50,6 +50,9 @@ class AgentState:
     # Evidence for the currently persisted/most recently completed iteration.
     iteration_stage:IterationStage=IterationStage.IDLE
     iteration_started_sha:str|None=None
+    iteration_baseline_worktree_fingerprint:str|None=None
+    iteration_baseline_untracked:list[str]=field(default_factory=list)
+    iteration_observed_worktree_fingerprint:str|None=None
     execution_requested:bool=False
     execution_applied:bool=False
     files_changed:bool=False
@@ -73,8 +76,11 @@ class AgentState:
         self.iteration_stage=stage
         self.last_action=stage.value
 
-    def start_iteration(self,starting_sha:str)->None:
+    def start_iteration(self,starting_sha:str,*,baseline_worktree_fingerprint:str|None=None,baseline_untracked:list[str]|None=None)->None:
         self.iteration_started_sha=starting_sha
+        self.iteration_baseline_worktree_fingerprint=baseline_worktree_fingerprint
+        self.iteration_baseline_untracked=list(baseline_untracked or [])
+        self.iteration_observed_worktree_fingerprint=None
         self.execution_requested=False
         self.execution_applied=False
         self.files_changed=False
@@ -118,6 +124,9 @@ def load_state(path:Path)->AgentState|None:
     data.setdefault("pending_ci_baseline_untracked",[])
     data.setdefault("pending_ci_worktree_fingerprint",None)
     data.setdefault("iteration_started_sha",None)
+    data.setdefault("iteration_baseline_worktree_fingerprint",None)
+    data.setdefault("iteration_baseline_untracked",[])
+    data.setdefault("iteration_observed_worktree_fingerprint",None)
     data.setdefault("execution_requested",False)
     data.setdefault("execution_applied",False)
     data.setdefault("files_changed",False)
