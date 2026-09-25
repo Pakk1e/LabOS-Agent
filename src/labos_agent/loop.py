@@ -144,9 +144,9 @@ def _run_local_ci(project, state: AgentState, deadline: datetime | None = None) 
     return result.success
 
 
-def _execute_agent_requests(response: str, project) -> tuple[str, bool]:
+def _execute_agent_requests(response: str, project) -> tuple[str, bool, bool]:
     if not project.execution_enabled:
-        return response, False
+        return response, False, False
     try:
         requests = parse_execution_requests(response)
     except Exception as exc:
@@ -158,7 +158,7 @@ def _execute_agent_requests(response: str, project) -> tuple[str, bool]:
         ), True
     if not requests:
         trace("execution.none", response_chars=len(response))
-        return response, False
+        return response, False, False
     policy = ExecutionPolicy(
         allowed_roots=tuple(path.resolve() for path in project.execution_allowed_roots),
         command_timeout_seconds=project.execution_command_timeout_seconds,
@@ -172,7 +172,7 @@ def _execute_agent_requests(response: str, project) -> tuple[str, bool]:
         {"action": result.action, "success": result.success, "exit_code": result.exit_code}
         for result in observation.results
     ])
-    return formatted, True
+    return formatted, True, observation.success
 
 
 def _select_chat_page(context, project):
