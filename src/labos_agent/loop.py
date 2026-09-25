@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 import fcntl
-import subprocess
 import time
 import uuid
 
@@ -14,8 +13,8 @@ from .browser.session import BrowserSession
 from playwright.sync_api import Error as PlaywrightError
 from .config import AppConfig
 from .ci.local import LocalCI
-from .git_gate import GitPushError, snapshot as git_snapshot, assert_unchanged_before_ci, changed_paths, meaningful_change, commit_and_push, prepare_repository, can_clear_legacy_dirty_recovery, is_ancestor
-from .execution import ExecutionPolicy, ExecutionResult, execute_request, format_execution_results, parse_execution_requests
+from .git_gate import GitPushError, snapshot as git_snapshot, assert_unchanged_before_ci, commit_and_push, prepare_repository
+from .execution import ExecutionPolicy, format_execution_results, parse_execution_requests
 from .controller import Controller
 from .project import build_continuation_prompt, inspect_project
 from .rollover import rollover, rollover_from_max_length
