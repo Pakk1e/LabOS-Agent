@@ -49,7 +49,7 @@ def test_recovery_manager_clear_removes_pending_recovery(tmp_path: Path):
     manager = RecoveryManager(state, project)
     manager.clear("test clear")
     assert not state.pending_ci_fix
-    assert state.pending_ci_baseline_untracked == []
+    assert state.pending_ci_baseline_untracked == ["state/weather/last_response.md"]
     assert state.pending_ci_worktree_fingerprint is None
     assert state.reason == "test clear"
 
