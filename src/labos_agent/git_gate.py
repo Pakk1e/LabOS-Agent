@@ -6,6 +6,9 @@ from pathlib import Path
 import hashlib
 import os
 import subprocess
+import time
+
+from .trace import trace
 
 
 @dataclass(frozen=True)
@@ -37,19 +40,79 @@ def _env(root: Path) -> dict[str, str]:
     return env
 
 
+GIT_COMMAND_TIMEOUT_SECONDS = 120
+GIT_FETCH_RETRIES = 2
+GIT_FETCH_RETRY_DELAY_SECONDS = 2.0
+
+
 def _git(root: Path, *args: str, check: bool = True) -> str:
-    result = subprocess.run(
-        ["git", *args],
-        cwd=root,
-        check=check,
-        capture_output=True,
-        text=True,
-        timeout=120,
-        env=_env(root),
-    )
-    if not check and result.returncode:
-        return ""
-    return result.stdout.rstrip("\n")
+    command = ["git", *args]
+    is_fetch = bool(args) and args[0] == "fetch"
+    attempts = GIT_FETCH_RETRIES + 1 if is_fetch else 1
+
+    for attempt in range(1, attempts + 1):
+        started = time.monotonic()
+        trace(
+            "git.command.start",
+            cwd=str(root),
+            command=command,
+            attempt=attempt,
+            attempts=attempts,
+        )
+        try:
+            result = subprocess.run(
+                command,
+                cwd=root,
+                check=check,
+                capture_output=True,
+                text=True,
+                timeout=GIT_COMMAND_TIMEOUT_SECONDS,
+                env=_env(root),
+            )
+        except subprocess.TimeoutExpired as exc:
+            duration = time.monotonic() - started
+            trace(
+                "git.command.timeout",
+                cwd=str(root),
+                command=command,
+                attempt=attempt,
+                attempts=attempts,
+                timeout_seconds=GIT_COMMAND_TIMEOUT_SECONDS,
+                duration_seconds=round(duration, 2),
+                stdout_tail=str(exc.stdout or "")[-1000:],
+                stderr_tail=str(exc.stderr or "")[-1000:],
+            )
+            if attempt < attempts:
+                time.sleep(GIT_FETCH_RETRY_DELAY_SECONDS)
+                continue
+            raise
+        except Exception as exc:
+            trace(
+                "git.command.error",
+                cwd=str(root),
+                command=command,
+                attempt=attempt,
+                attempts=attempts,
+                error=f"{type(exc).__name__}: {exc}",
+                duration_seconds=round(time.monotonic() - started, 2),
+            )
+            raise
+
+        trace(
+            "git.command.complete",
+            cwd=str(root),
+            command=command,
+            attempt=attempt,
+            returncode=result.returncode,
+            duration_seconds=round(time.monotonic() - started, 2),
+            stdout_tail=result.stdout[-1000:],
+            stderr_tail=result.stderr[-1000:],
+        )
+        if not check and result.returncode:
+            return ""
+        return result.stdout.rstrip("\n")
+
+    raise RuntimeError("unreachable")
 
 
 def _untracked_paths(root: Path) -> tuple[str, ...]:
