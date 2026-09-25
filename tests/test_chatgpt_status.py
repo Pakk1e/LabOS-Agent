@@ -237,3 +237,48 @@ class _RealDomAssistantPage:
 def test_assistant_text_extraction_uses_real_chatgpt_markdown_marker_first():
     chat = ChatGPTPage(_RealDomAssistantPage())
     assert chat._assistant_texts() == ["real assistant markdown"]
+
+
+def test_observe_treats_visible_stop_control_as_generating_even_when_input_is_available(monkeypatch):
+    from labos_agent.browser.detection import observe
+
+    class _Loc:
+        def __init__(self, count=0, visible=True):
+            self._count = count
+            self._visible = visible
+
+        def count(self):
+            return self._count
+
+        def is_visible(self):
+            return self._visible
+
+        def evaluate(self, script):
+            return "textarea"
+
+        def get_attribute(self, name):
+            return "true" if name == "contenteditable" else ("textbox" if name == "role" else None)
+
+        def is_hidden(self):
+            return False
+
+        def is_disabled(self):
+            return False
+
+        def is_editable(self):
+            return True
+
+    class _Page:
+        def locator(self, selector):
+            if selector.startswith("button"):
+                return _Loc(1, True)
+            if selector == '[contenteditable="true"][role="textbox"]':
+                return _Loc(1, True)
+            if "assistant-message" in selector:
+                return _Loc(1, True)
+            return _Loc(0, False)
+
+    result = observe(_Page())
+    assert result.input_available is True
+    assert result.stop_control_visible is True
+    assert result.generating is True
