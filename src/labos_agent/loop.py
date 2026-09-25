@@ -155,7 +155,7 @@ def _execute_agent_requests(response: str, project) -> tuple[str, bool, bool]:
             "[1] action=protocol success=False exit_code=None\n"
             "stdout=\n"
             f"stderr=invalid execution request: {exc}"
-        ), True
+        ), True, False
     if not requests:
         trace("execution.none", response_chars=len(response))
         return response, False, False
@@ -254,14 +254,14 @@ def _resolve_execution(chat, response: str, project, project_name: str, config: 
         if deadline is not None and datetime.now().astimezone() >= deadline:
             raise DeadlineReached("deadline reached before server execution")
 
-        execution_feedback, requested_execution = _execute_agent_requests(response, project)
+        execution_feedback, requested_execution, execution_succeeded = _execute_agent_requests(response, project)
         if requested_execution:
             had_execution = True
             if state is not None:
                 state.execution_requested = True
                 state.iteration_stage = IterationStage.EXECUTION_REQUIRED
-                if "success=True" in execution_feedback:
-                    state.execution_applied = True
+                state.execution_applied = execution_succeeded
+                if execution_succeeded:
                     state.iteration_stage = IterationStage.EXECUTION_APPLIED
             response = chat.send_and_wait_for_response(
                 "The LabOS controller executed your requested server operations. Use these real results and continue the implementation; do not claim execution that is not shown here. "
