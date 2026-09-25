@@ -1,9 +1,16 @@
 from pathlib import Path
+import subprocess
 
 from labos_agent.execution import ExecutionPolicy
 from labos_agent.runtime import ExecutionRuntime
 from labos_agent.trajectory import append_event, trajectory_path
 from labos_agent.verification import RepositoryVerifier
+
+
+def git_repo(tmp_path: Path) -> None:
+    subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(tmp_path), "config", "user.name", "LabOS Test"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "config", "user.email", "labos@example.invalid"], check=True)
 
 
 def test_trajectory_events_are_append_only_jsonl(tmp_path: Path):
@@ -35,10 +42,7 @@ def test_execution_runtime_returns_structured_observation(tmp_path: Path):
 
 
 def test_repository_verifier_reports_meaningful_change(tmp_path: Path):
-    import subprocess
-    subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True)
-    subprocess.run(["git", "-C", str(tmp_path), "config", "user.name", "LabOS Test"], check=True)
-    subprocess.run(["git", "-C", str(tmp_path), "config", "user.email", "labos@example.invalid"], check=True)
+    git_repo(tmp_path)
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "source.py").write_text("print('base')\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(tmp_path), "add", "src/source.py"], check=True)
@@ -54,16 +58,15 @@ def test_repository_verifier_reports_meaningful_change(tmp_path: Path):
 
 
 def test_repository_verifier_exposes_changed_paths(tmp_path: Path):
-    import subprocess
-    subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True)
-    subprocess.run(["git", "-C", str(tmp_path), "config", "user.name", "LabOS Test"], check=True)
-    subprocess.run(["git", "-C", str(tmp_path), "config", "user.email", "labos@example.invalid"], check=True)
+    git_repo(tmp_path)
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "source.py").write_text("print('base')\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(tmp_path), "add", "src/source.py"], check=True)
     subprocess.run(["git", "-C", str(tmp_path), "commit", "-m", "base"], check=True, capture_output=True)
+
     verifier = RepositoryVerifier(tmp_path)
     before = verifier.capture()
     (tmp_path / "src" / "source.py").write_text("print('changed')\n", encoding="utf-8")
     result = verifier.compare(before)
+
     assert result.changed_paths == ("src/source.py",)
