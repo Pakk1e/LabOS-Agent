@@ -602,6 +602,8 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
             state.pending_ci_fix = False
             state.pending_ci_baseline_untracked = []
             state.pending_ci_worktree_fingerprint = None
+            state.execution_requested = False
+            state.execution_applied = False
             save_state(state_path(project_name), state)
             return RunResult(state, response)
 
