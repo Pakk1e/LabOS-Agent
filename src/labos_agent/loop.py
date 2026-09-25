@@ -319,6 +319,18 @@ def _migrate_legacy_dirty_recovery(state: AgentState, project_root: Path) -> Non
         state.reason = "adopted legacy validated worktree using prior CI evidence"
 
 
+def _git_remote_branch_sha(root: Path, branch: str) -> str:
+    import subprocess
+    result = subprocess.run(
+        ["git", "ls-remote", "origin", f"refs/heads/{branch}"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.stdout.split()[0] if result.returncode == 0 and result.stdout.strip() else ""
+
+
 def _reconcile_committed_recovery(state: AgentState, project) -> None:
     """Clear stale dirty-recovery metadata when its commit is already remote and CI-verified."""
     if not state.pending_ci_fix or not state.last_commit_sha:
@@ -330,9 +342,22 @@ def _reconcile_committed_recovery(state: AgentState, project) -> None:
     # an unrelated branch or rewritten history.
     if not is_ancestor(project.project_root, state.last_commit_sha, current.head):
         return
-    remote_sha = current.upstream
-    if not remote_sha or remote_sha != current.head:
-        return
+    # The checkout's configured upstream can point at origin/main after a
+    # manual recovery push, even though LabOS is operating on an agent branch.
+    # Recovery must therefore reason about the persisted recovery commit and
+    # the actual target branch, not the checkout's generic upstream.
+    remote_main = git_snapshot(project.project_root)
+    if current.head == state.last_commit_sha:
+        remote_sha = current.upstream
+        if not remote_sha or remote_sha != current.head:
+            return
+    else:
+        # A descendant is safe to reconcile when the persisted recovery commit
+        # itself is already the remote main commit. The descendant remains in
+        # the local agent branch and is not discarded.
+        remote_main_sha = _git_remote_branch_sha(project.project_root, "main")
+        if remote_main_sha != state.last_commit_sha:
+            return
     # We only clear recovery when the tracked worktree is clean. Untracked files
     # are intentionally ignored here: they are not modified, staged, or deleted
     # by reconciliation, so externally-created untracked files must not wedge a
