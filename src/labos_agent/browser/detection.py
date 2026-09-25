@@ -81,6 +81,9 @@ def observe(page: Page) -> ResponseObservation:
     stop=any(_visible(page,s) for s in _STOP_SELECTORS)
     count=0
     for selector in (
+        '[data-markdown-text-style="assistant-message"]',
+        '[data-content-search-unit-key$=":assistant"]',
+        '[data-chatgpt-selection-message-id]',
         '[data-message-author-role="assistant"]',
         '[data-testid^="conversation-turn-"][data-turn="assistant"]',
         '[data-turn="assistant"]',
