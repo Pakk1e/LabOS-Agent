@@ -270,8 +270,9 @@ def _resolve_execution(chat, response: str, project, project_name: str, config: 
                 quiet_seconds=config.browser.quiet_seconds,
                 require_input_available=False,
             )
-            _trajectory_event(state, project_name, "reasoning", "reasoning.completed", response_chars=len(response))
-        save_response(project_name, response)
+            if state is not None:
+                _trajectory_event(state, project_name, "reasoning", "reasoning.completed", response_chars=len(response))
+            save_response(project_name, response)
             continue
 
         if not project.execution_enabled:
