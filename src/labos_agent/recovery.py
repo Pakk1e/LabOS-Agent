@@ -43,6 +43,38 @@ class RecoveryManager:
     def record_push_failure(self, before: GitSnapshot, current: GitSnapshot | None = None, *, reason: str = "push failure") -> RecoveryEvent:
         return self.record_dirty(before, current, reason=reason)
 
+    def recover_interrupted_iteration(self) -> RecoveryEvent | None:
+        """Recover only when the worktree still matches the last persisted execution observation."""
+        if self.state.pending_ci_fix:
+            return None
+        baseline = getattr(self.state, "iteration_baseline_worktree_fingerprint", None)
+        observed = getattr(self.state, "iteration_observed_worktree_fingerprint", None)
+        if not baseline or not observed or not self.state.execution_requested:
+            return None
+
+        current = self._snapshot(self.project.project_root)
+        if current.worktree_fingerprint != observed:
+            self.state.reason = "interrupted iteration worktree changed after the last persisted execution observation"
+            trace(
+                "recovery.interrupted_conflict",
+                expected=observed,
+                actual=current.worktree_fingerprint,
+            )
+            return RecoveryEvent("interrupted_worktree_conflict", self.state.reason)
+
+        if current.worktree_fingerprint == baseline:
+            trace("recovery.interrupted_no_change", fingerprint=current.worktree_fingerprint)
+            return RecoveryEvent("interrupted_no_change", "persisted execution observation matches clean iteration baseline")
+
+        self.state.pending_ci_fix = True
+        self.state.pending_ci_baseline_untracked = list(
+            getattr(self.state, "iteration_baseline_untracked", [])
+        )
+        self.state.pending_ci_worktree_fingerprint = current.worktree_fingerprint
+        self.state.reason = "recovered interrupted iteration from persisted worktree observation"
+        trace("recovery.interrupted_recovered", fingerprint=current.worktree_fingerprint)
+        return RecoveryEvent("interrupted_worktree_recovered", self.state.reason)
+
     def migrate_legacy(self) -> RecoveryEvent | None:
         if not self.state.pending_ci_fix or self.state.pending_ci_worktree_fingerprint is not None:
             return None
