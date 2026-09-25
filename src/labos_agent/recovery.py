@@ -60,7 +60,7 @@ class RecoveryManager:
             return RecoveryEvent("legacy_adopted", "prior LocalCI evidence")
         return None
 
-    def reconcile_committed(self) -> RecoveryEvent | None:
+    def reconcile_committed(self, *, revalidate=None) -> RecoveryEvent | None:
         if not self.state.pending_ci_fix or not self.state.last_commit_sha:
             return None
         root = self.project.project_root
@@ -81,6 +81,9 @@ class RecoveryManager:
             record and len(record) >= 3 and record[2] == " " and not record.startswith("?? ")
             for record in current.status.split("\0") if record
         ):
+            return None
+
+        if revalidate is not None and not revalidate():
             return None
 
         self.state.pending_ci_fix = False
