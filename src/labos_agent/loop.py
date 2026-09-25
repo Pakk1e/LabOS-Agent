@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 import fcntl
+import subprocess
 import time
 import uuid
 
@@ -13,7 +14,7 @@ from .browser.session import BrowserSession
 from playwright.sync_api import Error as PlaywrightError
 from .config import AppConfig
 from .ci.local import LocalCI
-from .git_gate import GitPushError, snapshot as git_snapshot, assert_unchanged_before_ci, commit_and_push, prepare_repository
+from .git_gate import GitPushError, snapshot as git_snapshot, assert_unchanged_before_ci, commit_and_push, prepare_repository, can_clear_legacy_dirty_recovery, is_ancestor
 from .execution import ExecutionPolicy, format_execution_results, parse_execution_requests
 from .controller import Controller
 from .project import build_continuation_prompt, inspect_project
@@ -301,20 +302,39 @@ def _resolve_execution(chat, response: str, project, project_name: str, config: 
     raise RuntimeError("server execution handshake did not complete within the maximum protocol rounds")
 
 
+def _git_remote_branch_sha(root: Path, branch: str) -> str:
+    result = subprocess.run(
+        ["git", "ls-remote", "origin", f"refs/heads/{branch}"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.stdout.split()[0] if result.returncode == 0 and result.stdout.strip() else ""
+
+
 def _recovery(state: AgentState, project) -> RecoveryManager:
-    return RecoveryManager(state, project)
+    if isinstance(project, Path):
+        project = type("RecoveryProject", (), {"project_root": project})()
+    return RecoveryManager(
+        state,
+        project,
+        snapshot_fn=git_snapshot,
+        ancestor_fn=is_ancestor,
+        remote_sha_fn=_git_remote_branch_sha,
+    )
 
 
 def _mark_dirty_recovery(state: AgentState, before_git, current_git=None, *, project=None) -> None:
     """Compatibility wrapper; recovery ownership lives in RecoveryManager."""
     if project is None:
-        raise RuntimeError("project is required for recovery coordination")
+        project = Path(".")
     _recovery(state, project).record_dirty(before_git, current_git)
 
 
 def _mark_push_failure_recovery(state: AgentState, before_git, current_git=None, *, project=None) -> None:
     if project is None:
-        raise RuntimeError("project is required for recovery coordination")
+        project = Path(".")
     _recovery(state, project).record_push_failure(before_git, current_git)
 
 
