@@ -29,6 +29,8 @@ def test_execution_runtime_returns_structured_observation(tmp_path: Path):
 
     assert observation.requested_count == 2
     assert observation.success
+    assert observation.successful_count == 2
+    assert observation.failed_count == 0
     assert observation.results[1].stdout == "ok"
 
 
@@ -48,3 +50,19 @@ def test_repository_verifier_reports_meaningful_change(tmp_path: Path):
 
     assert not result.clean_relative_to_baseline
     assert result.meaningful_change
+
+
+def test_repository_verifier_exposes_changed_paths(tmp_path: Path):
+    import subprocess
+    subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(tmp_path), "config", "user.name", "LabOS Test"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "config", "user.email", "labos@example.invalid"], check=True)
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "source.py").write_text("print('base')\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "src/source.py"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-m", "base"], check=True, capture_output=True)
+    verifier = RepositoryVerifier(tmp_path)
+    before = verifier.capture()
+    (tmp_path / "src" / "source.py").write_text("print('changed')\n", encoding="utf-8")
+    result = verifier.compare(before)
+    assert result.changed_paths == ("src/source.py",)
