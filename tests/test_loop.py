@@ -469,7 +469,7 @@ def test_reconcile_committed_recovery_accepts_pushed_descendant_with_new_untrack
         (),
         {
             "head": "ab9b64b5a1564e492a1d03c2d922459d6be08ee3",
-            "upstream": "ab9b64b5a1564e492a1d03c2d922459d6be08ee3",
+            "upstream": "d48d18ae4c97c7e72db9fd10ca3d75021cd48b44",
             "status": "?? .venv/bin/python\\0",
             "untracked_paths": (".venv/bin/python",),
             "worktree_fingerprint": "new-fingerprint",
