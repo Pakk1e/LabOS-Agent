@@ -22,6 +22,7 @@ from .rollover import rollover, rollover_from_max_length
 from .remote_ci import verify_github_actions
 from .safety import SafetyLimits
 from .state import AgentState, IterationStage, RunState, load_state, save_state
+from .trace import trace
 
 
 @dataclass(frozen=True)
@@ -99,6 +100,7 @@ def _run_local_ci(project, state: AgentState, deadline: datetime | None = None) 
     commands = project.ci_stages.get(stage)
     if commands is None:
         raise RuntimeError(f"configured CI stage is not defined: {stage}")
+    trace("ci.start", project=project.name, stage=stage, root=str(project.project_root))
     result = LocalCI().run(
         project=project.name,
         stage=stage,
@@ -115,6 +117,8 @@ def _run_local_ci(project, state: AgentState, deadline: datetime | None = None) 
             lines.append(command.stderr.rstrip())
         lines.append(f"exit_code={command.returncode} duration={command.duration_seconds:.2f}s")
     state.last_ci_result = "\n".join(lines)[-12000:]
+    trace("ci.complete", project=project.name, stage=stage, success=result.success,
+          result_tail=state.last_ci_result[-1500:])
     return result.success
 
 
@@ -131,11 +135,14 @@ def _execute_agent_requests(response: str, project) -> tuple[str, bool]:
             f"stderr=invalid execution request: {exc}"
         ), True
     if not requests:
+        trace("execution.none", response_chars=len(response))
         return response, False
     policy = ExecutionPolicy(
         allowed_roots=tuple(path.resolve() for path in project.execution_allowed_roots),
         command_timeout_seconds=project.execution_command_timeout_seconds,
     )
+    trace("execution.requests", count=len(requests),
+          actions=[str(request.get("action", "unknown")) for request in requests])
     results = []
     for request in requests:
         try:
@@ -150,7 +157,12 @@ def _execute_agent_requests(response: str, project) -> tuple[str, bool]:
                     stderr=f"request rejected: {type(exc).__name__}: {exc}",
                 )
             )
-    return format_execution_results(results), True
+    formatted = format_execution_results(results)
+    trace("execution.complete", results=[
+        {"action": result.action, "success": result.success, "exit_code": result.exit_code}
+        for result in results
+    ])
+    return formatted, True
 
 
 def _select_chat_page(context, project):
@@ -435,6 +447,8 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
         state.start_iteration(before_git.head)
         controller.chatgpt_working()
 
+        trace("iteration.browser.attach", project=project_name, iteration=state.iteration,
+              cdp=config.browser.cdp_url, profile=str(config.browser.profile_dir))
         with BrowserSession(config.browser.profile_dir, cdp_url=config.browser.cdp_url) as session:
             context = session.context
             chat = ChatGPTPage(_select_chat_page(context, project))
@@ -459,6 +473,8 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
                 state.last_progress_result,
                 project.execution_enabled,
             )
+            trace("chat.prompt", project=project_name, iteration=state.iteration,
+                  prompt_chars=len(prompt), project_composer=bool(project.project_name))
             try:
                 response = (
                     chat.send_project_message_and_wait_for_response(
@@ -479,6 +495,8 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
                 save_state(state_path(project_name), state)
                 return RunResult(state)
 
+            trace("chat.response", project=project_name, iteration=state.iteration,
+                  response_chars=len(response), response_tail=response[-1000:])
             save_response(project_name, response)
             try:
                 response = _resolve_execution(chat, response, project, project_name, config, deadline=None, state=state)
@@ -683,8 +701,9 @@ def _run_loop_impl(
                         continue
                     if deadline is not None and datetime.now().astimezone() >= deadline:
                         raise DeadlineReached("deadline reached before ChatGPT request")
+                    trace("chat.prompt", project=project_name, iteration=state.iteration,
+                          prompt_chars=len(prompt), project_composer=bool(project.project_name))
                     response = (
-                        chat.send_project_message_and_wait_for_response(
                             project.project_name,
                             prompt,
                             timeout_seconds=_remaining_timeout(deadline, config.browser.response_timeout_seconds),
@@ -697,6 +716,8 @@ def _run_loop_impl(
                             quiet_seconds=config.browser.quiet_seconds,
                         )
                     )
+                    trace("chat.response", project=project_name, iteration=state.iteration,
+                          response_chars=len(response), response_tail=response[-1000:])
                     save_response(project_name, response)
                     response = _resolve_execution(chat, response, project, project_name, config, deadline=deadline, state=state)
                     assert_unchanged_before_ci(project.project_root, before_git)
@@ -710,6 +731,8 @@ def _run_loop_impl(
                         time.sleep(2)
                         continue
                     paths = changed_paths(project.project_root, before_git)
+                    trace("git.after_chat", project=project_name, iteration=state.iteration,
+                          changed_paths=paths, recovery_pending=recovery_pending)
                     meaningful = meaningful_change(paths) or recovery_pending
                     controller.progress_verified(meaningful=meaningful)
                     if not state.meaningful_progress:
@@ -782,6 +805,8 @@ def _run_loop_impl(
                         time.sleep(2)
                         continue
                     state.commit_created = True
+                    trace("git.commit_push.complete", project=project_name, iteration=state.iteration,
+                          commit_sha=committed_sha)
                     controller.pushing()
                     state.last_action = f"committed and pushed {committed_sha}"
                     state.last_commit_sha = committed_sha
@@ -793,6 +818,8 @@ def _run_loop_impl(
                         poll_seconds=project.remote_ci_poll_seconds,
                     )
                     state.pending_remote_ci_result = remote_ci.summary
+                    trace("github_ci.complete", project=project_name, iteration=state.iteration,
+                          sha=committed_sha, success=remote_ci.success, summary=remote_ci.summary)
                     if not remote_ci.success:
                         state.pending_remote_ci_fix = True
                         state.pending_remote_ci_sha = committed_sha
