@@ -535,3 +535,19 @@ def test_reconcile_committed_recovery_accepts_pushed_descendant_with_new_untrack
     assert state.pending_remote_ci_result is None
     assert state.github_ci_verified is False
     assert "reconciled pushed recovery descendant" in state.reason
+
+
+def test_start_iteration_persists_worktree_baseline_and_resets_observation():
+    state = AgentState(project="weather", run_id="run")
+    state.iteration_observed_worktree_fingerprint = "old-observation"
+
+    state.start_iteration(
+        "abc123",
+        baseline_worktree_fingerprint="clean-fp",
+        baseline_untracked=[".venv", "package-lock.json"],
+    )
+
+    assert state.iteration_started_sha == "abc123"
+    assert state.iteration_baseline_worktree_fingerprint == "clean-fp"
+    assert state.iteration_baseline_untracked == [".venv", "package-lock.json"]
+    assert state.iteration_observed_worktree_fingerprint is None
