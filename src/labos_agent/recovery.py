@@ -23,12 +23,15 @@ class RecoveryEvent:
 class RecoveryManager:
     """Own recovery evidence and transitions instead of scattering them in the loop."""
 
-    def __init__(self, state, project):
+    def __init__(self, state, project, *, snapshot_fn=snapshot, ancestor_fn=is_ancestor, remote_sha_fn=None):
         self.state = state
         self.project = project
+        self._snapshot = snapshot_fn
+        self._is_ancestor = ancestor_fn
+        self._remote_sha = remote_sha_fn
 
     def record_dirty(self, before: GitSnapshot, current: GitSnapshot | None = None, *, reason: str = "dirty worktree") -> RecoveryEvent:
-        current = current or snapshot(self.project.project_root)
+        current = current or self._snapshot(self.project.project_root)
         self.state.pending_ci_fix = True
         self.state.pending_ci_baseline_untracked = list(before.untracked_paths)
         self.state.pending_ci_worktree_fingerprint = current.worktree_fingerprint
@@ -48,7 +51,7 @@ class RecoveryManager:
             self.clear("migrated stale recovery metadata with verified clean worktree")
             return RecoveryEvent("legacy_cleared", "verified clean worktree")
 
-        current = snapshot(root)
+        current = self._snapshot(root)
         if (
             "success=True" in (self.state.last_ci_result or "")
             and set(current.untracked_paths).issubset(baseline)
@@ -64,8 +67,8 @@ class RecoveryManager:
         if not self.state.pending_ci_fix or not self.state.last_commit_sha:
             return None
         root = self.project.project_root
-        current = snapshot(root)
-        if not is_ancestor(root, self.state.last_commit_sha, current.head):
+        current = self._snapshot(root)
+        if not self._is_ancestor(root, self.state.last_commit_sha, current.head):
             return None
 
         if current.head == self.state.last_commit_sha:
@@ -110,6 +113,8 @@ class RecoveryManager:
         return set(self.state.pending_ci_baseline_untracked)
 
     def _remote_branch_sha(self, branch: str) -> str:
+        if self._remote_sha is not None:
+            return self._remote_sha(branch)
         result = subprocess.run(
             ["git", "ls-remote", "origin", f"refs/heads/{branch}"],
             cwd=self.project.project_root,
