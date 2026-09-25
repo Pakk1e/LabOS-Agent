@@ -253,3 +253,17 @@ def test_git_read_surface_allows_slash_containing_revision_refs(tmp_path: Path, 
     ):
         execute_request(tmp_path, {"action": "run_command", "command": command}, policy(tmp_path))
     assert any("feature/foo" in command[-1] for command in calls)
+
+
+def test_parse_stripped_json_execution_response():
+    response = 'JSON  {"action":"read_file","path":"README.md"}'
+    assert parse_execution_requests(response) == [{
+        "action": "read_file",
+        "path": "README.md",
+    }]
+
+
+def test_parse_stripped_json_requires_supported_whole_response():
+    assert parse_execution_requests('JSON  {"action":"example","path":"README.md"}') == []
+    assert parse_execution_requests('JSON  {"action":"read_file","path":"README.md"} extra') == []
+    assert parse_execution_requests('Here is JSON  {"action":"read_file","path":"README.md"}') == []
