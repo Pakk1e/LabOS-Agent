@@ -324,10 +324,21 @@ def _reconcile_committed_recovery(state: AgentState, project) -> None:
     if not state.pending_ci_fix or not state.last_commit_sha:
         return
     current = git_snapshot(project.project_root)
-    if current.status or current.head != state.last_commit_sha:
+    if current.head != state.last_commit_sha:
         return
     remote_sha = current.upstream
     if not remote_sha or remote_sha != current.head:
+        return
+    # Pre-existing untracked files are allowed when their paths were already
+    # recorded before the recovery iteration. They may legitimately change
+    # outside LabOS; they must not be discarded or treated as agent-owned.
+    baseline_untracked = set(state.pending_ci_baseline_untracked)
+    if any(
+        record and len(record) >= 3 and record[2] == " " and not record.startswith("?? ")
+        for record in current.status.split("\0") if record
+    ):
+        return
+    if not set(current.untracked_paths).issubset(baseline_untracked):
         return
     result = verify_github_actions(
         project.repository,
