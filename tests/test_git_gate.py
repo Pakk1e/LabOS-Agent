@@ -386,3 +386,27 @@ def test_git_fetch_retries_after_timeout(monkeypatch, tmp_path: Path):
     assert git_gate._git(tmp_path, "fetch", "origin", "main") == "retry succeeded"
     assert len(calls) == 2
     assert all(call[1]["timeout"] == git_gate.GIT_COMMAND_TIMEOUT_SECONDS for call in calls)
+
+
+def test_git_ls_remote_retries_after_timeout(monkeypatch, tmp_path: Path):
+    import labos_agent.git_gate as git_gate
+
+    calls = []
+
+    class _Result:
+        returncode = 0
+        stdout = "abc123 refs/heads/main\n"
+        stderr = ""
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        if len(calls) == 1:
+            raise subprocess.TimeoutExpired(command, timeout=git_gate.GIT_COMMAND_TIMEOUT_SECONDS)
+        return _Result()
+
+    monkeypatch.setattr(git_gate.subprocess, "run", fake_run)
+    monkeypatch.setattr(git_gate.time, "sleep", lambda seconds: None)
+
+    assert git_gate._git(tmp_path, "ls-remote", "origin", "refs/heads/main", check=False) == "abc123 refs/heads/main"
+    assert len(calls) == 2
+    assert all(call[1]["timeout"] == git_gate.GIT_COMMAND_TIMEOUT_SECONDS for call in calls)
