@@ -254,7 +254,12 @@ def _resolve_execution(chat, response: str, project, project_name: str, config: 
         if deadline is not None and datetime.now().astimezone() >= deadline:
             raise DeadlineReached("deadline reached before server execution")
 
-        execution_feedback, requested_execution, execution_succeeded = _execute_agent_requests(response, project)
+        execution_result = _execute_agent_requests(response, project)
+        if len(execution_result) == 2:
+            execution_feedback, requested_execution = execution_result
+            execution_succeeded = "success=True" in execution_feedback
+        else:
+            execution_feedback, requested_execution, execution_succeeded = execution_result
         if requested_execution:
             had_execution = True
             if state is not None:
