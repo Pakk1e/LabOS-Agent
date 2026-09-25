@@ -39,7 +39,8 @@ def test_repository_verifier_reports_meaningful_change(tmp_path: Path):
     subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True)
     subprocess.run(["git", "-C", str(tmp_path), "config", "user.name", "LabOS Test"], check=True)
     subprocess.run(["git", "-C", str(tmp_path), "config", "user.email", "labos@example.invalid"], check=True)
-    (tmp_path / "src").mkdir()\n    (tmp_path / "src" / "source.py").write_text("print('base')\\n", encoding="utf-8")
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "source.py").write_text("print('base')\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(tmp_path), "add", "src/source.py"], check=True)
     subprocess.run(["git", "-C", str(tmp_path), "commit", "-m", "base"], check=True, capture_output=True)
 
