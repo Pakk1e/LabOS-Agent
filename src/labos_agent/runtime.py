@@ -18,6 +18,14 @@ class RuntimeObservation:
     def success(self) -> bool:
         return bool(self.results) and all(result.success for result in self.results)
 
+    @property
+    def successful_count(self) -> int:
+        return sum(1 for result in self.results if result.success)
+
+    @property
+    def failed_count(self) -> int:
+        return sum(1 for result in self.results if not result.success)
+
 
 class ExecutionRuntime:
     """Validate and execute controller-approved agent actions.
