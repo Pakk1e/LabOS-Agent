@@ -12,6 +12,7 @@ from .git_gate import (
     snapshot,
 )
 from .trace import trace
+from .state import IterationStage
 
 
 @dataclass(frozen=True)
@@ -46,6 +47,8 @@ class RecoveryManager:
     def recover_interrupted_iteration(self) -> RecoveryEvent | None:
         """Recover only when the worktree still matches the last persisted execution observation."""
         if self.state.pending_ci_fix:
+            return None
+        if self.state.iteration_stage == IterationStage.ITERATION_SUCCEEDED:
             return None
         baseline = getattr(self.state, "iteration_baseline_worktree_fingerprint", None)
         observed = getattr(self.state, "iteration_observed_worktree_fingerprint", None)
