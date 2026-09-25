@@ -247,6 +247,10 @@ def test_observe_treats_visible_stop_control_as_generating_even_when_input_is_av
             self._count = count
             self._visible = visible
 
+        @property
+        def first(self):
+            return self
+
         def count(self):
             return self._count
 
