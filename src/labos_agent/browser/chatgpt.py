@@ -357,7 +357,12 @@ class ChatGPTPage:
         trace("chat.request", request_id=request_id, message_chars=len(message))
         before=self._assistant_texts()
         before_ids=self._assistant_message_ids()
+        composer=self._find_input()
+        if composer is None:
+            raise RuntimeError("ChatGPT message input did not exist before sending")
         self.send_message(message)
+        self._wait_for_submission(before,composer,message)
+        trace("chat.request.submitted", request_id=request_id, url=getattr(self.page, "url", ""))
         return self.wait_for_response(before=before, before_ids=before_ids, **kwargs)
 
     def send_project_message_and_wait_for_response(self,project_name:str,message:str,**kwargs)->str:
