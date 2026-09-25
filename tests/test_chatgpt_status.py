@@ -225,3 +225,15 @@ class _TurnFallbackPage:
 def test_assistant_text_extraction_falls_back_to_turn_role_selector():
     chat = ChatGPTPage(_TurnFallbackPage())
     assert chat._assistant_texts() == ["assistant turn reply"]
+
+
+class _RealDomAssistantPage:
+    def locator(self, selector):
+        if selector == '[data-markdown-text-style="assistant-message"]':
+            return _TextLocator(["real assistant markdown"])
+        return _TextLocator([])
+
+
+def test_assistant_text_extraction_uses_real_chatgpt_markdown_marker_first():
+    chat = ChatGPTPage(_RealDomAssistantPage())
+    assert chat._assistant_texts() == ["real assistant markdown"]
