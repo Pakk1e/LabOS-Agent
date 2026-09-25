@@ -96,4 +96,4 @@ def observe(page: Page) -> ResponseObservation:
             count=0
         if count:
             break
-    return ResponseObservation(generating=stop and not available,input_available=available,stop_control_visible=stop,assistant_count=count)
+    return ResponseObservation(generating=stop,input_available=available,stop_control_visible=stop,assistant_count=count)
