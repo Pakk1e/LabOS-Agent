@@ -328,7 +328,7 @@ class ChatGPTPage:
             raise RuntimeError(f"Project composer is unavailable for: {project_name}")
         before=self._assistant_texts()
         trace("chat.project_send.start", project=project_name, before_count=len(before),
-              message_chars=len(message), url=self.page.url)
+              message_chars=len(message), url=getattr(self.page, "url", ""))
         deadline=time.monotonic()+10
         while time.monotonic()<deadline:
             try:
