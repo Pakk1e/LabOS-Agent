@@ -261,8 +261,10 @@ def parse_execution_requests(response: str) -> list[dict]:
 
         payload_start = marker_start + len(inline_marker)
 
-        if payload_start < len(response) and response[payload_start] == "{":
-            value, consumed = decoder.raw_decode(response[payload_start:])
+        payload = response[payload_start:].lstrip()
+        if payload.startswith("{"):
+            leading = len(response[payload_start:]) - len(payload)
+            value, consumed = decoder.raw_decode(payload)
 
             if not isinstance(value, dict):
                 raise ValueError("labos-exec payload must be an object")
@@ -271,7 +273,7 @@ def parse_execution_requests(response: str) -> list[dict]:
             if marker_start == 0 or response[marker_start - 3:marker_start] != fence:
                 requests.append((marker_start, value))
 
-            search_from = payload_start + consumed
+            search_from = payload_start + leading + consumed
         else:
             search_from = payload_start
 
@@ -312,6 +314,20 @@ def parse_execution_requests(response: str) -> list[dict]:
                 requests.append((fence_start, value))
 
         search_from = json_start + consumed
+
+    # Some ChatGPT renderings strip the Markdown fence and expose a single
+    # executable object as JSON {"action": ...}. Accept it only when the
+    # entire response is the explicit JSON label plus one supported object.
+    stripped = response.strip()
+    if stripped.casefold().startswith("json"):
+        remainder = stripped[4:].lstrip()
+        try:
+            value, consumed = decoder.raw_decode(remainder)
+        except json.JSONDecodeError:
+            value = None
+            consumed = -1
+        if isinstance(value, dict) and value.get("action") in supported_actions and remainder[consumed:].strip() == "":
+            requests.append((0, value))
 
     requests.sort(key=lambda item: item[0])
     return [value for _, value in requests]
