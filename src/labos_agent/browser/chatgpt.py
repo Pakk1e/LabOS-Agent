@@ -6,6 +6,7 @@ import time
 from urllib.parse import urlparse
 from playwright.sync_api import Error as PlaywrightError, Page, TimeoutError as PlaywrightTimeoutError
 from .detection import observe, rollover_required
+from ..trace import dom_enabled, trace
 
 @dataclass(frozen=True)
 class ChatStatus:
@@ -132,17 +133,26 @@ class ChatGPTPage:
         raise RuntimeError(f"ChatGPT message input remained unstable while sending{detail}")
 
     def _assistant_texts(self)->list[str]:
-        """Extract rendered assistant replies with semantic-selector fallbacks."""
+        """Extract assistant replies using role selectors and turn-level fallbacks."""
         selectors=(
             '[data-message-author-role="assistant"] .markdown',
             '[data-message-author-role="assistant"] .prose',
             '[data-message-author-role="assistant"]',
+            '[data-testid^="conversation-turn-"][data-turn="assistant"] .markdown',
+            '[data-testid^="conversation-turn-"][data-turn="assistant"]',
+            '[data-turn="assistant"] .markdown',
+            '[data-turn="assistant"] .prose',
+            '[data-turn="assistant"]',
+            'article[data-turn="assistant"] .markdown',
+            'article[data-turn="assistant"]',
+            'section[data-turn="assistant"] .markdown',
+            'section[data-turn="assistant"]',
+            '[data-testid^="conversation-turn-"] [data-message-author-role="assistant"] .markdown',
+            '[data-testid^="conversation-turn-"] [data-message-author-role="assistant"]',
             '[data-role="assistant"] .markdown',
             '[data-role="assistant"]',
             '[data-message-author="assistant"] .markdown',
             '[data-message-author="assistant"]',
-            '[data-testid^="conversation-turn-"][data-turn="assistant"] .markdown',
-            '[data-testid^="conversation-turn-"][data-turn="assistant"]',
             '.agent-turn .markdown',
             '.agent-turn',
         )
@@ -184,6 +194,8 @@ class ChatGPTPage:
         target=message.strip()
         while time.monotonic()<deadline:
             if self._submission_evidence(before,composer,target):
+                trace("chat.submission_evidence", assistant_count=len(self._assistant_texts()),
+                      generating=observe(self.page).generating)
                 return
             time.sleep(.25)
 
@@ -216,33 +228,89 @@ class ChatGPTPage:
             return False
 
     def wait_for_response(self,*,before:list[str],timeout_seconds=300,quiet_seconds=3,poll_seconds=.5,require_input_available=True)->str:
+        trace("chat.response_wait.start", before_count=len(before), timeout_seconds=timeout_seconds,
+              quiet_seconds=quiet_seconds, url=self.page.url)
         deadline=time.monotonic()+timeout_seconds
         last_text=""
         last_change=0.0
         saw=False
         last_count=len(before)
+        last_trace=0.0
         while time.monotonic()<deadline:
             texts=self._assistant_texts()
+            now=time.monotonic()
             if texts:
                 candidate=texts[-1]
                 previous=before[-1] if before else ""
                 if len(texts)>len(before) or candidate!=previous:
+                    if not saw:
+                        trace("chat.response_wait.detected", assistant_count=len(texts),
+                              candidate_chars=len(candidate))
                     saw=True
                     last_count=len(texts)
                     if candidate!=last_text:
                         last_text=candidate
-                        last_change=time.monotonic()
+                        last_change=now
                     obs=observe(self.page)
                     input_ready = obs.input_available or not require_input_available
-                    if time.monotonic()-last_change>=quiet_seconds and not obs.generating and input_ready:
+                    if now-last_change>=quiet_seconds and not obs.generating and input_ready:
+                        trace("chat.response_wait.complete", assistant_count=len(texts),
+                              response_chars=len(candidate), generating=obs.generating,
+                              input_available=obs.input_available)
                         return candidate
+            if now-last_trace>=10:
+                obs=observe(self.page)
+                trace("chat.response_wait.poll", assistant_count=len(texts), before_count=len(before),
+                      saw_response=saw, generating=obs.generating,
+                      input_available=obs.input_available)
+                last_trace=now
             time.sleep(poll_seconds)
+        diagnostic = self._response_detection_diagnostic(before)
+        trace("chat.response_wait.timeout", assistant_count=last_count, before_count=len(before),
+              saw_response=saw, diagnostic=diagnostic)
         if not saw:
             raise TimeoutError(
                 f"No new assistant response appeared before timeout "
                 f"(assistant_count={last_count}, before_count={len(before)}, url={self.page.url})"
             )
         raise TimeoutError("Assistant response did not reach a conservative completed state before timeout")
+
+    def _response_detection_diagnostic(self,before:list[str])->dict[str,object]:
+        selectors=(
+            '[data-message-author-role="assistant"]',
+            '[data-testid^="conversation-turn-"][data-turn="assistant"]',
+            '[data-turn="assistant"]',
+            'article[data-turn="assistant"]',
+            'section[data-turn="assistant"]',
+            '[data-testid^="conversation-turn-"]',
+            '[data-message-author-role="user"]',
+            '.agent-turn',
+        )
+        counts={}
+        for selector in selectors:
+            try:
+                counts[selector]=self.page.locator(selector).count()
+            except Exception:
+                counts[selector]="error"
+        result:dict[str,object]={
+            "url":self.page.url,
+            "before_count":len(before),
+            "selector_counts":counts,
+        }
+        try:
+            obs=observe(self.page)
+            result["generating"]=obs.generating
+            result["input_available"]=obs.input_available
+            result["observed_assistant_count"]=obs.assistant_count
+        except Exception as exc:
+            result["observe_error"]=f"{type(exc).__name__}: {exc}"
+        if dom_enabled():
+            try:
+                body=self.page.locator("body").inner_text(timeout=2000)
+                result["body_prefix"]=body[:4000]
+            except Exception as exc:
+                result["body_error"]=f"{type(exc).__name__}: {exc}"
+        return result
 
     def send_and_wait_for_response(self,message:str,**kwargs)->str:
         before=self._assistant_texts()
@@ -256,6 +324,8 @@ class ChatGPTPage:
         if composer is None:
             raise RuntimeError(f"Project composer is unavailable for: {project_name}")
         before=self._assistant_texts()
+        trace("chat.project_send.start", project=project_name, before_count=len(before),
+              message_chars=len(message), url=self.page.url)
         deadline=time.monotonic()+10
         while time.monotonic()<deadline:
             try:
@@ -278,7 +348,9 @@ class ChatGPTPage:
                 self.page.keyboard.insert_text(message)
                 self.page.wait_for_timeout(100)
                 composer.press("Enter",timeout=1000)
+                trace("chat.project_send.enter", project=project_name)
                 self._wait_for_submission(before,composer,message)
+                trace("chat.project_send.submitted", project=project_name, url=self.page.url)
                 return self.wait_for_response(before=before,**kwargs)
             except (PlaywrightTimeoutError,PlaywrightError) as exc:
                 last_error=exc
