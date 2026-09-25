@@ -75,7 +75,7 @@ def test_parse_json_fenced_execution_request():
         "action": "write_file",
         "path": "backend/test/weather.test.js",
         "content": "ok",
-    ]}
+    }]
 
 
 def test_parse_json_fence_ignores_non_execution_json():
