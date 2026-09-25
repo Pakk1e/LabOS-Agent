@@ -313,6 +313,20 @@ def parse_execution_requests(response: str) -> list[dict]:
 
         search_from = json_start + consumed
 
+    # Some ChatGPT renderings strip the Markdown fence and expose a single
+    # executable object as JSON {"action": ...}. Accept it only when the
+    # entire response is the explicit JSON label plus one supported object.
+    stripped = response.strip()
+    if stripped.casefold().startswith("json"):
+        remainder = stripped[4:].lstrip()
+        try:
+            value, consumed = decoder.raw_decode(remainder)
+        except json.JSONDecodeError:
+            value = None
+            consumed = -1
+        if isinstance(value, dict) and value.get("action") in supported_actions and remainder[consumed:].strip() == "":
+            requests.append((0, value))
+
     requests.sort(key=lambda item: item[0])
     return [value for _, value in requests]
 def format_execution_results(results: list[ExecutionResult]) -> str:
