@@ -211,6 +211,20 @@ def _discard_tracked_sensitive_changes(root: Path, status: str) -> None:
         _git(root, "restore", "--staged", "--worktree", "--", *tracked, check=False)
 
 
+def is_ancestor(root: Path, ancestor: str, descendant: str) -> bool:
+    """Return whether ancestor is reachable from descendant without changing the worktree."""
+    if not ancestor or not descendant:
+        return False
+    result = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", ancestor, descendant],
+        cwd=root,
+        env=_env(root),
+        check=False,
+        capture_output=True,
+    )
+    return result.returncode == 0
+
+
 def can_clear_legacy_dirty_recovery(root: Path, baseline_untracked: set[str] | tuple[str, ...]) -> bool:
     """Return whether legacy recovery metadata can be cleared without trusting unknown changes.
 
