@@ -16,7 +16,7 @@ class FakePage:
 
 def test_observe_detects_stop_control():
     obs=observe(FakePage(stop=True))
-    assert not obs.generating and obs.stop_control_visible and obs.input_available
+    assert obs.generating and obs.stop_control_visible and obs.input_available
     assert obs.assistant_count==2
 
 def test_observe_without_stop_is_not_generating():
