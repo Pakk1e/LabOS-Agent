@@ -378,7 +378,7 @@ def _rollover_and_process_resume(
     after = git_snapshot(project.project_root)
     recovery_reference = recovery_baseline or baseline
     if after.worktree_fingerprint != recovery_reference.worktree_fingerprint:
-        _mark_dirty_recovery(state, recovery_reference, project=project)
+        _mark_dirty_recovery(state, recovery_reference, after, project=project)
     state.reason = "conversation rolled over and resumed"
     return continuation, response
 
