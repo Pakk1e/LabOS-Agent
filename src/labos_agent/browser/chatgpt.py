@@ -132,14 +132,64 @@ class ChatGPTPage:
         raise RuntimeError(f"ChatGPT message input remained unstable while sending{detail}")
 
     def _assistant_texts(self)->list[str]:
-        loc=self.page.locator('[data-message-author-role="assistant"]')
-        return [t.strip() for t in loc.all_text_contents() if t.strip()]
+        """Extract rendered assistant replies with semantic-selector fallbacks."""
+        selectors=(
+            '[data-message-author-role="assistant"] .markdown',
+            '[data-message-author-role="assistant"] .prose',
+            '[data-message-author-role="assistant"]',
+            '[data-role="assistant"] .markdown',
+            '[data-role="assistant"]',
+            '[data-message-author="assistant"] .markdown',
+            '[data-message-author="assistant"]',
+            '[data-testid^="conversation-turn-"][data-turn="assistant"] .markdown',
+            '[data-testid^="conversation-turn-"][data-turn="assistant"]',
+            '.agent-turn .markdown',
+            '.agent-turn',
+        )
+        for selector in selectors:
+            try:
+                texts=[t.strip() for t in self.page.locator(selector).all_text_contents() if t.strip()]
+            except Exception:
+                continue
+            if texts:
+                return texts
+        return []
+
+    def _user_texts(self)->list[str]:
+        selectors=(
+            '[data-message-author-role="user"] .whitespace-pre-wrap',
+            '[data-message-author-role="user"]',
+            '[data-role="user"] .whitespace-pre-wrap',
+            '[data-role="user"]',
+            '[data-message-author="user"] .whitespace-pre-wrap',
+            '[data-message-author="user"]',
+            '[data-testid^="conversation-turn-"][data-turn="user"]',
+        )
+        for selector in selectors:
+            try:
+                texts=[t.strip() for t in self.page.locator(selector).all_text_contents() if t.strip()]
+            except Exception:
+                continue
+            if texts:
+                return texts
+        return []
+
+    def _wait_for_sent_message(self,message:str,timeout_seconds=15)->None:
+        """Prove the browser accepted the submitted user turn before waiting."""
+        deadline=time.monotonic()+timeout_seconds
+        target=message.strip()
+        while time.monotonic()<deadline:
+            if target in self._user_texts():
+                return
+            time.sleep(.25)
+        raise TimeoutError("ChatGPT accepted the send action but the submitted user message was not rendered")
 
     def wait_for_response(self,*,before:list[str],timeout_seconds=300,quiet_seconds=3,poll_seconds=.5,require_input_available=True)->str:
         deadline=time.monotonic()+timeout_seconds
         last_text=""
         last_change=0.0
         saw=False
+        last_count=len(before)
         while time.monotonic()<deadline:
             texts=self._assistant_texts()
             if texts:
@@ -147,6 +197,7 @@ class ChatGPTPage:
                 previous=before[-1] if before else ""
                 if len(texts)>len(before) or candidate!=previous:
                     saw=True
+                    last_count=len(texts)
                     if candidate!=last_text:
                         last_text=candidate
                         last_change=time.monotonic()
@@ -155,7 +206,11 @@ class ChatGPTPage:
                     if time.monotonic()-last_change>=quiet_seconds and not obs.generating and input_ready:
                         return candidate
             time.sleep(poll_seconds)
-        if not saw: raise TimeoutError("No new assistant response appeared before timeout")
+        if not saw:
+            raise TimeoutError(
+                f"No new assistant response appeared before timeout "
+                f"(assistant_count={last_count}, before_count={len(before)}, url={self.page.url})"
+            )
         raise TimeoutError("Assistant response did not reach a conservative completed state before timeout")
 
     def send_and_wait_for_response(self,message:str,**kwargs)->str:
@@ -192,6 +247,7 @@ class ChatGPTPage:
                 self.page.keyboard.insert_text(message)
                 self.page.wait_for_timeout(100)
                 composer.press("Enter",timeout=1000)
+                self._wait_for_sent_message(message)
                 return self.wait_for_response(before=before,**kwargs)
             except (PlaywrightTimeoutError,PlaywrightError) as exc:
                 last_error=exc
