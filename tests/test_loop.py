@@ -4,6 +4,7 @@ from labos_agent.loop import run_loop
 from contextlib import contextmanager
 
 import labos_agent.loop as loop
+import labos_agent.phases as phases
 from labos_agent.state import AgentState, RunState, save_state
 
 
