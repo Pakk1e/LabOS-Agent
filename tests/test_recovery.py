@@ -49,7 +49,7 @@ def test_recovery_manager_clear_removes_pending_recovery(tmp_path: Path):
     manager = RecoveryManager(state, project)
     manager.clear("test clear")
     assert not state.pending_ci_fix
-    assert state.pending_ci_baseline_untracked == ["state/weather/last_response.md"]
+    assert state.pending_ci_baseline_untracked == []
     assert state.pending_ci_worktree_fingerprint is None
     assert state.reason == "test clear"
 
@@ -199,7 +199,7 @@ def test_recover_legacy_interrupted_write_from_exact_last_response(tmp_path: Pat
     assert event.kind == "legacy_interrupted_worktree_recovered"
     assert state.pending_ci_fix is True
     assert state.pending_ci_worktree_fingerprint
-    assert state.pending_ci_baseline_untracked == []
+    assert state.pending_ci_baseline_untracked == ["state/weather/last_response.md"]
 
 
 def test_recover_legacy_interrupted_write_rejects_mismatched_content(tmp_path: Path, monkeypatch):
