@@ -530,7 +530,7 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
                 save_state(state_path(project_name), state)
                 return RunResult(state, response)
             except Exception as exc:
-                _mark_dirty_recovery(state, before_git, git_snapshot(project.project_root))
+                _mark_dirty_recovery(state, before_git, git_snapshot(project.project_root), project=project)
                 controller.mark_failure(f"validated changes could not be committed/pushed: {exc}")
                 save_state(state_path(project_name), state)
                 return RunResult(state, response)
@@ -614,7 +614,7 @@ def _run_loop_impl(
 
                 before_git = None
                 try:
-                    _migrate_legacy_dirty_recovery(state, project.project_root)
+                    _migrate_legacy_dirty_recovery(state, project)
                     # Reconcile a previously validated/pushed recovery before the
                     # dirty-worktree gate. The one-shot path already does this;
                     # the autonomous continue path must do the same or it can
@@ -695,7 +695,7 @@ def _run_loop_impl(
 
                     controller.ci_running()
                     if deadline is not None and datetime.now().astimezone() >= deadline:
-                        _mark_dirty_recovery(state, before_git)
+                        _mark_dirty_recovery(state, before_git, project=project)
                         controller.stop("deadline reached before LocalCI")
                         save_state(state_path(project_name), state)
                         return RunResult(state, response)
@@ -729,10 +729,10 @@ def _run_loop_impl(
                             f"lab-agent: iteration {state.iteration}",
                             branch_name=state.branch_name,
                             allow_preexisting_tracked_changes=state.pending_ci_fix,
-                            baseline_untracked=_commit_recovery_baseline(state),
+                            baseline_untracked=_commit_recovery_baseline(state, project),
                         )
                     except GitPushError as exc:
-                        _mark_push_failure_recovery(state, before_git, git_snapshot(project.project_root))
+                        _mark_push_failure_recovery(state, before_git, git_snapshot(project.project_root), project=project)
                         controller.mark_failure(
                             f"validated changes could not be pushed; recovery is pending: {exc}"
                         )
