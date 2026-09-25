@@ -135,6 +135,9 @@ class ChatGPTPage:
     def _assistant_texts(self)->list[str]:
         """Extract assistant replies using role selectors and turn-level fallbacks."""
         selectors=(
+            '[data-markdown-text-style="assistant-message"]',
+            '[data-content-search-unit-key$=":assistant"] [data-markdown-text-style="assistant-message"]',
+            '[data-chatgpt-selection-message-id] [data-markdown-text-style="assistant-message"]',
             '[data-message-author-role="assistant"] .markdown',
             '[data-message-author-role="assistant"] .prose',
             '[data-message-author-role="assistant"]',
@@ -147,8 +150,6 @@ class ChatGPTPage:
             'article[data-turn="assistant"]',
             'section[data-turn="assistant"] .markdown',
             'section[data-turn="assistant"]',
-            '[data-testid^="conversation-turn-"] [data-message-author-role="assistant"] .markdown',
-            '[data-testid^="conversation-turn-"] [data-message-author-role="assistant"]',
             '[data-role="assistant"] .markdown',
             '[data-role="assistant"]',
             '[data-message-author="assistant"] .markdown',
@@ -277,12 +278,14 @@ class ChatGPTPage:
 
     def _response_detection_diagnostic(self,before:list[str])->dict[str,object]:
         selectors=(
+            '[data-markdown-text-style="assistant-message"]',
+            '[data-content-search-unit-key$=":assistant"]',
+            '[data-chatgpt-selection-message-id]',
             '[data-message-author-role="assistant"]',
             '[data-testid^="conversation-turn-"][data-turn="assistant"]',
             '[data-turn="assistant"]',
             'article[data-turn="assistant"]',
             'section[data-turn="assistant"]',
-            '[data-testid^="conversation-turn-"]',
             '[data-message-author-role="user"]',
             '.agent-turn',
         )
