@@ -704,6 +704,7 @@ def _run_loop_impl(
                     trace("chat.prompt", project=project_name, iteration=state.iteration,
                           prompt_chars=len(prompt), project_composer=bool(project.project_name))
                     response = (
+                        chat.send_project_message_and_wait_for_response(
                             project.project_name,
                             prompt,
                             timeout_seconds=_remaining_timeout(deadline, config.browser.response_timeout_seconds),
