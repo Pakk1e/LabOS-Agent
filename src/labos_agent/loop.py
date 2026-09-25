@@ -268,6 +268,19 @@ def _resolve_execution(chat, response: str, project, project_name: str, config: 
                 state.execution_applied = execution_succeeded
                 if execution_succeeded:
                     state.iteration_stage = IterationStage.EXECUTION_APPLIED
+                observed_git = git_snapshot(project.project_root)
+                state.iteration_observed_worktree_fingerprint = observed_git.worktree_fingerprint
+                _trajectory_event(
+                    state,
+                    project_name,
+                    "execution",
+                    "execution.worktree_observed",
+                    worktree_fingerprint=observed_git.worktree_fingerprint,
+                    changed_from_iteration_baseline=(
+                        state.iteration_baseline_worktree_fingerprint != observed_git.worktree_fingerprint
+                    ),
+                )
+                save_state(state_path(project_name), state)
             response = chat.send_and_wait_for_response(
                 "The LabOS controller executed your requested server operations. Use these real results and continue the implementation; do not claim execution that is not shown here. "
                 "If more implementation is required, issue another labos-exec request. If the implementation is complete, end your response with LABOS_DONE.\n\n"
@@ -392,11 +405,23 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
         controller = Controller(state=state, limits=SafetyLimits(max_iterations=state.iteration + 1))
         controller.start()
         controller.begin_iteration(datetime.now().astimezone())
-        _trajectory_event(state, project_name, "iteration", "iteration.started", started_head=git_snapshot(project.project_root).head)
-        save_state(state_path(project_name), state)
-
         _migrate_legacy_dirty_recovery(state, project)
         _reconcile_committed_recovery(state, project)
+        interrupted_recovery = _recovery(state, project).recover_interrupted_iteration()
+        if interrupted_recovery is not None:
+            _trajectory_event(
+                state,
+                project_name,
+                "recovery",
+                "interrupted_iteration.reconciled",
+                kind=interrupted_recovery.kind,
+                reason=interrupted_recovery.reason,
+            )
+            if interrupted_recovery.kind == "interrupted_worktree_conflict":
+                save_state(state_path(project_name), state)
+                raise RuntimeError(interrupted_recovery.reason)
+            save_state(state_path(project_name), state)
+
         prepare_repository(
             project.project_root,
             branch_name=state.branch_name,
@@ -405,7 +430,20 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
         )
         snapshot = inspect_project(project.project_root, project.repository, project.state_files)
         before_git = git_snapshot(project.project_root)
-        state.start_iteration(before_git.head)
+        state.start_iteration(
+            before_git.head,
+            baseline_worktree_fingerprint=before_git.worktree_fingerprint,
+            baseline_untracked=list(before_git.untracked_paths),
+        )
+        _trajectory_event(
+            state,
+            project_name,
+            "iteration",
+            "iteration.started",
+            started_head=before_git.head,
+            baseline_worktree_fingerprint=before_git.worktree_fingerprint,
+        )
+        save_state(state_path(project_name), state)
         controller.chatgpt_working()
 
         trace("iteration.browser.attach", project=project_name, iteration=state.iteration,
@@ -564,6 +602,8 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
             state.pending_ci_fix = False
             state.pending_ci_baseline_untracked = []
             state.pending_ci_worktree_fingerprint = None
+            state.execution_requested = False
+            state.execution_applied = False
             save_state(state_path(project_name), state)
             return RunResult(state, response)
 
