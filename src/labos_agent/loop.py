@@ -460,10 +460,19 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
                 project.execution_enabled,
             )
             try:
-                response = chat.send_and_wait_for_response(
-                    prompt,
-                    timeout_seconds=config.browser.response_timeout_seconds,
-                    quiet_seconds=config.browser.quiet_seconds,
+                response = (
+                    chat.send_project_message_and_wait_for_response(
+                        project.project_name,
+                        prompt,
+                        timeout_seconds=config.browser.response_timeout_seconds,
+                        quiet_seconds=config.browser.quiet_seconds,
+                    )
+                    if project.project_name
+                    else chat.send_and_wait_for_response(
+                        prompt,
+                        timeout_seconds=config.browser.response_timeout_seconds,
+                        quiet_seconds=config.browser.quiet_seconds,
+                    )
                 )
             except Exception as exc:
                 controller.mark_failure(str(exc))
@@ -674,10 +683,19 @@ def _run_loop_impl(
                         continue
                     if deadline is not None and datetime.now().astimezone() >= deadline:
                         raise DeadlineReached("deadline reached before ChatGPT request")
-                    response = chat.send_and_wait_for_response(
-                        prompt,
-                        timeout_seconds=_remaining_timeout(deadline, config.browser.response_timeout_seconds),
-                        quiet_seconds=config.browser.quiet_seconds,
+                    response = (
+                        chat.send_project_message_and_wait_for_response(
+                            project.project_name,
+                            prompt,
+                            timeout_seconds=_remaining_timeout(deadline, config.browser.response_timeout_seconds),
+                            quiet_seconds=config.browser.quiet_seconds,
+                        )
+                        if project.project_name
+                        else chat.send_and_wait_for_response(
+                            prompt,
+                            timeout_seconds=_remaining_timeout(deadline, config.browser.response_timeout_seconds),
+                            quiet_seconds=config.browser.quiet_seconds,
+                        )
                     )
                     save_response(project_name, response)
                     response = _resolve_execution(chat, response, project, project_name, config, deadline=deadline, state=state)
