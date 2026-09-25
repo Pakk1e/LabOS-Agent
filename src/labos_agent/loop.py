@@ -695,135 +695,28 @@ def _run_loop_impl(
                           response_chars=len(response), response_tail=response[-1000:])
                     save_response(project_name, response)
                     response = _resolve_execution(chat, response, project, project_name, config, deadline=deadline, state=state)
-                    assert_unchanged_before_ci(project.project_root, before_git)
-                    verifier = RepositoryVerifier(project.project_root)
-                    verification = verifier.compare(before_git)
-                    after_git = verification.after
-                    recovery_pending = state.pending_ci_fix
-                    _trajectory_event(
-                        state,
-                        project_name,
-                        "verification",
-                        "repository.observed",
-                        changed=not verification.clean_relative_to_baseline,
-                        meaningful=verification.meaningful_change,
-                        changed_paths=list(verification.changed_paths),
-                        recovery_pending=recovery_pending,
+                    delivery = verify_and_deliver(
+                        project=project,
+                        project_name=project_name,
+                        state=state,
+                        controller=controller,
+                        before_git=before_git,
+                        response=response,
+                        deadline=deadline,
+                        run_local_ci=_run_local_ci,
+                        mark_dirty_recovery=_mark_dirty_recovery,
+                        mark_push_failure_recovery=_mark_push_failure_recovery,
+                        commit_recovery_baseline=_commit_recovery_baseline,
+                        remote_verify=verify_github_actions,
+                        trajectory_event=_trajectory_event,
+                        save_state=lambda: save_state(state_path(project_name), state),
+                        handle_no_progress=lambda: _handle_no_progress(controller, state),
+                        remaining_timeout=_remaining_timeout,
                     )
-                    if verification.clean_relative_to_baseline and not recovery_pending:
-                        should_stop = _handle_no_progress(controller, state)
-                        save_state(state_path(project_name), state)
-                        if should_stop:
-                            return RunResult(state, response)
-                        time.sleep(2)
-                        continue
-                    meaningful = verification.meaningful_change or recovery_pending
-                    controller.progress_verified(meaningful=meaningful)
-                    if not state.meaningful_progress:
-                        should_stop = _handle_no_progress(controller, state)
-                        save_state(state_path(project_name), state)
-                        if should_stop:
-                            return RunResult(state, response)
-                        time.sleep(2)
-                        continue
-
-                    controller.ci_running()
-                    if deadline is not None and datetime.now().astimezone() >= deadline:
-                        _mark_dirty_recovery(state, before_git, project=project)
-                        controller.stop("deadline reached before LocalCI")
-                        save_state(state_path(project_name), state)
+                    if delivery.kind == "stop":
                         return RunResult(state, response)
-
-                    ci_ok = _run_local_ci(project, state, deadline=deadline)
-                    if ci_ok:
-                        controller.ci_passed()
-                    if not ci_ok:
-                        state.pending_ci_fix = True
-                        state.pending_ci_baseline_untracked = list(before_git.untracked_paths)
-                        controller.mark_failure("local CI failed")
-                        save_state(state_path(project_name), state)
-                        if state.consecutive_failures >= controller.limits.max_consecutive_failures:
-                            controller.stop("maximum consecutive failures reached")
-                            save_state(state_path(project_name), state)
-                            return RunResult(state, response)
-                        time.sleep(2)
+                    if delivery.kind == "continue":
                         continue
-
-                    if deadline is not None and datetime.now().astimezone() >= deadline:
-                        _mark_dirty_recovery(state, before_git)
-                        controller.stop("deadline reached before commit")
-                        save_state(state_path(project_name), state)
-                        return RunResult(state, response)
-
-                    try:
-                        controller.committing()
-                        committed_sha = commit_and_push(
-                            project.project_root,
-                            before_git,
-                            f"lab-agent: iteration {state.iteration}",
-                            branch_name=state.branch_name,
-                            allow_preexisting_tracked_changes=state.pending_ci_fix,
-                            baseline_untracked=_commit_recovery_baseline(state, project),
-                        )
-                    except GitPushError as exc:
-                        _mark_push_failure_recovery(state, before_git, git_snapshot(project.project_root), project=project)
-                        controller.mark_failure(
-                            f"validated changes could not be pushed; recovery is pending: {exc}"
-                        )
-                        save_state(state_path(project_name), state)
-                        if state.consecutive_failures >= controller.limits.max_consecutive_failures:
-                            controller.stop("maximum consecutive failures reached")
-                            save_state(state_path(project_name), state)
-                            return RunResult(state, response)
-                        time.sleep(2)
-                        continue
-
-                    if not committed_sha:
-                        _mark_dirty_recovery(state, before_git, git_snapshot(project.project_root))
-                        controller.mark_failure("working tree changed but Git gate produced no commit")
-                        save_state(state_path(project_name), state)
-                        if state.consecutive_failures >= controller.limits.max_consecutive_failures:
-                            controller.stop("maximum consecutive failures reached")
-                            save_state(state_path(project_name), state)
-                            return RunResult(state, response)
-                        time.sleep(2)
-                        continue
-                    state.commit_created = True
-                    trace("git.commit_push.complete", project=project_name, iteration=state.iteration,
-                          commit_sha=committed_sha)
-                    controller.pushing()
-                    state.last_action = f"committed and pushed {committed_sha}"
-                    state.last_commit_sha = committed_sha
-                    controller.remote_verified(committed_sha)
-                    remote_ci = verify_github_actions(
-                        project.repository,
-                        committed_sha,
-                        timeout_seconds=project.remote_ci_timeout_seconds,
-                        poll_seconds=project.remote_ci_poll_seconds,
-                    )
-                    state.pending_remote_ci_result = remote_ci.summary
-                    trace("github_ci.complete", project=project_name, iteration=state.iteration,
-                          sha=committed_sha, success=remote_ci.success, summary=remote_ci.summary)
-                    if not remote_ci.success:
-                        state.pending_remote_ci_fix = True
-                        state.pending_remote_ci_sha = committed_sha
-                        controller.mark_failure(
-                            f"GitHub Actions failed for exact SHA {committed_sha}: {remote_ci.summary}"
-                        )
-                        save_state(state_path(project_name), state)
-                        if state.consecutive_failures >= controller.limits.max_consecutive_failures:
-                            controller.stop("maximum consecutive failures reached")
-                            save_state(state_path(project_name), state)
-                            return RunResult(state, response)
-                        time.sleep(2)
-                        continue
-                    state.pending_remote_ci_fix = False
-                    state.pending_remote_ci_sha = None
-                    controller.github_ci_verified()
-                    controller.mark_success(continue_running=True)
-                    state.pending_ci_fix = False
-                    state.pending_ci_baseline_untracked = []
-                    state.pending_ci_worktree_fingerprint = None
                 except Exception as exc:
                     if before_git is not None:
                         try:
