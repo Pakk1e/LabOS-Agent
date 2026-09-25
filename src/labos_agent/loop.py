@@ -513,14 +513,24 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
                 response = _resolve_execution(chat, response, project, project_name, config, deadline=None, state=state)
                 save_response(project_name, response)
                 assert_unchanged_before_ci(project.project_root, before_git)
-                after_git = git_snapshot(project.project_root)
+                verifier = RepositoryVerifier(project.project_root)
+                verification = verifier.compare(before_git)
+                after_git = verification.after
                 recovery_pending = state.pending_ci_fix
-                if after_git.worktree_fingerprint == before_git.worktree_fingerprint and not recovery_pending:
+                _trajectory_event(
+                    state,
+                    project_name,
+                    "verification",
+                    "repository.observed",
+                    changed=not verification.clean_relative_to_baseline,
+                    meaningful=verification.meaningful_change,
+                    recovery_pending=recovery_pending,
+                )
+                if verification.clean_relative_to_baseline and not recovery_pending:
                     _handle_no_progress(controller, state)
                     save_state(state_path(project_name), state)
                     return RunResult(state, response)
-                paths = changed_paths(project.project_root, before_git)
-                meaningful = meaningful_change(paths) or recovery_pending
+                meaningful = verification.meaningful_change or recovery_pending
                 controller.progress_verified(meaningful=meaningful)
                 if not state.meaningful_progress:
                     _handle_no_progress(controller, state)
@@ -567,10 +577,12 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
                     save_state(state_path(project_name), state)
                     return RunResult(state, response)
                 state.commit_created = True
+                _trajectory_event(state, project_name, "commit", "commit.created", sha=committed_sha)
                 controller.pushing()
                 state.last_action = f"committed and pushed {committed_sha}"
                 state.last_commit_sha = committed_sha
                 controller.remote_verified(committed_sha)
+                _trajectory_event(state, project_name, "remote_verification", "push.verified", sha=committed_sha)
                 remote_ci = verify_github_actions(
                     project.repository,
                     committed_sha,
@@ -578,6 +590,7 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
                     poll_seconds=project.remote_ci_poll_seconds,
                 )
                 state.pending_remote_ci_result = remote_ci.summary
+                _trajectory_event(state, project_name, "remote_verification", "github_ci.completed", sha=committed_sha, success=remote_ci.success, summary=remote_ci.summary)
                 if not remote_ci.success:
                     state.pending_remote_ci_fix = True
                     state.pending_remote_ci_sha = committed_sha
