@@ -13,7 +13,7 @@ from .browser.session import BrowserSession
 from playwright.sync_api import Error as PlaywrightError
 from .config import AppConfig
 from .ci.local import LocalCI
-from .git_gate import GitPushError, snapshot as git_snapshot, assert_unchanged_before_ci, changed_paths, meaningful_change, commit_and_push, prepare_repository, can_clear_legacy_dirty_recovery
+from .git_gate import GitPushError, snapshot as git_snapshot, assert_unchanged_before_ci, changed_paths, meaningful_change, commit_and_push, prepare_repository, can_clear_legacy_dirty_recovery, is_ancestor
 from .execution import ExecutionPolicy, ExecutionResult, execute_request, format_execution_results, parse_execution_requests
 from .controller import Controller
 from .project import build_continuation_prompt, inspect_project
@@ -324,21 +324,23 @@ def _reconcile_committed_recovery(state: AgentState, project) -> None:
     if not state.pending_ci_fix or not state.last_commit_sha:
         return
     current = git_snapshot(project.project_root)
-    if current.head != state.last_commit_sha:
+    # A recovery commit may already have been followed by one or more legitimate
+    # LabOS iterations before the controller process resumed. Accept the current
+    # HEAD only when the persisted recovery commit is its ancestor; never adopt
+    # an unrelated branch or rewritten history.
+    if not is_ancestor(project.project_root, state.last_commit_sha, current.head):
         return
     remote_sha = current.upstream
     if not remote_sha or remote_sha != current.head:
         return
-    # Pre-existing untracked files are allowed when their paths were already
-    # recorded before the recovery iteration. They may legitimately change
-    # outside LabOS; they must not be discarded or treated as agent-owned.
-    baseline_untracked = set(state.pending_ci_baseline_untracked)
+    # We only clear recovery when the tracked worktree is clean. Untracked files
+    # are intentionally ignored here: they are not modified, staged, or deleted
+    # by reconciliation, so externally-created untracked files must not wedge a
+    # recovery whose validated descendant is already remote and CI-verified.
     if any(
         record and len(record) >= 3 and record[2] == " " and not record.startswith("?? ")
         for record in current.status.split("\0") if record
     ):
-        return
-    if not set(current.untracked_paths).issubset(baseline_untracked):
         return
     result = verify_github_actions(
         project.repository,
