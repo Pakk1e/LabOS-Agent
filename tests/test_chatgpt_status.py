@@ -209,3 +209,19 @@ def test_continuation_prompt_identifies_github_as_implementation_target(monkeypa
     assert "GitHub repository is the implementation target" in prompt
     assert "server checkout is only a controlled working clone" in prompt
     assert "Do not make server-only implementation changes" in prompt
+
+
+class _TurnFallbackPage:
+    def __init__(self):
+        self.calls = []
+
+    def locator(self, selector):
+        self.calls.append(selector)
+        if selector == '[data-testid^="conversation-turn-"][data-turn="assistant"]':
+            return _TextLocator(["assistant turn reply"])
+        return _TextLocator([])
+
+
+def test_assistant_text_extraction_falls_back_to_turn_role_selector():
+    chat = ChatGPTPage(_TurnFallbackPage())
+    assert chat._assistant_texts() == ["assistant turn reply"]
