@@ -2,6 +2,18 @@
 from __future__ import annotations
 
 from pathlib import Path
+from dataclasses import dataclass
+from threading import RLock
+from typing import Callable, TypeVar
+import uuid
+
+T = TypeVar("T")
+
+
+@dataclass(frozen=True)
+class BrowserRequest:
+    request_id: str
+    attempt: int
 
 from playwright.sync_api import Browser, BrowserContext, Playwright, sync_playwright
 
@@ -21,6 +33,8 @@ class BrowserSession:
         self._context: BrowserContext | None = None
         self._browser: Browser | None = None
         self._attached = False
+        self._request_lock = RLock()
+        self._active_request_id: str | None = None
 
     def start(self) -> BrowserContext:
         if self._context is not None:
@@ -49,6 +63,44 @@ class BrowserSession:
         self._context = contexts[0]
         self._attached = True
         return self._context
+
+    def request(
+        self,
+        operation: Callable[[BrowserRequest], T],
+        *,
+        retry_limit: int = 1,
+        is_transient: Callable[[Exception], bool],
+    ) -> T:
+        """Serialize one browser operation and attach a stable request identity."""
+        from .transport import BrowserTransport
+
+        request_id = uuid.uuid4().hex
+        with self._request_lock:
+            self._active_request_id = request_id
+            try:
+                attempt = 0
+
+                def invoke() -> T:
+                    nonlocal attempt
+                    attempt += 1
+                    return operation(BrowserRequest(request_id, attempt))
+
+                return BrowserTransport(retry_limit=retry_limit).request(
+                    request_id, invoke, is_transient=is_transient
+                )
+            finally:
+                if self._active_request_id == request_id:
+                    self._active_request_id = None
+
+    def assert_current(self, request_id: str) -> None:
+        with self._request_lock:
+            if self._active_request_id != request_id:
+                raise RuntimeError(f"stale browser request: {request_id}")
+
+    @property
+    def active_request_id(self) -> str | None:
+        with self._request_lock:
+            return self._active_request_id
 
     @property
     def context(self) -> BrowserContext:
