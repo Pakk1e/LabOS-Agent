@@ -23,12 +23,13 @@ class RecoveryEvent:
 class RecoveryManager:
     """Own recovery evidence and transitions instead of scattering them in the loop."""
 
-    def __init__(self, state, project, *, snapshot_fn=snapshot, ancestor_fn=is_ancestor, remote_sha_fn=None):
+    def __init__(self, state, project, *, snapshot_fn=snapshot, ancestor_fn=is_ancestor, remote_sha_fn=None, clear_legacy_fn=can_clear_legacy_dirty_recovery):
         self.state = state
         self.project = project
         self._snapshot = snapshot_fn
         self._is_ancestor = ancestor_fn
         self._remote_sha = remote_sha_fn
+        self._clear_legacy = clear_legacy_fn
 
     def record_dirty(self, before: GitSnapshot, current: GitSnapshot | None = None, *, reason: str = "dirty worktree") -> RecoveryEvent:
         current = current or self._snapshot(self.project.project_root)
@@ -47,7 +48,7 @@ class RecoveryManager:
             return None
         root = self.project.project_root
         baseline = set(self.state.pending_ci_baseline_untracked)
-        if can_clear_legacy_dirty_recovery(root, baseline):
+        if self._clear_legacy(root, baseline):
             self.clear("migrated stale recovery metadata with verified clean worktree")
             return RecoveryEvent("legacy_cleared", "verified clean worktree")
 
@@ -114,7 +115,7 @@ class RecoveryManager:
 
     def _remote_branch_sha(self, branch: str) -> str:
         if self._remote_sha is not None:
-            return self._remote_sha(branch)
+            return self._remote_sha(self.project.project_root, branch)
         result = subprocess.run(
             ["git", "ls-remote", "origin", f"refs/heads/{branch}"],
             cwd=self.project.project_root,
