@@ -48,7 +48,7 @@ class RecoveryManager:
         """Recover only when the worktree still matches the last persisted execution observation."""
         if self.state.pending_ci_fix:
             return None
-        if self.state.iteration_stage == IterationStage.ITERATION_SUCCEEDED:
+        if getattr(self.state, "iteration_stage", None) == IterationStage.ITERATION_SUCCEEDED:
             return None
         baseline = getattr(self.state, "iteration_baseline_worktree_fingerprint", None)
         observed = getattr(self.state, "iteration_observed_worktree_fingerprint", None)
