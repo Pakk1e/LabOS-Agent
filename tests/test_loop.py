@@ -448,6 +448,42 @@ def test_migrate_legacy_dirty_recovery_adopts_validated_tracked_changes(tmp_path
     assert "adopted legacy validated worktree" in state.reason
 
 
+def test_continue_path_reconciles_recovery_before_dirty_preflight():
+    source = loop._run_loop_impl.__code__
+    names = set(source.co_names)
+    assert "_reconcile_committed_recovery" in names
+
+
+def test_reconcile_committed_recovery_keeps_pending_when_local_ci_fails(tmp_path, monkeypatch):
+    class Project:
+        project_root = tmp_path
+
+    state = AgentState(
+        project="weather",
+        run_id="run",
+        pending_ci_fix=True,
+        pending_ci_worktree_fingerprint="fingerprint",
+        last_commit_sha="recovery-sha",
+    )
+    current = type("Snapshot", (), {
+        "head": "descendant-sha",
+        "upstream": "main-sha",
+        "status": "",
+        "untracked_paths": (),
+        "worktree_fingerprint": "current-fingerprint",
+    })()
+    monkeypatch.setattr(loop, "git_snapshot", lambda root: current)
+    monkeypatch.setattr(loop, "is_ancestor", lambda root, ancestor, descendant: True)
+    monkeypatch.setattr(loop, "_git_remote_branch_sha", lambda root, branch: state.last_commit_sha)
+    monkeypatch.setattr(loop, "_run_local_ci", lambda project, state: False)
+
+    loop._reconcile_committed_recovery(state, Project())
+
+    assert state.pending_ci_fix is True
+    assert state.pending_ci_worktree_fingerprint == "fingerprint"
+    assert state.last_commit_sha == "recovery-sha"
+
+
 def test_reconcile_committed_recovery_accepts_pushed_descendant_with_new_untracked_files(tmp_path, monkeypatch):
     class Project:
         project_root = tmp_path
