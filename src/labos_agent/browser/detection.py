@@ -79,5 +79,18 @@ def observe(page: Page) -> ResponseObservation:
     except Exception:
         available=False
     stop=any(_visible(page,s) for s in _STOP_SELECTORS)
-    count=page.locator('[data-message-author-role="assistant"]').count()
+    count=0
+    for selector in (
+        '[data-message-author-role="assistant"]',
+        '[data-testid^="conversation-turn-"][data-turn="assistant"]',
+        '[data-turn="assistant"]',
+        'article[data-turn="assistant"]',
+        'section[data-turn="assistant"]',
+    ):
+        try:
+            count=page.locator(selector).count()
+        except Exception:
+            count=0
+        if count:
+            break
     return ResponseObservation(generating=stop and not available,input_available=available,stop_control_visible=stop,assistant_count=count)
