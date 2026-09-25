@@ -64,6 +64,40 @@ def test_parse_mixed_execution_requests():
         {"action": "read_file", "path": "b.txt"},
     ]
 
+def test_parse_json_fenced_execution_request():
+    response = (
+        "The implementation is below.\n"
+        "```json\n"
+        '{"action":"write_file","path":"backend/test/weather.test.js","content":"ok"}\n'
+        "```"
+    )
+    assert parse_execution_requests(response) == [{
+        "action": "write_file",
+        "path": "backend/test/weather.test.js",
+        "content": "ok",
+    ]}
+
+
+def test_parse_json_fence_ignores_non_execution_json():
+    response = '```json\n{"action":"example","path":"not-a-request"}\n```'
+    assert parse_execution_requests(response) == []
+
+
+def test_parse_json_fenced_content_may_contain_markdown_fence():
+    content = "before ```python\nprint(1)\n``` after"
+    import json
+    response = "```json\n" + json.dumps({
+        "action": "write_file",
+        "path": "doc.md",
+        "content": content,
+    }) + "\n```"
+    assert parse_execution_requests(response) == [{
+        "action": "write_file",
+        "path": "doc.md",
+        "content": content,
+    }]
+
+
 
 def test_git_global_option_cannot_bypass_controller_gate(tmp_path: Path):
     with pytest.raises(PermissionError):
