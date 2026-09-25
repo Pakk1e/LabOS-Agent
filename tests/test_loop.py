@@ -1,4 +1,5 @@
 from pathlib import Path
+import inspect
 from labos_agent.config import AppConfig, BrowserConfig, ProjectConfig
 from labos_agent.loop import run_loop
 from contextlib import contextmanager
@@ -251,7 +252,7 @@ def test_delivery_phase_owns_git_push_recovery_path():
     phase_names = set(phases.verify_and_deliver.__code__.co_names)
     assert "GitPushError" not in loop_names
     assert "GitPushError" in phase_names
-    assert "mark_push_failure_recovery" in phase_names
+    assert "mark_push_failure_recovery" in inspect.signature(phases.verify_and_deliver).parameters
 
 
 def test_resolve_execution_reprompts_when_response_promises_work_without_request(monkeypatch, tmp_path):
