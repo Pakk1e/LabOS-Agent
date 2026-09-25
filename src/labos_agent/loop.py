@@ -327,6 +327,7 @@ def _recovery(state: AgentState, project) -> RecoveryManager:
         snapshot_fn=git_snapshot,
         ancestor_fn=is_ancestor,
         remote_sha_fn=_git_remote_branch_sha,
+        clear_legacy_fn=can_clear_legacy_dirty_recovery,
     )
 
 
