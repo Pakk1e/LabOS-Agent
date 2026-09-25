@@ -34,7 +34,11 @@ def inspect_project(root: Path, repository: str, state_files: tuple[str,...]) ->
 def build_continuation_prompt(snapshot: ProjectSnapshot, message: str, ci_feedback: str|None = None, progress_feedback: str|None = None, execution_enabled: bool = False) -> str:
     parts=[message,"","LabOS-Agent controller context:",
            f"- Repository: {snapshot.repository}",f"- Project root: {snapshot.root}",
-           "- Persistent project state is authoritative. Continue from the repository, not assumptions."]
+           "- GitHub repository is the implementation target and authoritative source of product code.",
+           "- The server checkout is only a controlled working clone used for validation/testing and for the controller's Git gate.",
+           "- Do not make server-only implementation changes, deployment-only changes, or treat the server filesystem as a separate source of truth.",
+           "- Every implementation change must correspond to a tracked file in the configured GitHub repository; the controller will commit/push the validated working-clone change.",
+           "- Persistent project state is authoritative for workflow state; repository code is authoritative for implementation."]
     if snapshot.git_status: parts += ["","Current git working-tree status:",snapshot.git_status]
     if ci_feedback: parts += ["","Previous iteration LocalCI result:",ci_feedback]
     if progress_feedback: parts += ["","Previous iteration progress result:",progress_feedback,
@@ -46,7 +50,7 @@ def build_continuation_prompt(snapshot: ProjectSnapshot, message: str, ci_feedba
                   f"Every non-final implementation response MUST contain at least one executable {tick}{tick}{tick}labos-exec request. When the implementation is complete, end the response with the exact marker LABOS_DONE.",
                   'Supported actions: {"action":"read_file","path":"..."}, {"action":"write_file","path":"...","content":"..."}, {"action":"run_command","command":["git","status","--short"],"cwd":"..."}.',
                   "The autonomous run_command surface is intentionally read-only Git inspection; do not use it to execute tests, write files, commit, push, or run arbitrary programs.",
-                  "Use write_file for source/documentation changes. Do not claim a write happened until the controller returns its real execution result.",
+                  "Use write_file only to apply the intended repository change to the controlled working clone. Treat that clone as the staging/test copy of the configured GitHub repository, not as a separate implementation target. Do not create server-only fixes.",
                   "LocalCI is run automatically by LabOS after a real working-tree change. If LocalCI fails, fix the reported failure with write_file and request another execution round.",
                   "Do not finish with prose such as 'I will make...' or 'I am updating...' without an execution request. If there is genuinely nothing left to change, issue a final read/inspection request and then end with LABOS_DONE."]
     state_budget = MAX_PROMPT_STATE_CHARS
