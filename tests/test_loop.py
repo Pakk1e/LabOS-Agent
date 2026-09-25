@@ -491,7 +491,7 @@ def test_reconcile_committed_recovery_accepts_pushed_descendant_with_new_untrack
     assert state.pending_ci_worktree_fingerprint is None
     assert state.pending_remote_ci_fix is False
     assert state.pending_remote_ci_sha is None
-    assert state.github_ci_verified is True
+    assert state.github_ci_verified is False
     assert state.pending_remote_ci_result is None
     assert state.github_ci_verified is False
     assert "reconciled pushed recovery descendant" in state.reason
