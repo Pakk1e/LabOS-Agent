@@ -446,3 +446,53 @@ def test_migrate_legacy_dirty_recovery_adopts_validated_tracked_changes(tmp_path
     assert state.pending_ci_fix is True
     assert state.pending_ci_worktree_fingerprint == "fingerprint"
     assert "adopted legacy validated worktree" in state.reason
+
+
+def test_reconcile_committed_recovery_accepts_pushed_descendant_with_new_untracked_files(tmp_path, monkeypatch):
+    class Project:
+        project_root = tmp_path
+        repository = "Pakk1e/VilaPro-Weather"
+        remote_ci_timeout_seconds = 1
+        remote_ci_poll_seconds = 0
+
+    state = AgentState(
+        project="weather",
+        run_id="run",
+        pending_ci_fix=True,
+        pending_ci_baseline_untracked=["preexisting.txt"],
+        pending_ci_worktree_fingerprint="old-fingerprint",
+        last_commit_sha="d48d18ae4c97c7e72db9fd10ca3d75021cd48b44",
+    )
+
+    current = type(
+        "Snapshot",
+        (),
+        {
+            "head": "ab9b64b5a1564e492a1d03c2d922459d6be08ee3",
+            "upstream": "ab9b64b5a1564e492a1d03c2d922459d6be08ee3",
+            "status": "?? .venv/bin/python\\0",
+            "untracked_paths": (".venv/bin/python",),
+            "worktree_fingerprint": "new-fingerprint",
+        },
+    )()
+
+    class Result:
+        success = True
+        summary = "exact SHA CI success"
+
+    monkeypatch.setattr(loop, "git_snapshot", lambda root: current)
+    monkeypatch.setattr(loop, "is_ancestor", lambda root, ancestor, descendant: (
+        ancestor == state.last_commit_sha and descendant == current.head
+    ))
+    monkeypatch.setattr(loop, "verify_github_actions", lambda *args, **kwargs: Result())
+
+    loop._reconcile_committed_recovery(state, Project())
+
+    assert state.pending_ci_fix is False
+    assert state.pending_ci_baseline_untracked == []
+    assert state.pending_ci_worktree_fingerprint is None
+    assert state.pending_remote_ci_fix is False
+    assert state.pending_remote_ci_sha is None
+    assert state.github_ci_verified is True
+    assert state.pending_remote_ci_result == "exact SHA CI success"
+    assert "reconciled committed recovery" in state.reason
