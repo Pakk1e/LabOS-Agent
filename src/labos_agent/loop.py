@@ -342,22 +342,19 @@ def _reconcile_committed_recovery(state: AgentState, project) -> None:
         for record in current.status.split("\0") if record
     ):
         return
-    result = verify_github_actions(
-        project.repository,
-        current.head,
-        timeout_seconds=project.remote_ci_timeout_seconds,
-        poll_seconds=project.remote_ci_poll_seconds,
-    )
-    if not result.success:
+    # Agent branches may not have a push-triggered workflow in the target
+    # repository. Re-validate the actual descendant locally before clearing
+    # recovery instead of trusting an unavailable remote CI result.
+    if not _run_local_ci(project, state):
         return
     state.pending_ci_fix = False
     state.pending_ci_baseline_untracked = []
     state.pending_ci_worktree_fingerprint = None
     state.pending_remote_ci_fix = False
     state.pending_remote_ci_sha = None
-    state.pending_remote_ci_result = result.summary
-    state.github_ci_verified = True
-    state.reason = "reconciled committed recovery after exact-SHA GitHub Actions success"
+    state.pending_remote_ci_result = None
+    state.github_ci_verified = False
+    state.reason = "reconciled pushed recovery descendant after successful LocalCI validation"
 
 def _commit_recovery_baseline(state: AgentState) -> set[str] | None:
     if not state.pending_ci_fix:
