@@ -196,7 +196,11 @@ class RecoveryManager:
         )
 
     def _snapshot_with_untracked_paths(self, paths: tuple[str, ...]) -> GitSnapshot:
-        return self._snapshot(self.project.project_root, untracked_paths=paths)
+        return self._snapshot(
+            self.project.project_root,
+            untracked_paths=paths,
+            status_untracked_paths=paths,
+        )
 
     def migrate_legacy(self) -> RecoveryEvent | None:
         if not self.state.pending_ci_fix or self.state.pending_ci_worktree_fingerprint is not None:
