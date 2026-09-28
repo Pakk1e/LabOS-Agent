@@ -417,6 +417,7 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
         _migrate_legacy_dirty_recovery(state, project)
         _reconcile_recovery_fingerprint(state, project)
         _reconcile_committed_recovery(state, project)
+        _recovery(state, project).reconcile_clean_pushed_descendant()
         interrupted_recovery = _recovery(state, project).recover_interrupted_iteration()
         if interrupted_recovery is not None:
             _trajectory_event(
