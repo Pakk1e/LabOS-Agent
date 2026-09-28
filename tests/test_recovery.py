@@ -69,3 +69,90 @@ def test_reconcile_worktree_fingerprint_after_ignore_rule_change(tmp_path: Path)
     assert state.pending_ci_worktree_fingerprint == current.worktree_fingerprint
     assert state.pending_ci_worktree_fingerprint != recorded.worktree_fingerprint
 
+
+
+def test_reconcile_worktree_fingerprint_rejects_new_untracked_file(tmp_path: Path):
+    import subprocess
+
+    head = _legacy_repo(tmp_path)
+    (tmp_path / "old.txt").write_text("baseline\n", encoding="utf-8")
+    before = snapshot(tmp_path)
+    (tmp_path / ".gitignore").write_text("old.txt\n", encoding="utf-8")
+    (tmp_path / "new.txt").write_text("operator\n", encoding="utf-8")
+
+    state = SimpleNamespace(
+        project="weather",
+        pending_ci_fix=True,
+        pending_ci_baseline_untracked=list(before.untracked_paths),
+        pending_ci_worktree_fingerprint="persisted",
+        iteration_started_sha=head,
+        reason=None,
+    )
+    project = SimpleNamespace(project_root=tmp_path)
+    state_dir = tmp_path / "state" / "weather"
+    state_dir.mkdir(parents=True)
+    (state_dir / "last_response.md").write_text(
+        'labos-exec {"action":"write_file","path":".gitignore","content":"old.txt\\n"}',
+        encoding="utf-8",
+    )
+
+    assert RecoveryManager(state, project).reconcile_worktree_fingerprint() is None
+    assert state.pending_ci_worktree_fingerprint == "persisted"
+
+
+def test_reconcile_worktree_fingerprint_rejects_deleted_baseline_file(tmp_path: Path):
+    import subprocess
+
+    head = _legacy_repo(tmp_path)
+    (tmp_path / "old.txt").write_text("baseline\n", encoding="utf-8")
+    before = snapshot(tmp_path)
+    (tmp_path / ".gitignore").write_text("old.txt\n", encoding="utf-8")
+    (tmp_path / "old.txt").unlink()
+
+    state = SimpleNamespace(
+        project="weather",
+        pending_ci_fix=True,
+        pending_ci_baseline_untracked=list(before.untracked_paths),
+        pending_ci_worktree_fingerprint="persisted",
+        iteration_started_sha=head,
+        reason=None,
+    )
+    project = SimpleNamespace(project_root=tmp_path)
+    state_dir = tmp_path / "state" / "weather"
+    state_dir.mkdir(parents=True)
+    (state_dir / "last_response.md").write_text(
+        'labos-exec {"action":"write_file","path":".gitignore","content":"old.txt\\n"}',
+        encoding="utf-8",
+    )
+
+    assert RecoveryManager(state, project).reconcile_worktree_fingerprint() is None
+    assert state.pending_ci_worktree_fingerprint == "persisted"
+
+
+def test_reconcile_worktree_fingerprint_rejects_unverified_tracked_change(tmp_path: Path):
+    import subprocess
+
+    head = _legacy_repo(tmp_path)
+    (tmp_path / "old.txt").write_text("baseline\n", encoding="utf-8")
+    before = snapshot(tmp_path)
+    (tmp_path / ".gitignore").write_text("old.txt\n", encoding="utf-8")
+    (tmp_path / "docs" / "START_HERE.md").write_text("unexpected\n", encoding="utf-8")
+
+    state = SimpleNamespace(
+        project="weather",
+        pending_ci_fix=True,
+        pending_ci_baseline_untracked=list(before.untracked_paths),
+        pending_ci_worktree_fingerprint="persisted",
+        iteration_started_sha=head,
+        reason=None,
+    )
+    project = SimpleNamespace(project_root=tmp_path)
+    state_dir = tmp_path / "state" / "weather"
+    state_dir.mkdir(parents=True)
+    (state_dir / "last_response.md").write_text(
+        'labos-exec {"action":"write_file","path":".gitignore","content":"old.txt\\n"}',
+        encoding="utf-8",
+    )
+
+    assert RecoveryManager(state, project).reconcile_worktree_fingerprint() is None
+    assert state.pending_ci_worktree_fingerprint == "persisted"
