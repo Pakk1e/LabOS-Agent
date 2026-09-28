@@ -288,6 +288,54 @@ class RecoveryManager:
             return RecoveryEvent("legacy_adopted", "prior LocalCI evidence")
         return None
 
+    def reconcile_clean_pushed_descendant(self) -> RecoveryEvent | None:
+        """Clear stale recovery metadata after a clean, single pushed descendant commit.
+
+        This fallback is for older recovery records that predate last_commit_sha.
+        It is deliberately stricter than normal committed reconciliation: the
+        iteration start must be an ancestor of HEAD, HEAD must equal origin/main,
+        exactly one commit may have been added, and the worktree must be clean.
+        """
+        if not self.state.pending_ci_fix:
+            return None
+        started_sha = getattr(self.state, "iteration_started_sha", None)
+        if not started_sha:
+            return None
+
+        root = self.project.project_root
+        current = self._snapshot(root)
+        if current.status or current.untracked_paths:
+            return None
+        if current.head == started_sha:
+            return None
+        if not self._is_ancestor(root, started_sha, current.head):
+            return None
+
+        remote_sha = self._remote_sha(root, "main") if self._remote_sha is not None else ""
+        if not remote_sha or remote_sha != current.head:
+            return None
+
+        result = subprocess.run(
+            ["git", "rev-list", "--count", f"{started_sha}..{current.head}"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0 or result.stdout.strip() != "1":
+            return None
+
+        self.state.pending_ci_fix = False
+        self.state.pending_ci_baseline_untracked = []
+        self.state.pending_ci_worktree_fingerprint = None
+        self.state.pending_remote_ci_fix = False
+        self.state.pending_remote_ci_sha = None
+        self.state.pending_remote_ci_result = None
+        self.state.github_ci_verified = False
+        self.state.reason = "reconciled stale recovery metadata after one clean pushed descendant commit"
+        trace("recovery.clean_pushed_descendant_reconciled", started_sha=started_sha, head=current.head)
+        return RecoveryEvent("clean_pushed_descendant_reconciled", current.head)
+
     def reconcile_committed(self, *, revalidate=None) -> RecoveryEvent | None:
         if not self.state.pending_ci_fix or not self.state.last_commit_sha:
             return None
