@@ -10,6 +10,7 @@ from .browser.session import BrowserSession
 from .config import load_config
 from .ci.local import LocalCI
 from .loop import run_loop,run_once,state_path
+from .supervisor import ConversationSupervisor
 from .rollover import rollover
 from .controller import Controller
 from .safety import SafetyLimits
@@ -23,6 +24,9 @@ def build_parser():
     run.add_argument("--until",help="local deadline, HH:MM")
     run.add_argument("--max-iterations",type=int,default=50)
     run.add_argument("--max-rollovers",type=int,default=10)
+    supervise=sub.add_parser("supervise",help="run the minimal ChatGPT state-marker supervisor")
+    supervise.add_argument("project"); supervise.add_argument("--config",default="config.yaml")
+    supervise.add_argument("--max-turns",type=int,default=0,help="stop after this many supervisor turns; 0 means unlimited")
     cont=sub.add_parser("continue",help="perform exactly one controlled project iteration")
     cont.add_argument("project"); cont.add_argument("--config",default="config.yaml")
     ci=sub.add_parser("ci",help="run a configured local CI stage for a project")
@@ -105,6 +109,12 @@ def run_command(args):
         intentional = (reason.startswith("deadline reached") or reason in {"maximum iterations reached", "maximum rollovers reached"})
         if not intentional:
             raise SystemExit(1)
+
+def supervise_command(args):
+    config=load_config(Path(args.config))
+    result=ConversationSupervisor(config,args.project,max_turns=args.max_turns).run()
+    print("LabOS-Agent supervisor finished.")
+    print(result)
 
 def continue_command(args):
     config=load_config(Path(args.config))
@@ -371,6 +381,7 @@ def main():
     if args.command=="ci": ci_command(args)
     elif args.command=="run": run_command(args)
     elif args.command=="continue": continue_command(args)
+    elif args.command=="supervise": supervise_command(args)
     elif args.command=="browser-project-diagnose": browser_project_diagnose_command(args)
     elif args.command=="browser-project-new-chat-test": browser_project_new_chat_test_command(args)
     elif args.command=="browser-project-rollover-test": browser_project_rollover_test_command(args)
