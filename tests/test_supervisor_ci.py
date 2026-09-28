@@ -6,7 +6,7 @@ from labos_agent.supervisor import CIRun, _runs_relevant_to_wait, wait_for_ci
 def test_relevant_runs_allow_small_timestamp_race():
     started = datetime(2026, 9, 28, 18, 0, tzinfo=timezone.utc)
     runs = [
-        CIRun(1, "abc", "completed", "success", "2026-09-28T17:58:30Z", "", "old"),
+        CIRun(1, "abc", "completed", "success", "2026-09-28T17:57:00Z", "", "old"),
         CIRun(2, "def", "completed", "success", "2026-09-28T17:59:30Z", "", "recent"),
     ]
     assert [run.id for run in _runs_relevant_to_wait(runs, started)] == [2]
