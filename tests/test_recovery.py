@@ -226,22 +226,24 @@ def test_reconcile_worktree_fingerprint_after_ignore_rule_change(tmp_path: Path)
     subprocess.run(["git", "-C", str(tmp_path), "config", "user.name", "LabOS Test"], check=True)
     subprocess.run(["git", "-C", str(tmp_path), "config", "user.email", "labos@example.invalid"], check=True)
     (tmp_path / "docs").mkdir()
-    (tmp_path / "docs" / "START_HERE.md").write_text("old\\n", encoding="utf-8")
-    (tmp_path / ".gitignore").write_text("*.log\\n", encoding="utf-8")
+    (tmp_path / "docs" / "START_HERE.md").write_text("old\n", encoding="utf-8")
+    (tmp_path / ".gitignore").write_text("*.log\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True)
     subprocess.run(["git", "-C", str(tmp_path), "commit", "-m", "base"], check=True, capture_output=True)
 
-    (tmp_path / "external.txt").write_text("pre-existing\\n", encoding="utf-8")
+    (tmp_path / "external.txt").write_text("pre-existing\n", encoding="utf-8")
     before = snapshot(tmp_path)
 
-    # Simulate the interrupted recovery after the agent changed .gitignore while
-    # the pre-existing untracked file was still visible to Git.
-    (tmp_path / ".gitignore").write_text("*.log\\nexternal.txt\\n", encoding="utf-8")
-    (tmp_path / "docs" / "START_HERE.md").write_text("new\\n", encoding="utf-8")
+    # Simulate the recovered agent change: .gitignore is modified, but the
+    # pre-existing untracked file is still visible when the execution is observed.
+    (tmp_path / ".gitignore").write_text("*.log\npackage-lock.json\n", encoding="utf-8")
+    (tmp_path / "docs" / "START_HERE.md").write_text("new\n", encoding="utf-8")
     observed = snapshot(tmp_path)
     assert "?? external.txt" in observed.status
 
-    # On the next continue, the same files remain on disk but are now ignored.
+    # On the next continue, the same files remain on disk but the recovered
+    # .gitignore now hides the pre-existing untracked file.
+    (tmp_path / ".gitignore").write_text("*.log\npackage-lock.json\nexternal.txt\n", encoding="utf-8")
     current = snapshot(tmp_path)
     assert "?? external.txt" not in current.status
     assert current.worktree_fingerprint != observed.worktree_fingerprint
