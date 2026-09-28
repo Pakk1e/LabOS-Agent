@@ -92,3 +92,17 @@ Each autonomous run uses an `agent/<run-id>` branch. The controller never commit
 If LocalCI fails, the controller persists the failed-iteration baseline and `pending_ci_fix`. A later `continue` can recover that state and includes changes made during the failed iteration, including newly created or subsequently edited untracked files.
 
 A per-project filesystem lock prevents concurrent controllers. If a previous controller crashed while the state was `WORKING`, the next owner safely resets the stale execution state while preserving CI-recovery state.
+
+
+## Minimal state-marker supervisor
+
+The preferred experimental loop is the small `lab-agent supervise <project>` supervisor.
+
+ChatGPT remains responsible for repository work. LabOS does not execute ChatGPT-issued shell/file commands. Every assistant response must end with exactly one state marker:
+
+- `(STATE CONTINUE STATE)` — send a continuation prompt.
+- `(STATE WAIT_CI STATE)` — wait for the relevant GitHub Actions run, then tell ChatGPT to continue or fix CI.
+- `(STATE FIX_CI STATE)` — tell ChatGPT to investigate and fix the CI failure.
+- `(STATE DONE STATE)` — stop.
+
+If the marker is missing or invalid, LabOS sends a reminder and waits for a corrected response. This protocol is deliberately independent of repository contents and local shell execution.
