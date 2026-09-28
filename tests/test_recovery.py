@@ -25,6 +25,13 @@ def test_reconcile_worktree_fingerprint_after_ignore_rule_change(tmp_path: Path)
     subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True)
     subprocess.run(["git", "-C", str(tmp_path), "commit", "-m", "base"], check=True, capture_output=True)
 
+    state_dir = tmp_path / "state" / "weather"
+    state_dir.mkdir(parents=True)
+    (state_dir / "last_response.md").write_text(
+        'labos-exec {"action":"write_file","path":".gitignore","content":"*.log\\nexternal.txt\\n"}\n'
+        'labos-exec {"action":"write_file","path":"docs/START_HERE.md","content":"new\\n"}',
+        encoding="utf-8",
+    )
     (tmp_path / "external.txt").write_text("pre-existing\n", encoding="utf-8")
     before = snapshot(tmp_path)
 
@@ -52,13 +59,6 @@ def test_reconcile_worktree_fingerprint_after_ignore_rule_change(tmp_path: Path)
             ["git", "-C", str(tmp_path), "rev-parse", "HEAD"], text=True
         ).strip(),
         reason=None,
-    )
-    state_dir = tmp_path / "state" / "weather"
-    state_dir.mkdir(parents=True)
-    (state_dir / "last_response.md").write_text(
-        'labos-exec {"action":"write_file","path":".gitignore","content":"*.log\\nexternal.txt\\n"}\n'
-        'labos-exec {"action":"write_file","path":"docs/START_HERE.md","content":"new\\n"}',
-        encoding="utf-8",
     )
     project = SimpleNamespace(project_root=tmp_path)
 
