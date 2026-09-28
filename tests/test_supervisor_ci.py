@@ -60,3 +60,16 @@ def test_wait_for_ci_waits_for_running_run():
         sleep_fn=lambda seconds: None,
     )
     assert result[0] is True
+
+
+def test_wait_for_ci_ignores_baseline_run():
+    started = datetime.now(timezone.utc)
+    runs = [
+        CIRun(1, "abc", "completed", "success", "2026-09-28T20:00:00Z", "", "old"),
+    ]
+    result = wait_for_ci(
+        "owner/repo", started, baseline_run_ids={1}, timeout_seconds=0,
+        poll_seconds=0, request_fn=lambda repo: runs, sleep_fn=lambda seconds: None,
+    )
+    assert result[0] is False
+    assert "waiting" in result[1]
