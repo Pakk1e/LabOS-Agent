@@ -158,6 +158,46 @@ class RecoveryManager:
             self.state.reason,
         )
 
+    def reconcile_worktree_fingerprint(self) -> RecoveryEvent | None:
+        """Reconcile a pending recovery fingerprint when tracked recovery changes alter ignore rules.
+
+        A recovery snapshot includes pre-existing untracked files. If the recovered
+        change modifies .gitignore, Git may stop reporting those same files as
+        untracked even though they are unchanged on disk. Recompute the fingerprint
+        using the recorded baseline-untracked paths and only accept the reconciliation
+        when it reproduces the persisted fingerprint exactly.
+        """
+        if not self.state.pending_ci_fix or not self.state.pending_ci_worktree_fingerprint:
+            return None
+
+        current = self._snapshot(self.project.project_root)
+        if current.worktree_fingerprint == self.state.pending_ci_worktree_fingerprint:
+            return None
+
+        baseline_paths = tuple(self.state.pending_ci_baseline_untracked)
+        if not baseline_paths:
+            return None
+
+        recorded_view = self._snapshot_with_untracked_paths(baseline_paths)
+        if recorded_view.worktree_fingerprint != self.state.pending_ci_worktree_fingerprint:
+            return None
+
+        self.state.pending_ci_worktree_fingerprint = current.worktree_fingerprint
+        self.state.reason = "reconciled recovery fingerprint after tracked ignore-rule change"
+        trace(
+            "recovery.fingerprint_reconciled",
+            previous=recorded_view.worktree_fingerprint,
+            current=current.worktree_fingerprint,
+            baseline_untracked=len(baseline_paths),
+        )
+        return RecoveryEvent(
+            "worktree_fingerprint_reconciled",
+            self.state.reason,
+        )
+
+    def _snapshot_with_untracked_paths(self, paths: tuple[str, ...]) -> GitSnapshot:
+        return self._snapshot(self.project.project_root, untracked_paths=paths)
+
     def migrate_legacy(self) -> RecoveryEvent | None:
         if not self.state.pending_ci_fix or self.state.pending_ci_worktree_fingerprint is not None:
             return None
