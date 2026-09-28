@@ -37,10 +37,13 @@ CONTINUE_MESSAGE = (
 )
 
 CI_PASSED_MESSAGE = (
-    "GitHub Actions CI has passed for this repository. Continue developing from "
-    "the current state. If the requested work is complete, verify it and use DONE; "
-    "otherwise make the next useful change. Remember to finish your response with "
-    "(STATE <state> STATE)."
+    "GitHub Actions CI has passed for this repository. The CI result has already "
+    "been checked and reported to you. Continue the actual engineering work now. "
+    "Do not request WAIT_CI again for this same CI result. Use WAIT_CI only when "
+    "you have a newly pushed commit or are genuinely waiting for a newly started "
+    "CI run. Otherwise make the next useful change or, if the requested work is "
+    "genuinely complete and validated, use DONE. Remember to finish your response "
+    "with (STATE <state> STATE)."
 )
 
 CI_FAILED_MESSAGE = (
