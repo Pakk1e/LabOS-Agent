@@ -12,18 +12,20 @@ class ChatState(StrEnum):
     DONE = "DONE"
 
 
-_STATE_RE = re.compile(r"^\(STATE (CONTINUE|WAIT_CI|FIX_CI|DONE) STATE\)$")
+_STATE_RE = re.compile(r"\(STATE (CONTINUE|WAIT_CI|FIX_CI|DONE) STATE\)")
 
 
 def parse_state(response: str) -> ChatState | None:
-    """Parse only the final non-empty response line."""
-    for line in reversed(response.splitlines()):
-        line = line.strip()
-        if not line:
-            continue
-        match = _STATE_RE.fullmatch(line)
-        return ChatState(match.group(1)) if match else None
-    return None
+    """Parse the last valid state marker from an extracted assistant response.
+
+    ChatGPT's rendered DOM can append browser/UI artifacts after the visible
+    final line, so requiring the marker to be the literal final extracted line
+    is too brittle. Only exact valid markers are accepted, and the last one wins.
+    """
+    matches = list(_STATE_RE.finditer(response))
+    if not matches:
+        return None
+    return ChatState(matches[-1].group(1))
 
 
 STATE_INSTRUCTION = """Always finish every response with a state marker on the final non-empty line.
