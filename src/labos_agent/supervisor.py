@@ -28,19 +28,25 @@ REMIND_MESSAGE = (
 )
 
 CONTINUE_MESSAGE = (
-    "Continue your work on the project. Keep implementing the next useful step. "
-    "Remember to finish your response with (STATE <state> STATE)."
+    "Continue the implementation from the current repository state. Do the actual "
+    "repository work rather than only describing what should be changed. Run the "
+    "relevant tests, and if the change is ready for validation, commit and push it "
+    "so GitHub Actions can run. Remember to finish your response with "
+    "(STATE <state> STATE)."
 )
 
 CI_PASSED_MESSAGE = (
-    "GitHub CI has passed. Continue developing the project from the current state. "
-    "Remember to finish your response with (STATE <state> STATE)."
+    "GitHub Actions CI has passed for this repository. Continue developing from "
+    "the current state. If the requested work is complete, verify it and use DONE; "
+    "otherwise make the next useful change. Remember to finish your response with "
+    "(STATE <state> STATE)."
 )
 
 CI_FAILED_MESSAGE = (
-    "GitHub CI failed. Investigate the CI failure, fix the problem, and continue "
-    "developing the project. Remember to finish your response with "
-    "(STATE <state> STATE)."
+    "GitHub Actions CI failed for this repository. Inspect the actual CI failure, "
+    "fix the problem in the repository, run relevant tests, then commit and push "
+    "the fix so GitHub Actions can validate it again. Remember to finish your "
+    "response with (STATE <state> STATE)."
 )
 
 
@@ -179,6 +185,58 @@ class ConversationSupervisor:
         )
         self.turns = 0
 
+    def _bootstrap_prompt(self) -> str:
+        project_name = self.project.project_name or self.project_name
+        repository = self.project.repository
+        project_root = str(self.project.project_root)
+        task = self.project.continuation_message.strip()
+
+        return f"""You are the coding agent for this LabOS session.
+
+PROJECT:
+{project_name}
+
+GITHUB REPOSITORY:
+{repository}
+
+LOCAL REPOSITORY:
+{project_root}
+
+ROLE AND OPERATING MODEL:
+- You are responsible for the actual engineering work in this repository.
+- LabOS is supervising this conversation and observing GitHub Actions.
+- LabOS does not execute shell commands or file edits on your behalf.
+- Do not merely describe a change that should be made. Perform the actual work
+  using the repository/project tools available in this conversation.
+- Treat the repository's current state as authoritative.
+
+REPOSITORY SAFETY:
+- First inspect the current repository state and understand the existing
+  implementation before changing anything.
+- Work only in the repository identified above.
+- Do not reset, clean, stash, discard, or overwrite existing work unless the
+  task explicitly requires it.
+- Preserve intentional existing changes.
+
+IMPLEMENTATION AND CI WORKFLOW:
+1. Inspect the current state and continue the requested task.
+2. Make the actual implementation changes.
+3. Run the relevant local tests/checks when available.
+4. When a meaningful change is ready for validation, commit it and push it to
+   {repository} so GitHub Actions can validate the pushed commit.
+5. Do not claim that a file was changed, a commit was created, a push happened,
+   or CI passed unless you actually performed/observed that action.
+6. When CI fails, inspect the real failure, fix it, commit/push the fix, and
+   wait for CI again.
+7. When the requested work is genuinely complete and validated, use DONE.
+
+CURRENT TASK:
+{task}
+
+Start now by inspecting the current repository state and continue the task.
+{STATE_INSTRUCTION}
+"""
+
     def _prompt(self, message: str) -> str:
         return message.rstrip() + "\n\n" + STATE_INSTRUCTION
 
@@ -204,7 +262,7 @@ class ConversationSupervisor:
                 )
 
             response = chat.send_and_wait_for_response(
-                self._prompt(self.project.continuation_message),
+                self._bootstrap_prompt(),
                 timeout_seconds=self.config.browser.response_timeout_seconds,
                 quiet_seconds=self.config.browser.quiet_seconds,
             )
