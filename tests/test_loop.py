@@ -598,3 +598,9 @@ def test_run_once_reconciles_pending_recovery_before_prepare():
     assert "_reconcile_recovery_fingerprint" in names
     assert "_reconcile_committed_recovery" in names
     assert names.index("_reconcile_recovery_fingerprint") < names.index("_reconcile_committed_recovery")
+
+def test_continue_reconciles_pending_recovery_before_git_preflight():
+    source = inspect.getsource(loop._run_once_impl)
+    reconcile_index = source.index("_reconcile_recovery_fingerprint(state, project)")
+    preflight_index = source.index("prepare_repository(")
+    assert reconcile_index < preflight_index
