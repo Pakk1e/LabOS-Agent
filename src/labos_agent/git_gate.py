@@ -159,6 +159,31 @@ def _untracked_fingerprint(root: Path, paths: tuple[str, ...]) -> bytes:
     return digest.digest()
 
 
+
+def ignored_paths(root: Path, paths: tuple[str, ...] | list[str]) -> set[str]:
+    """Return paths currently ignored by Git from the supplied relative paths."""
+    candidates = [path for path in paths if path]
+    if not candidates:
+        return set()
+    result = subprocess.run(
+        ["git", "check-ignore", "-z", "--stdin"],
+        cwd=root,
+        env=_env(root),
+        input=("\0".join(candidates) + "\0").encode("utf-8", "surrogateescape"),
+        capture_output=True,
+        text=False,
+        check=False,
+        timeout=GIT_COMMAND_TIMEOUT_SECONDS,
+    )
+    if result.returncode not in (0, 1):
+        raise RuntimeError("git check-ignore failed while validating recovery baseline")
+    return {
+        path.decode("utf-8", "surrogateescape")
+        for path in result.stdout.split(b"\0")
+        if path
+    }
+
+
 def git_status(root: Path) -> str:
     """Return sanitized controller-owned Git status for project inspection."""
     return _git(root, "status", "--short")

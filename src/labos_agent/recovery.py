@@ -102,7 +102,7 @@ class RecoveryManager:
         if current.head != started_sha:
             return None
 
-        evidence_path = Path("state") / self.state.project / "last_response.md"
+        evidence_path = self.project.project_root / "state" / self.state.project / "last_response.md"
         try:
             response = evidence_path.read_text(encoding="utf-8")
             requests = parse_execution_requests(response)
@@ -159,13 +159,20 @@ class RecoveryManager:
         )
 
     def reconcile_worktree_fingerprint(self) -> RecoveryEvent | None:
-        """Reconcile a pending recovery fingerprint when tracked recovery changes alter ignore rules.
+        """Reconcile recovery using persisted execution evidence, never by weakening preflight.
 
-        A recovery snapshot includes pre-existing untracked files. If the recovered
-        change modifies .gitignore, Git may stop reporting those same files as
-        untracked even though they are unchanged on disk. Recompute the fingerprint
-        using the recorded baseline-untracked paths and only accept the reconciliation
-        when it reproduces the persisted fingerprint exactly.
+        The persisted fingerprint predates an ignore-rule change, so exact byte-for-byte
+        replay can be impossible: baseline files such as a local .venv can disappear
+        from Git's untracked view without being deleted. Reconciliation therefore
+        requires all of the following:
+        * the repository HEAD is still the iteration start;
+        * every current untracked path was already in the persisted baseline;
+        * every baseline path that disappeared from Git's untracked view is currently
+          ignored (not silently deleted);
+        * the current tracked changes are exactly the files and contents requested by
+          the persisted LabOS execution evidence.
+
+        Without that evidence the normal fingerprint gate remains authoritative.
         """
         if not self.state.pending_ci_fix or not self.state.pending_ci_worktree_fingerprint:
             return None
@@ -178,29 +185,86 @@ class RecoveryManager:
         if not baseline_paths:
             return None
 
-        recorded_view = self._snapshot_with_untracked_paths(baseline_paths)
-        if recorded_view.worktree_fingerprint != self.state.pending_ci_worktree_fingerprint:
+        started_sha = getattr(self.state, "iteration_started_sha", None)
+        if started_sha and current.head != started_sha:
             return None
 
+        baseline_set = set(baseline_paths)
+        current_untracked = set(current.untracked_paths)
+        if not current_untracked.issubset(baseline_set):
+            return None
+
+        from .git_gate import ignored_paths
+        ignored = ignored_paths(self.project.project_root, baseline_paths)
+        disappeared = baseline_set - current_untracked
+        if not disappeared.issubset(ignored):
+            return None
+
+        if not self._tracked_changes_match_execution_evidence(current):
+            return None
+
+        previous = self.state.pending_ci_worktree_fingerprint
         self.state.pending_ci_worktree_fingerprint = current.worktree_fingerprint
-        self.state.reason = "reconciled recovery fingerprint after tracked ignore-rule change"
+        self.state.reason = "reconciled recovery fingerprint using verified execution evidence and ignore-rule changes"
         trace(
             "recovery.fingerprint_reconciled",
-            previous=recorded_view.worktree_fingerprint,
+            previous=previous,
             current=current.worktree_fingerprint,
             baseline_untracked=len(baseline_paths),
+            ignored_baseline_paths=len(disappeared),
         )
         return RecoveryEvent(
             "worktree_fingerprint_reconciled",
             self.state.reason,
         )
 
-    def _snapshot_with_untracked_paths(self, paths: tuple[str, ...]) -> GitSnapshot:
-        return self._snapshot(
-            self.project.project_root,
-            untracked_paths=paths,
-            status_untracked_paths=paths,
-        )
+    def _tracked_changes_match_execution_evidence(self, current: GitSnapshot) -> bool:
+        evidence_path = self.project.project_root / "state" / self.state.project / "last_response.md"
+        try:
+            response = evidence_path.read_text(encoding="utf-8")
+            requests = parse_execution_requests(response)
+        except (OSError, ValueError):
+            return False
+
+        writes = {
+            str(request.get("path")): str(request.get("content"))
+            for request in requests
+            if request.get("action") == "write_file"
+            and isinstance(request.get("path"), str)
+            and isinstance(request.get("content"), str)
+        }
+        if not writes:
+            return False
+
+        tracked_paths: set[str] = set()
+        for record in current.status.split("\0"):
+            if not record or record.startswith("?? "):
+                continue
+            if len(record) < 4 or " -> " in record:
+                return False
+            tracked_paths.add(record[3:])
+
+        if tracked_paths != set(writes):
+            return False
+
+        root = self.project.project_root.resolve()
+        for relative, expected in writes.items():
+            candidate = (root / relative).resolve()
+            if candidate != root and root not in candidate.parents:
+                return False
+            if any(
+                part.casefold() in {".git", ".github"}
+                or part.casefold().startswith(".env")
+                for part in candidate.relative_to(root).parts
+            ):
+                return False
+            try:
+                actual = candidate.read_text(encoding="utf-8")
+            except OSError:
+                return False
+            if actual != expected:
+                return False
+        return True
 
     def migrate_legacy(self) -> RecoveryEvent | None:
         if not self.state.pending_ci_fix or self.state.pending_ci_worktree_fingerprint is not None:
