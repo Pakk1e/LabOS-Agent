@@ -25,9 +25,10 @@ class RecoveryEvent:
 class RecoveryManager:
     """Own recovery evidence and transitions instead of scattering them in the loop."""
 
-    def __init__(self, state, project, *, snapshot_fn=snapshot, ancestor_fn=is_ancestor, remote_sha_fn=None, clear_legacy_fn=can_clear_legacy_dirty_recovery):
+    def __init__(self, state, project, *, state_root: Path | None = None, snapshot_fn=snapshot, ancestor_fn=is_ancestor, remote_sha_fn=None, clear_legacy_fn=can_clear_legacy_dirty_recovery):
         self.state = state
         self.project = project
+        self.state_root = (state_root or Path("state")).resolve()
         self._snapshot = snapshot_fn
         self._is_ancestor = ancestor_fn
         self._remote_sha = remote_sha_fn
@@ -102,7 +103,7 @@ class RecoveryManager:
         if current.head != started_sha:
             return None
 
-        evidence_path = self.project.project_root / "state" / self.state.project / "last_response.md"
+        evidence_path = self.state_root / self.state.project / "last_response.md"
         try:
             response = evidence_path.read_text(encoding="utf-8")
             requests = parse_execution_requests(response)
@@ -219,7 +220,7 @@ class RecoveryManager:
         )
 
     def _tracked_changes_match_execution_evidence(self, current: GitSnapshot) -> bool:
-        evidence_path = self.project.project_root / "state" / self.state.project / "last_response.md"
+        evidence_path = self.state_root / self.state.project / "last_response.md"
         try:
             response = evidence_path.read_text(encoding="utf-8")
             requests = parse_execution_requests(response)
