@@ -588,3 +588,14 @@ def test_start_iteration_persists_worktree_baseline_and_resets_observation():
     assert state.iteration_baseline_worktree_fingerprint == "clean-fp"
     assert state.iteration_baseline_untracked == [".venv", "package-lock.json"]
     assert state.iteration_observed_worktree_fingerprint is None
+
+
+def test_run_once_reconciles_pending_recovery_before_prepare(monkeypatch):
+    import labos_agent.loop as loop
+    calls = []
+    monkeypatch.setattr(loop, "_migrate_legacy_dirty_recovery", lambda state, project: calls.append("migrate"))
+    monkeypatch.setattr(loop, "_reconcile_recovery_fingerprint", lambda state, project: calls.append("fingerprint"))
+    monkeypatch.setattr(loop, "_reconcile_committed_recovery", lambda state, project: calls.append("committed"))
+    monkeypatch.setattr(loop._recovery, "__call__", lambda *args, **kwargs: None, raising=False)
+    assert "fingerprint" in loop._run_once_impl.__code__.co_names
+    assert loop._run_once_impl.__code__.co_names.index("_reconcile_recovery_fingerprint") < loop._run_once_impl.__code__.co_names.index("_reconcile_committed_recovery")
