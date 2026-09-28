@@ -6,9 +6,14 @@ def test_parse_final_state():
     assert parse_state("done\n(STATE DONE STATE)") == ChatState.DONE
 
 
-def test_parse_only_final_non_empty_line():
-    assert parse_state("(STATE DONE STATE)\nmore text") is None
-    assert parse_state("x\n(STATE WAIT_CI STATE)\n\n") == ChatState.WAIT_CI
+def test_parse_state_with_trailing_browser_artifacts():
+    assert parse_state("work\n(STATE WAIT_CI STATE)\nCopy") == ChatState.WAIT_CI
+    assert parse_state("done\n(STATE DONE STATE)\n") == ChatState.DONE
+
+
+def test_parse_last_valid_marker():
+    response = "(STATE CONTINUE STATE)\nmore work\n(STATE WAIT_CI STATE)\nrendered UI text"
+    assert parse_state(response) == ChatState.WAIT_CI
 
 
 def test_invalid_state_is_none():
