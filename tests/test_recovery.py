@@ -1,3 +1,5 @@
+from pathlib import Path
+
 def test_ignored_paths_distinguishes_ignored_from_deleted(tmp_path: Path):
     import subprocess
 
