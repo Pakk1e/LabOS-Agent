@@ -169,7 +169,7 @@ def ignored_paths(root: Path, paths: tuple[str, ...] | list[str]) -> set[str]:
         ["git", "check-ignore", "-z", "--stdin"],
         cwd=root,
         env=_env(root),
-        input="\0".join(candidates) + "\0",
+        input=("\0".join(candidates) + "\0").encode("utf-8", "surrogateescape"),
         capture_output=True,
         text=False,
         check=False,
