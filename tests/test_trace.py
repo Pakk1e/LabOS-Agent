@@ -19,3 +19,25 @@ def test_trace_is_human_friendly(capsys, monkeypatch):
     assert "stage=test" in output
     assert "large internal output" not in output
     assert output.startswith("20")
+
+def test_trace_shows_actionable_reason(capsys, monkeypatch):
+    monkeypatch.setenv("LABOS_TRACE", "1")
+
+    trace("run.error", project="weather", error="GitHub Actions failed: test=cancelled")
+
+    output = capsys.readouterr().err
+    assert "ERR" in output
+    assert "Run failed" in output
+    assert "reason=GitHub Actions failed: test=cancelled" in output
+
+
+def test_trace_supports_json_diagnostics(capsys, monkeypatch):
+    monkeypatch.setenv("LABOS_TRACE", "1")
+    monkeypatch.setenv("LABOS_TRACE_FORMAT", "json")
+
+    trace("ci.complete", project="weather", success=True)
+
+    output = capsys.readouterr().err
+    assert output.startswith("[LABOS] ")
+    assert '"event": "ci.complete"' in output
+    assert '"project": "weather"' in output
