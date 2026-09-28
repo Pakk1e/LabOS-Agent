@@ -227,20 +227,29 @@ def test_reconcile_worktree_fingerprint_after_ignore_rule_change(tmp_path: Path)
     subprocess.run(["git", "-C", str(tmp_path), "config", "user.email", "labos@example.invalid"], check=True)
     (tmp_path / "docs").mkdir()
     (tmp_path / "docs" / "START_HERE.md").write_text("old\\n", encoding="utf-8")
-    (tmp_path / ".gitignore").write_text("*.log\n", encoding="utf-8")
+    (tmp_path / ".gitignore").write_text("*.log\\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True)
     subprocess.run(["git", "-C", str(tmp_path), "commit", "-m", "base"], check=True, capture_output=True)
 
     (tmp_path / "external.txt").write_text("pre-existing\\n", encoding="utf-8")
     before = snapshot(tmp_path)
-    (tmp_path / ".gitignore").write_text("*.log\nexternal.txt\n", encoding="utf-8")
+
+    # Simulate the interrupted recovery after the agent changed .gitignore while
+    # the pre-existing untracked file was still visible to Git.
+    (tmp_path / ".gitignore").write_text("*.log\\nexternal.txt\\n", encoding="utf-8")
     (tmp_path / "docs" / "START_HERE.md").write_text("new\\n", encoding="utf-8")
-    recorded = snapshot(tmp_path, untracked_paths=before.untracked_paths)
+    observed = snapshot(tmp_path)
+    assert "?? external.txt" in observed.status
+
+    # On the next continue, the same files remain on disk but are now ignored.
+    current = snapshot(tmp_path)
+    assert "?? external.txt" not in current.status
+    assert current.worktree_fingerprint != observed.worktree_fingerprint
 
     state = SimpleNamespace(
         pending_ci_fix=True,
         pending_ci_baseline_untracked=list(before.untracked_paths),
-        pending_ci_worktree_fingerprint=recorded.worktree_fingerprint,
+        pending_ci_worktree_fingerprint=observed.worktree_fingerprint,
         reason=None,
     )
     project = SimpleNamespace(project_root=tmp_path)
@@ -249,5 +258,5 @@ def test_reconcile_worktree_fingerprint_after_ignore_rule_change(tmp_path: Path)
 
     assert event is not None
     assert event.kind == "worktree_fingerprint_reconciled"
-    assert state.pending_ci_worktree_fingerprint == snapshot(tmp_path).worktree_fingerprint
-    assert state.pending_ci_worktree_fingerprint != recorded.worktree_fingerprint
+    assert state.pending_ci_worktree_fingerprint == current.worktree_fingerprint
+    assert state.pending_ci_worktree_fingerprint != observed.worktree_fingerprint
