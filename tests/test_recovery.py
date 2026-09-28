@@ -193,7 +193,7 @@ def test_recover_legacy_interrupted_write_from_exact_last_response(tmp_path: Pat
 
     state = _legacy_state(head)
     project = SimpleNamespace(project_root=tmp_path)
-    event = RecoveryManager(state, project).recover_interrupted_iteration()
+    event = RecoveryManager(state, project, state_root=tmp_path / "state").recover_interrupted_iteration()
 
     assert event is not None
     assert event.kind == "legacy_interrupted_worktree_recovered"
@@ -215,7 +215,7 @@ def test_recover_legacy_interrupted_write_rejects_mismatched_content(tmp_path: P
 
     state = _legacy_state(head)
     project = SimpleNamespace(project_root=tmp_path)
-    assert RecoveryManager(state, project).recover_interrupted_iteration() is None
+    assert RecoveryManager(state, project, state_root=tmp_path / "state").recover_interrupted_iteration() is None
     assert state.pending_ci_fix is False
 
 
@@ -280,7 +280,7 @@ def test_reconcile_worktree_fingerprint_after_ignore_rule_change(tmp_path: Path)
     )
     project = SimpleNamespace(project_root=tmp_path)
 
-    event = RecoveryManager(state, project).reconcile_worktree_fingerprint()
+    event = RecoveryManager(state, project, state_root=tmp_path / "state").reconcile_worktree_fingerprint()
 
     assert event is not None
     assert event.kind == "worktree_fingerprint_reconciled"
@@ -311,7 +311,7 @@ def test_reconcile_worktree_fingerprint_rejects_new_untracked_file(tmp_path: Pat
         encoding="utf-8",
     )
 
-    assert RecoveryManager(state, project).reconcile_worktree_fingerprint() is None
+    assert RecoveryManager(state, project, state_root=tmp_path / "state").reconcile_worktree_fingerprint() is None
     assert state.pending_ci_worktree_fingerprint == "persisted"
 
 
@@ -338,7 +338,7 @@ def test_reconcile_worktree_fingerprint_rejects_deleted_baseline_file(tmp_path: 
         encoding="utf-8",
     )
 
-    assert RecoveryManager(state, project).reconcile_worktree_fingerprint() is None
+    assert RecoveryManager(state, project, state_root=tmp_path / "state").reconcile_worktree_fingerprint() is None
     assert state.pending_ci_worktree_fingerprint == "persisted"
 
 
@@ -365,5 +365,5 @@ def test_reconcile_worktree_fingerprint_rejects_unverified_tracked_change(tmp_pa
         encoding="utf-8",
     )
 
-    assert RecoveryManager(state, project).reconcile_worktree_fingerprint() is None
+    assert RecoveryManager(state, project, state_root=tmp_path / "state").reconcile_worktree_fingerprint() is None
     assert state.pending_ci_worktree_fingerprint == "persisted"

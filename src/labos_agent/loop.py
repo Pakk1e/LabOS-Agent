@@ -341,6 +341,7 @@ def _recovery(state: AgentState, project) -> RecoveryManager:
     return RecoveryManager(
         state,
         project,
+        state_root=state_path(state.project).parent,
         snapshot_fn=git_snapshot,
         ancestor_fn=is_ancestor,
         remote_sha_fn=_git_remote_branch_sha,
