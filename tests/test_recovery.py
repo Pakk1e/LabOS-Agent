@@ -383,8 +383,7 @@ def _clean_descendant_state(started_sha: str):
 def test_reconcile_clean_pushed_descendant_requires_single_commit(tmp_path: Path):
     import subprocess
     started = _legacy_repo(tmp_path)
-    (tmp_path / "docs" / "START_HERE.md").write_text("new
-", encoding="utf-8")
+    (tmp_path / "docs" / "START_HERE.md").write_text("new\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True)
     subprocess.run(["git", "-C", str(tmp_path), "commit", "-m", "validated change"], check=True, capture_output=True)
     head = subprocess.check_output(["git", "-C", str(tmp_path), "rev-parse", "HEAD"], text=True).strip()
@@ -400,8 +399,7 @@ def test_reconcile_clean_pushed_descendant_requires_single_commit(tmp_path: Path
 def test_reconcile_clean_pushed_descendant_rejects_unpublished_commit(tmp_path: Path):
     import subprocess
     started = _legacy_repo(tmp_path)
-    (tmp_path / "docs" / "START_HERE.md").write_text("new
-", encoding="utf-8")
+    (tmp_path / "docs" / "START_HERE.md").write_text("new\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True)
     subprocess.run(["git", "-C", str(tmp_path), "commit", "-m", "local only"], check=True, capture_output=True)
     state = _clean_descendant_state(started)
@@ -413,13 +411,11 @@ def test_reconcile_clean_pushed_descendant_rejects_unpublished_commit(tmp_path: 
 def test_reconcile_clean_pushed_descendant_rejects_dirty_worktree(tmp_path: Path):
     import subprocess
     started = _legacy_repo(tmp_path)
-    (tmp_path / "docs" / "START_HERE.md").write_text("new
-", encoding="utf-8")
+    (tmp_path / "docs" / "START_HERE.md").write_text("new\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True)
     subprocess.run(["git", "-C", str(tmp_path), "commit", "-m", "validated change"], check=True, capture_output=True)
     head = subprocess.check_output(["git", "-C", str(tmp_path), "rev-parse", "HEAD"], text=True).strip()
-    (tmp_path / "docs" / "START_HERE.md").write_text("operator change
-", encoding="utf-8")
+    (tmp_path / "docs" / "START_HERE.md").write_text("operator change\n", encoding="utf-8")
     state = _clean_descendant_state(started)
     manager = RecoveryManager(state, SimpleNamespace(project_root=tmp_path), remote_sha_fn=lambda _root, _branch: head)
     assert manager.reconcile_clean_pushed_descendant() is None
@@ -429,9 +425,7 @@ def test_reconcile_clean_pushed_descendant_rejects_dirty_worktree(tmp_path: Path
 def test_reconcile_clean_pushed_descendant_rejects_multiple_commits(tmp_path: Path):
     import subprocess
     started = _legacy_repo(tmp_path)
-    for value in ("one
-", "two
-"):
+    for value in ("one\n", "two\n"):
         (tmp_path / "docs" / "START_HERE.md").write_text(value, encoding="utf-8")
         subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True)
         subprocess.run(["git", "-C", str(tmp_path), "commit", "-m", "incremental change"], check=True, capture_output=True)
