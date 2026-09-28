@@ -23,12 +23,14 @@ from .state_protocol import ChatState, STATE_INSTRUCTION, parse_state
 
 
 REMIND_MESSAGE = (
+    "[LAB OS — STATE REMINDER]\n"
     "Continue your work. Your response did not end with a valid state marker. "
     "Do not forget to always reply with (STATE <state> STATE) at the very end "
     "of every response. Use only CONTINUE, WAIT_CI, FIX_CI, or DONE."
 )
 
 CONTINUE_MESSAGE = (
+    "[LAB OS — CONTINUE]\n"
     "Continue the implementation from the current repository state. Do the actual "
     "repository work rather than only describing what should be changed. Run the "
     "relevant tests, and if the change is ready for validation, commit and push it "
@@ -37,6 +39,7 @@ CONTINUE_MESSAGE = (
 )
 
 CI_PASSED_MESSAGE = (
+    "[LAB OS — CI RESULT]\n"
     "GitHub Actions CI has passed for this repository. The CI result has already "
     "been checked and reported to you. Continue the actual engineering work now. "
     "Do not request WAIT_CI again for this same CI result. Use WAIT_CI only when "
@@ -47,6 +50,7 @@ CI_PASSED_MESSAGE = (
 )
 
 CI_FAILED_MESSAGE = (
+    "[LAB OS — CI FAILED]\n"
     "GitHub Actions CI failed for this repository. Inspect the actual CI failure, "
     "fix the problem in the repository, run relevant tests, then commit and push "
     "the fix so GitHub Actions can validate it again. Remember to finish your "
