@@ -414,6 +414,7 @@ def _run_once_impl(config: AppConfig, project_name: str) -> RunResult:
         controller.start()
         controller.begin_iteration(datetime.now().astimezone())
         _migrate_legacy_dirty_recovery(state, project)
+        _reconcile_recovery_fingerprint(state, project)
         _reconcile_committed_recovery(state, project)
         interrupted_recovery = _recovery(state, project).recover_interrupted_iteration()
         if interrupted_recovery is not None:
