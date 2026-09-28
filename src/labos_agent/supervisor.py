@@ -117,6 +117,7 @@ def wait_for_ci(
     repository: str,
     started_at: datetime,
     *,
+    baseline_run_ids: set[int] | None = None,
     timeout_seconds: float,
     poll_seconds: float,
     request_fn=_github_get,
@@ -124,11 +125,15 @@ def wait_for_ci(
 ) -> tuple[bool, str]:
     """Wait for a relevant Actions run and return (passed, summary)."""
     deadline = time.monotonic() + timeout_seconds
+    baseline = baseline_run_ids or set()
     last = "waiting for a GitHub Actions run"
 
     while True:
         try:
-            runs = _runs_relevant_to_wait(list(request_fn(repository)), started_at)
+            runs = [
+                run for run in _runs_relevant_to_wait(list(request_fn(repository)), started_at)
+                if run.id not in baseline
+            ]
         except (HTTPError, URLError, TimeoutError, ValueError) as exc:
             last = f"GitHub Actions query failed: {type(exc).__name__}: {exc}"
             runs = []
@@ -261,6 +266,7 @@ Start now by inspecting the current repository state and continue the task.
                     f"required ChatGPT Project context not detected: {self.project.project_name}"
                 )
 
+            ci_baseline = set(run.id for run in _github_get(self.project.repository))
             response = chat.send_and_wait_for_response(
                 self._bootstrap_prompt(),
                 timeout_seconds=self.config.browser.response_timeout_seconds,
@@ -280,13 +286,14 @@ Start now by inspecting the current repository state and continue the task.
                 elif state == ChatState.DONE:
                     return response
                 elif state == ChatState.WAIT_CI:
-                    started_at = datetime.now(timezone.utc)
                     passed, _summary = wait_for_ci(
                         self.project.repository,
-                        started_at,
+                        datetime.now(timezone.utc),
+                        baseline_run_ids=ci_baseline,
                         timeout_seconds=self.ci_timeout_seconds,
                         poll_seconds=self.ci_poll_seconds,
                     )
+                    ci_baseline = set(run.id for run in _github_get(self.project.repository))
                     response = chat.send_and_wait_for_response(
                         CI_PASSED_MESSAGE if passed else CI_FAILED_MESSAGE,
                         timeout_seconds=self.config.browser.response_timeout_seconds,
