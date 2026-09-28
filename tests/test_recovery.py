@@ -217,3 +217,37 @@ def test_recover_legacy_interrupted_write_rejects_mismatched_content(tmp_path: P
     project = SimpleNamespace(project_root=tmp_path)
     assert RecoveryManager(state, project).recover_interrupted_iteration() is None
     assert state.pending_ci_fix is False
+
+
+def test_reconcile_worktree_fingerprint_after_ignore_rule_change(tmp_path: Path):
+    import subprocess
+
+    subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(tmp_path), "config", "user.name", "LabOS Test"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "config", "user.email", "labos@example.invalid"], check=True)
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "START_HERE.md").write_text("old\\n", encoding="utf-8")
+    (tmp_path / ".gitignore").write_text("*.log\\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-m", "base"], check=True, capture_output=True)
+
+    (tmp_path / "external.txt").write_text("pre-existing\\n", encoding="utf-8")
+    before = snapshot(tmp_path)
+    (tmp_path / ".gitignore").write_text("*.log\\nexternal.txt\\n", encoding="utf-8")
+    (tmp_path / "docs" / "START_HERE.md").write_text("new\\n", encoding="utf-8")
+    recorded = snapshot(tmp_path, untracked_paths=before.untracked_paths)
+
+    state = SimpleNamespace(
+        pending_ci_fix=True,
+        pending_ci_baseline_untracked=list(before.untracked_paths),
+        pending_ci_worktree_fingerprint=recorded.worktree_fingerprint,
+        reason=None,
+    )
+    project = SimpleNamespace(project_root=tmp_path)
+
+    event = RecoveryManager(state, project).reconcile_worktree_fingerprint()
+
+    assert event is not None
+    assert event.kind == "worktree_fingerprint_reconciled"
+    assert state.pending_ci_worktree_fingerprint == snapshot(tmp_path).worktree_fingerprint
+    assert state.pending_ci_worktree_fingerprint != recorded.worktree_fingerprint
