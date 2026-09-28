@@ -234,24 +234,25 @@ def test_reconcile_worktree_fingerprint_after_ignore_rule_change(tmp_path: Path)
     (tmp_path / "external.txt").write_text("pre-existing\n", encoding="utf-8")
     before = snapshot(tmp_path)
 
-    # Simulate the recovered agent change: .gitignore is modified, but the
-    # pre-existing untracked file is still visible when the execution is observed.
-    (tmp_path / ".gitignore").write_text("*.log\npackage-lock.json\n", encoding="utf-8")
+    # Simulate the recovered tracked changes. The persisted fingerprint still
+    # carries the pre-existing untracked status view from before the ignore-rule
+    # change, even though the files are now ignored by Git.
+    (tmp_path / ".gitignore").write_text("*.log\nexternal.txt\n", encoding="utf-8")
     (tmp_path / "docs" / "START_HERE.md").write_text("new\n", encoding="utf-8")
-    observed = snapshot(tmp_path)
-    assert "?? external.txt" in observed.status
-
-    # On the next continue, the same files remain on disk but the recovered
-    # .gitignore now hides the pre-existing untracked file.
-    (tmp_path / ".gitignore").write_text("*.log\npackage-lock.json\nexternal.txt\n", encoding="utf-8")
+    recorded = snapshot(
+        tmp_path,
+        untracked_paths=before.untracked_paths,
+        status_untracked_paths=before.untracked_paths,
+    )
     current = snapshot(tmp_path)
+    assert "?? external.txt" in recorded.status
     assert "?? external.txt" not in current.status
-    assert current.worktree_fingerprint != observed.worktree_fingerprint
+    assert current.worktree_fingerprint != recorded.worktree_fingerprint
 
     state = SimpleNamespace(
         pending_ci_fix=True,
         pending_ci_baseline_untracked=list(before.untracked_paths),
-        pending_ci_worktree_fingerprint=observed.worktree_fingerprint,
+        pending_ci_worktree_fingerprint=recorded.worktree_fingerprint,
         reason=None,
     )
     project = SimpleNamespace(project_root=tmp_path)
@@ -261,4 +262,4 @@ def test_reconcile_worktree_fingerprint_after_ignore_rule_change(tmp_path: Path)
     assert event is not None
     assert event.kind == "worktree_fingerprint_reconciled"
     assert state.pending_ci_worktree_fingerprint == current.worktree_fingerprint
-    assert state.pending_ci_worktree_fingerprint != observed.worktree_fingerprint
+    assert state.pending_ci_worktree_fingerprint != recorded.worktree_fingerprint
