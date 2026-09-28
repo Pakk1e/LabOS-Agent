@@ -74,3 +74,10 @@ def test_wait_for_ci_reports_latest_existing_baseline_run():
     )
     assert result[0] is True
     assert "latest=success" in result[1]
+
+
+def test_ci_passed_message_prevents_repeated_wait_ci():
+    from labos_agent.supervisor import CI_PASSED_MESSAGE
+
+    assert "Do not request WAIT_CI again for this same CI result." in CI_PASSED_MESSAGE
+    assert "newly pushed commit" in CI_PASSED_MESSAGE
