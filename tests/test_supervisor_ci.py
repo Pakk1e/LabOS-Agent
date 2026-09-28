@@ -62,14 +62,15 @@ def test_wait_for_ci_waits_for_running_run():
     assert result[0] is True
 
 
-def test_wait_for_ci_ignores_baseline_run():
+def test_wait_for_ci_reports_latest_existing_baseline_run():
     started = datetime.now(timezone.utc)
     runs = [
-        CIRun(1, "abc", "completed", "success", "2026-09-28T20:00:00Z", "", "old"),
+        CIRun(1, "abc", "completed", "success", "2026-09-28T19:00:00Z", "", "old"),
+        CIRun(2, "def", "completed", "success", "2026-09-28T20:00:00Z", "", "latest"),
     ]
     result = wait_for_ci(
-        "owner/repo", started, baseline_run_ids={1}, timeout_seconds=0,
+        "owner/repo", started, baseline_run_ids={1, 2}, timeout_seconds=0,
         poll_seconds=0, request_fn=lambda repo: runs, sleep_fn=lambda seconds: None,
     )
-    assert result[0] is False
-    assert "waiting" in result[1]
+    assert result[0] is True
+    assert "latest=success" in result[1]

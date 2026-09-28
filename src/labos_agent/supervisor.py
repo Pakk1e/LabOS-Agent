@@ -142,10 +142,23 @@ def wait_for_ci(
 
     while True:
         try:
+            all_runs = list(request_fn(repository))
             runs = [
-                run for run in _runs_relevant_to_wait(list(request_fn(repository)), started_at)
+                run for run in _runs_relevant_to_wait(all_runs, started_at)
                 if run.id not in baseline
             ]
+            # ChatGPT may request WAIT_CI before pushing a new commit. Report
+            # the latest existing run rather than waiting for a nonexistent
+            # turn-specific run.
+            if not runs and baseline:
+                existing = sorted(
+                    all_runs,
+                    key=lambda run: _parse_time(run.created_at)
+                    or datetime.fromtimestamp(0, timezone.utc),
+                    reverse=True,
+                )
+                if existing:
+                    runs = [existing[0]]
         except (HTTPError, URLError, TimeoutError, ValueError) as exc:
             last = f"GitHub Actions query failed: {type(exc).__name__}: {exc}"
             runs = []
