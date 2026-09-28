@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import subprocess
 import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -77,6 +78,17 @@ def _github_get(repository: str, *, per_page: int = 30) -> list[CIRun]:
         "User-Agent": "LabOS-Agent",
     }
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if not token:
+        try:
+            token = subprocess.run(
+                ["gh", "auth", "token"],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            ).stdout.strip()
+        except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            token = ""
     if token:
         headers["Authorization"] = f"Bearer {token}"
     request = Request(url, headers=headers, method="GET")
@@ -266,7 +278,13 @@ Start now by inspecting the current repository state and continue the task.
                     f"required ChatGPT Project context not detected: {self.project.project_name}"
                 )
 
-            ci_baseline = set(run.id for run in _github_get(self.project.repository))
+            try:
+                ci_baseline = set(run.id for run in _github_get(self.project.repository))
+            except (HTTPError, URLError, TimeoutError, ValueError) as exc:
+                raise SupervisorError(
+                    "cannot access GitHub Actions for the configured repository; "
+                    "set GITHUB_TOKEN/GH_TOKEN or authenticate GitHub CLI with 'gh auth login'"
+                ) from exc
             response = chat.send_and_wait_for_response(
                 self._bootstrap_prompt(),
                 timeout_seconds=self.config.browser.response_timeout_seconds,
