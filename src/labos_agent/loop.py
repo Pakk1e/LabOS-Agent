@@ -307,11 +307,15 @@ def _resolve_execution(chat, response: str, project, project_name: str, config: 
         tick = chr(96)
         response = chat.send_and_wait_for_response(
             "STOP. Your response did not contain a server execution request or the required LABOS_DONE completion marker. "
-            "Do not describe an intended change without performing it. You do not have direct access to the LabOS controller filesystem. "
+            "Do not describe an intended or already-completed repository change unless the controller has actually executed it. "
+            "Your previous response may have claimed that a source or documentation file was changed, but the controller "
+            "received no write_file operation for that claim. Treat that claim as unexecuted. "
+            "If you are claiming a concrete repository change is needed, issue the actual write_file request now with the "
+            "complete intended file contents; do not merely issue read_file or describe the change again. "
+            "If you genuinely made no change and nothing remains to implement, issue a final read/inspection request and then end with LABOS_DONE. "
             "Before doing anything else, issue at least one controlled server operation using a fenced "
             + tick * 3
-            + "labos-exec JSON block. Use write_file for source/documentation changes, or read_file/run_command for inspection. "
-            "Wait for the real execution result and then continue. If no further change is needed, issue a final inspection request and end with LABOS_DONE.",
+            + "labos-exec JSON block. Wait for the real execution result and then continue.",
             timeout_seconds=_remaining_timeout(deadline, config.browser.response_timeout_seconds),
             quiet_seconds=config.browser.quiet_seconds,
         )

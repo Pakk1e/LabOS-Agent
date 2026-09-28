@@ -255,6 +255,43 @@ def test_delivery_phase_owns_git_push_recovery_path():
     assert "mark_push_failure_recovery" in inspect.signature(phases.verify_and_deliver).parameters
 
 
+def test_resolve_execution_correction_requires_write_for_claimed_change(monkeypatch, tmp_path):
+    class Project:
+        execution_enabled = True
+
+    class Config:
+        browser = BrowserConfig(profile_dir=tmp_path, response_timeout_seconds=1, quiet_seconds=0)
+
+    class Chat:
+        def __init__(self):
+            self.messages = []
+
+        def send_and_wait_for_response(self, message, **kwargs):
+            self.messages.append(message)
+            return "still prose"
+
+    monkeypatch.setattr(loop, "_execute_agent_requests", lambda response, project: (response, False))
+    monkeypatch.setattr(loop, "save_response", lambda *args, **kwargs: None)
+
+    chat = Chat()
+    try:
+        loop._resolve_execution(
+            chat,
+            "Implemented backend/test/weather.test.js",
+            Project(),
+            "test",
+            Config(),
+        )
+    except RuntimeError as exc:
+        assert "handshake did not complete" in str(exc)
+    else:
+        raise AssertionError("prose-only response was accepted")
+
+    assert chat.messages
+    assert "received no write_file operation for that claim" in chat.messages[0]
+    assert "issue the actual write_file request now" in chat.messages[0]
+
+
 def test_resolve_execution_reprompts_when_response_promises_work_without_request(monkeypatch, tmp_path):
     class Project:
         execution_enabled = True
