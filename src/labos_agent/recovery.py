@@ -102,7 +102,7 @@ class RecoveryManager:
         if current.head != started_sha:
             return None
 
-        evidence_path = Path("state") / self.state.project / "last_response.md"
+        evidence_path = self.project.project_root / "state" / self.state.project / "last_response.md"
         try:
             response = evidence_path.read_text(encoding="utf-8")
             requests = parse_execution_requests(response)
@@ -219,7 +219,7 @@ class RecoveryManager:
         )
 
     def _tracked_changes_match_execution_evidence(self, current: GitSnapshot) -> bool:
-        evidence_path = Path("state") / self.state.project / "last_response.md"
+        evidence_path = self.project.project_root / "state" / self.state.project / "last_response.md"
         try:
             response = evidence_path.read_text(encoding="utf-8")
             requests = parse_execution_requests(response)
