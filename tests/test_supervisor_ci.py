@@ -81,3 +81,20 @@ def test_ci_passed_message_prevents_repeated_wait_ci():
 
     assert "Do not request WAIT_CI again for this same CI result." in CI_PASSED_MESSAGE
     assert "newly pushed commit" in CI_PASSED_MESSAGE
+
+
+def test_control_messages_are_labos_labelled():
+    from labos_agent.supervisor import (
+        CI_FAILED_MESSAGE,
+        CI_PASSED_MESSAGE,
+        CONTINUE_MESSAGE,
+        REMIND_MESSAGE,
+    )
+
+    for message, label in (
+        (REMIND_MESSAGE, "[LAB OS — STATE REMINDER]"),
+        (CONTINUE_MESSAGE, "[LAB OS — CONTINUE]"),
+        (CI_PASSED_MESSAGE, "[LAB OS — CI RESULT]"),
+        (CI_FAILED_MESSAGE, "[LAB OS — CI FAILED]"),
+    ):
+        assert message.startswith(label)
