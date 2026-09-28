@@ -365,6 +365,10 @@ def _migrate_legacy_dirty_recovery(state: AgentState, project) -> None:
     _recovery(state, project).migrate_legacy()
 
 
+def _reconcile_recovery_fingerprint(state: AgentState, project) -> None:
+    _recovery(state, project).reconcile_worktree_fingerprint()
+
+
 def _reconcile_committed_recovery(state: AgentState, project) -> None:
     _recovery(state, project).reconcile_committed(
         revalidate=lambda: _run_local_ci(project, state)
@@ -684,6 +688,7 @@ def _run_loop_impl(
                 before_git = None
                 try:
                     _migrate_legacy_dirty_recovery(state, project)
+                    _reconcile_recovery_fingerprint(state, project)
                     # Reconcile a previously validated/pushed recovery before the
                     # dirty-worktree gate. The one-shot path already does this;
                     # the autonomous continue path must do the same or it can

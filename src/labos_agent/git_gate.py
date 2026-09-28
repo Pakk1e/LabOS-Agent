@@ -164,10 +164,10 @@ def git_status(root: Path) -> str:
     return _git(root, "status", "--short")
 
 
-def snapshot(root: Path) -> GitSnapshot:
+def snapshot(root: Path, *, untracked_paths: tuple[str, ...] | None = None) -> GitSnapshot:
     status = _git(root, "status", "--porcelain=v1", "-z", "-uall")
     diff = _git(root, "diff", "HEAD", "--binary", "--")
-    untracked = _untracked_paths(root)
+    untracked = _untracked_paths(root) if untracked_paths is None else tuple(untracked_paths)
     fingerprint = hashlib.sha256(
         status.encode("utf-8", "surrogateescape")
         + b"\0"
