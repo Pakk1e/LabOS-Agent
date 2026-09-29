@@ -326,6 +326,11 @@ def test_lifecycle_rejects_invalid_transition_without_saving_notes(tmp_path):
 
 def test_lifecycle_requires_separate_development_transition_and_approval(tmp_path):
     handler, config_path, sent = _make_lifecycle_handler(tmp_path)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "docs").mkdir()
+    (repo / "docs" / "REQUIREMENTS.md").write_text("Requirements", encoding="utf-8")
+    (repo / "PLAN.md").write_text("# Plan\n\n## Acceptance Criteria\n- AC-1", encoding="utf-8")
     handler._update_lifecycle("demo", {"phase": "DEVELOPMENT"})
     assert sent["status"] == 200
     assert load_config(config_path).projects["demo"].lifecycle_phase.name == "DEVELOPMENT"
@@ -362,3 +367,40 @@ def test_existing_repository_mode_requires_local_git_repository(tmp_path):
 
     assert sent["status"] == 400
     assert "local Git repository" in sent["body"]["error"]
+
+
+def test_lifecycle_records_transition_and_approval_history(tmp_path):
+    handler, config_path, sent = _make_lifecycle_handler(tmp_path)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "docs").mkdir()
+    (repo / "docs" / "REQUIREMENTS.md").write_text("Requirements", encoding="utf-8")
+    (repo / "PLAN.md").write_text("# Plan\n\n## Acceptance Criteria\n- AC-1", encoding="utf-8")
+    handler._update_lifecycle("demo", {"phase": "DEVELOPMENT"})
+    handler._update_lifecycle("demo", {"approved": True})
+    history = (tmp_path / "state" / "demo" / "lifecycle_history.jsonl").read_text(encoding="utf-8").splitlines()
+    assert '"event": "phase_transition"' in history[0]
+    assert '"event": "approval_granted"' in history[1]
+
+
+def test_project_view_exposes_lifecycle_gate(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    repo = tmp_path / "repo"
+    (repo / "docs").mkdir(parents=True)
+    (repo / "docs" / "REQUIREMENTS.md").write_text("Requirements", encoding="utf-8")
+    (repo / "PLAN.md").write_text("# Plan\n\n## Acceptance Criteria\n- AC-1", encoding="utf-8")
+    config_path.write_text(
+        f"""projects:
+  demo:
+    repository: example/demo
+    project_root: {repo}
+    continuation_message: Continue demo
+    lifecycle:
+      phase: PLANNING
+""",
+        encoding="utf-8",
+    )
+    project = load_config(config_path).projects["demo"]
+    view = _project_view(config_path, "demo", project)
+    assert view["lifecycle_gate"]["target"] == "DEVELOPMENT"
+    assert view["lifecycle_gate"]["satisfied"] is True
