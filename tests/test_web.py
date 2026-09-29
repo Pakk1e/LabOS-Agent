@@ -335,3 +335,29 @@ def test_lifecycle_requires_separate_development_transition_and_approval(tmp_pat
     project = load_config(config_path).projects["demo"]
     assert project.lifecycle_approved
     assert project.lifecycle_approved_at
+
+
+def test_existing_repository_mode_requires_local_git_repository(tmp_path):
+    from labos_agent.web import Handler
+
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("projects: {}\n", encoding="utf-8")
+    root = tmp_path / "not-a-repo"
+    root.mkdir()
+
+    handler = object.__new__(Handler)
+    handler.server = type("Server", (), {"config_path": config_path})()
+    sent = {}
+    handler._send = lambda status, body, content_type="application/json": sent.update(
+        status=status, body=body
+    )
+
+    handler._create_project({
+        "name": "existing",
+        "repository": "Pakk1e/existing",
+        "project_root": str(root),
+        "project_mode": "existing_repository",
+    })
+
+    assert sent["status"] == 400
+    assert "local Git repository" in sent["body"]["error"]
