@@ -6,9 +6,11 @@ import os
 import re
 import subprocess
 import sys
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from threading import Lock
+from queue import Empty, Full, Queue
+from threading import Lock, Thread
 from urllib.parse import unquote, urlparse
 
 from .config import load_config
@@ -111,6 +113,124 @@ def _run_events(config_path: Path, project: str, run_number: int) -> list[dict]:
     return events[-500:]
 
 
+def _file_signature(path: Path):
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    return (stat.st_mtime_ns, stat.st_size)
+
+
+def _latest_event_signature(config_path: Path, project: str):
+    root = config_path.parent / "state" / project / "runs"
+    latest = None
+    if root.exists():
+        for path in root.glob("*.events.jsonl"):
+            signature = _file_signature(path)
+            if signature is not None and (latest is None or signature > latest):
+                latest = signature
+    return latest
+
+
+def _event_snapshot(config_path: Path) -> dict[str, tuple]:
+    """Return cheap filesystem state used by the single SSE watcher thread."""
+    snapshot = {"__config__": (_file_signature(config_path),)}
+    try:
+        config = load_config(config_path)
+        names = config.projects.keys()
+    except (OSError, ValueError, KeyError, TypeError):
+        names = ()
+    for name in names:
+        snapshot[name] = (
+            _file_signature(config_path.parent / "state" / name / "supervisor_state.json"),
+            _file_signature(config_path.parent / "state" / name / "web-process.json"),
+            _latest_event_signature(config_path, name),
+        )
+    return snapshot
+
+
+class EventHub:
+    """Broadcast project changes to all connected SSE clients."""
+
+    def __init__(self, config_path: Path, interval: float = 0.75):
+        self.config_path = config_path
+        self.interval = interval
+        self._clients: set[Queue] = set()
+        self._lock = Lock()
+        self._stop = False
+        self._thread: Thread | None = None
+        self._snapshot = _event_snapshot(config_path)
+
+    def start(self) -> None:
+        if self._thread is not None and self._thread.is_alive():
+            return
+        self._stop = False
+        self._thread = Thread(target=self._watch, name="labos-web-events", daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop = True
+        with self._lock:
+            clients = list(self._clients)
+        for client in clients:
+            self._offer(client, {"type": "shutdown"})
+        if self._thread is not None:
+            self._thread.join(timeout=2)
+            self._thread = None
+
+    def subscribe(self) -> Queue:
+        client: Queue = Queue(maxsize=20)
+        with self._lock:
+            self._clients.add(client)
+        return client
+
+    def unsubscribe(self, client: Queue) -> None:
+        with self._lock:
+            self._clients.discard(client)
+
+    @staticmethod
+    def _offer(client: Queue, payload: dict) -> None:
+        try:
+            client.put_nowait(payload)
+        except Full:
+            try:
+                client.get_nowait()
+            except Empty:
+                pass
+            try:
+                client.put_nowait(payload)
+            except Full:
+                pass
+
+    def _watch(self) -> None:
+        while not self._stop:
+            if not self._stop:
+                time.sleep(self.interval)
+            current = _event_snapshot(self.config_path)
+            previous = self._snapshot
+            self._snapshot = current
+            changed = sorted({*previous.keys(), *current.keys()} - {
+                key for key in previous.keys() & current.keys()
+                if previous[key] == current[key]
+            })
+            if not changed:
+                continue
+            payload = {"type": "project_changed", "projects": changed}
+            with self._lock:
+                clients = list(self._clients)
+            for client in clients:
+                self._offer(client, payload)
+
+
+def _sse_event(event: str, data: dict, *, retry: int | None = None) -> bytes:
+    lines = []
+    if retry is not None:
+        lines.append(f"retry: {retry}")
+    lines.append(f"event: {event}")
+    lines.append(f"data: {json.dumps(data, ensure_ascii=False, separators=(',', ':'))}")
+    return ("\\n".join(lines) + "\\n\\n").encode("utf-8")
+
+
 def _process_record(config_path: Path, name: str) -> Path:
     return config_path.parent / "state" / name / "web-process.json"
 
@@ -208,7 +328,8 @@ def _project_view(config_path: Path, name: str, project) -> dict:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "LabOS-Web/0.2"
+    server_version = "LabOS-Web/0.3"
+    protocol_version = "HTTP/1.1"
 
     @property
     def config_path(self) -> Path:
@@ -237,8 +358,38 @@ class Handler(BaseHTTPRequestHandler):
         prefix = "/api/projects/"
         return unquote(self.path.split("?", 1)[0].removeprefix(prefix).removesuffix(suffix)).strip("/")
 
+    def _stream_events(self):
+        hub: EventHub = self.server.event_hub  # type: ignore[attr-defined]
+        client = hub.subscribe()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache, no-store")
+        self.send_header("Connection", "keep-alive")
+        self.send_header("X-Accel-Buffering", "no")
+        self.end_headers()
+        try:
+            self.wfile.write(_sse_event("connected", {"projects": list(_event_snapshot(self.config_path).keys())}, retry=5000))
+            self.wfile.flush()
+            while not hub._stop:
+                try:
+                    payload = client.get(timeout=15)
+                except Empty:
+                    self.wfile.write(b": keep-alive\\n\\n")
+                    self.wfile.flush()
+                    continue
+                if payload.get("type") == "shutdown":
+                    break
+                self.wfile.write(_sse_event(payload["type"], payload))
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
+        finally:
+            hub.unsubscribe(client)
+
     def do_GET(self):
         parsed = urlparse(self.path)
+        if parsed.path == "/api/events":
+            return self._stream_events()
         if parsed.path == "/":
             path = Path(__file__).parent / "web" / "index.html"
             return self._send(200, path.read_bytes(), "text/html; charset=utf-8")
@@ -438,12 +589,15 @@ def serve(config_path: Path, host: str = "127.0.0.1", port: int = 8080) -> None:
     load_config(config_path)
     server = ThreadingHTTPServer((host, port), Handler)
     server.config_path = config_path  # type: ignore[attr-defined]
+    server.event_hub = EventHub(config_path)  # type: ignore[attr-defined]
+    server.event_hub.start()  # type: ignore[attr-defined]
     print(f"Lab OS UI: http://{host}:{port}", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
+        server.event_hub.stop()  # type: ignore[attr-defined]
         server.server_close()
 
 
