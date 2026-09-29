@@ -214,3 +214,71 @@ def test_clone_github_repository_uses_gh_clone(monkeypatch, tmp_path):
     target = tmp_path / "repo"
     _clone_github_repository("Pakk1e/NewProject", str(target))
     assert calls[0][0][0] == ["gh", "repo", "clone", "Pakk1e/NewProject", str(target)]
+
+
+def test_existing_repository_creation_does_not_bootstrap_files(tmp_path):
+    from labos_agent.web import Handler
+
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("projects: {}
+", encoding="utf-8")
+    root = tmp_path / "existing"
+    root.mkdir()
+    marker = root / "README.md"
+    marker.write_text("# Existing repository
+", encoding="utf-8")
+
+    handler = object.__new__(Handler)
+    handler.config_path = config_path
+
+    sent = {}
+    handler._send = lambda status, body, content_type="application/json": sent.update(
+        status=status, body=body
+    )
+
+    result = handler._create_project({
+        "name": "existing",
+        "repository": "Pakk1e/existing",
+        "project_root": str(root),
+        "project_mode": "existing_repository",
+        "initial_idea": "Inspect this repository first",
+    })
+
+    assert sent["status"] == 201
+    assert result is None
+    assert marker.read_text(encoding="utf-8") == "# Existing repository
+"
+    assert not (root / "docs").exists()
+    assert not (root / "AGENTS.md").exists()
+
+    config = load_config(config_path)
+    assert config.projects["existing"].lifecycle_phase.name == "DOCUMENTATION"
+
+
+def test_existing_repository_mode_rejects_repository_creation(tmp_path):
+    from labos_agent.web import Handler
+
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("projects: {}
+", encoding="utf-8")
+    root = tmp_path / "existing"
+    root.mkdir()
+
+    handler = object.__new__(Handler)
+    handler.config_path = config_path
+
+    sent = {}
+    handler._send = lambda status, body, content_type="application/json": sent.update(
+        status=status, body=body
+    )
+
+    handler._create_project({
+        "name": "existing",
+        "repository": "Pakk1e/existing",
+        "project_root": str(root),
+        "project_mode": "existing_repository",
+        "create_repository": True,
+    })
+
+    assert sent["status"] == 400
+    assert "cannot create or clone" in sent["body"]["error"]
