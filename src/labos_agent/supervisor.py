@@ -37,6 +37,19 @@ def _save_run_summary(project: str, tracker: RunTracker) -> None:
     )
     tmp.replace(path)
 
+def _save_run_event(project: str, tracker: RunTracker, event: str, **fields: object) -> None:
+    path = Path("state") / project / "runs" / f"{tracker.summary.run_number:06d}.events.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    record = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "event": event,
+        "run": tracker.summary.run_number,
+        "project": project,
+        **fields,
+    }
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+
 
 _RUN_NUMBER = 0
 
@@ -336,6 +349,7 @@ Start now by inspecting the current repository state and continue the task.
         run_started_at = datetime.now(timezone.utc)
         tracker = RunTracker(self.project_name, _next_run_number(), run_started_at)
         trace("run.start", project=self.project_name, run=tracker.summary.run_number)
+        _save_run_event(self.project_name, tracker, "run.start")
         with BrowserSession(
             self.config.browser.profile_dir,
             cdp_url=self.config.browser.cdp_url,
@@ -383,7 +397,9 @@ Start now by inspecting the current repository state and continue the task.
                 iteration = tracker.iteration
                 tracker.record(chatgpt_work=True)
                 trace("iteration.start", project=self.project_name, iteration=iteration.number)
+                _save_run_event(self.project_name, tracker, "iteration.start", iteration=iteration.number)
                 trace("chat.response", project=self.project_name, iteration=iteration.number, response_chars=len(response))
+                _save_run_event(self.project_name, tracker, "chat.response", iteration=iteration.number, response_chars=len(response))
                 analysis = parse_labos_response(response)
                 state = analysis.state
                 tracker.record(state=state.value if state else "INVALID")
@@ -486,6 +502,7 @@ Start now by inspecting the current repository state and continue the task.
                         summary=summary,
                     )
                     trace("iteration.complete", project=self.project_name, iteration=iteration.number, success=passed, state="WAIT_CI")
+                    _save_run_event(self.project_name, tracker, "iteration.complete", iteration=iteration.number, success=passed, state="WAIT_CI")
                     trace_summary(tracker.box(), project=self.project_name, success=passed)
                     stopped = self._stop_if_turn_limit(tracker, response)
                     if stopped is not None:
