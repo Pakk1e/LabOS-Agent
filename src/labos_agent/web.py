@@ -24,6 +24,16 @@ _process_lock = Lock()
 _lifecycle_lock = Lock()
 
 
+def _parse_bool(value: object, field: str, *, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str) and value.strip().lower() in {"true", "false"}:
+        return value.strip().lower() == "true"
+    raise ValueError(f"{field} must be a boolean")
+
+
 def _config_payload(path: Path) -> dict:
     import yaml
     return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
@@ -610,7 +620,10 @@ class Handler(BaseHTTPRequestHandler):
             project_mode = normalize_project_mode(body.get("project_mode", "guided"))
         except ValueError as exc:
             return self._send(400, {"error": str(exc)})
-        create_repository = bool(body.get("create_repository", False))
+        try:
+            create_repository = _parse_bool(body.get("create_repository"), "create_repository")
+        except ValueError as exc:
+            return self._send(400, {"error": str(exc)})
         visibility = str(body.get("repository_visibility", "private")).strip().lower()
         if project_mode == "existing_repository" and not create_repository:
             target = Path(root).expanduser()
@@ -691,6 +704,10 @@ class Handler(BaseHTTPRequestHandler):
             root = str(body["project_root"]).strip()
             if not root.startswith("/"):
                 return self._send(400, {"error": "project_root must be absolute"})
+            if project.get("lifecycle", {}).get("mode") == "existing_repository":
+                target = Path(root).expanduser()
+                if not target.is_dir() or not (target / ".git").exists():
+                    return self._send(400, {"error": "existing_repository mode requires a local Git repository"})
             project["project_root"] = root
         if "continuation_message" in body:
             project["continuation_message"] = str(body["continuation_message"]).strip()
