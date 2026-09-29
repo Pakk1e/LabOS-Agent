@@ -213,10 +213,10 @@ def phase_instruction(phase: ProjectPhase) -> str:
     instructions = {
         ProjectPhase.IDEA: "Do not develop yet. Clarify the initial idea and identify the questions that need human discussion.",
         ProjectPhase.BRAINSTORM: "Explore the idea with the human. Capture product goals, users, workflows, MVP, scope, out-of-scope items, open questions, alternatives, and technical considerations. Do not implement product features.",
-        ProjectPhase.DOCUMENTATION: "Turn the agreed idea into durable project documentation. Update README.md, AGENTS.md, docs/PRODUCT.md, docs/REQUIREMENTS.md, docs/ARCHITECTURE.md, docs/USER_FLOWS.md, docs/DECISIONS.md, and docs/ROADMAP.md as appropriate. Do not begin feature implementation.",
-        ProjectPhase.PLANNING: "Create a concrete implementation plan from the agreed documentation, including milestones, tasks, dependencies, technical implementation sequence, and acceptance criteria. Do not implement the planned features yet.",
+        ProjectPhase.DOCUMENTATION: "Turn the agreed idea into durable project documentation. Complete README.md, AGENTS.md, docs/PRODUCT.md, docs/REQUIREMENTS.md, docs/ARCHITECTURE.md, docs/USER_FLOWS.md, docs/DECISIONS.md, and docs/ROADMAP.md as appropriate. Remove template placeholders before advancing to PLANNING. Do not begin feature implementation.",
+        ProjectPhase.PLANNING: "Create a concrete implementation plan in PLAN.md or docs/PLAN.md from the agreed documentation, including milestones, tasks, dependencies, technical implementation sequence, and an Acceptance Criteria section. Do not implement the planned features yet.",
         ProjectPhase.DEVELOPMENT: "Implement the human-approved plan. Keep documentation synchronized with meaningful architectural or requirement changes. Run tests and use the normal commit/CI workflow.",
-        ProjectPhase.VALIDATION: "Validate the implementation against requirements, architecture, and acceptance criteria. Fix discovered issues and update documentation. Do not expand scope without approval.",
+        ProjectPhase.VALIDATION: "Validate the implementation against requirements, architecture, and acceptance criteria. Record Validation Results and Acceptance Criteria results in VALIDATION.md or docs/VALIDATION.md. Fix discovered issues and update documentation. Do not expand scope without approval.",
         ProjectPhase.MAINTENANCE: "Continue normal maintenance against the documented project contract, requirements, architecture, and roadmap.",
     }
     return instructions[phase]
