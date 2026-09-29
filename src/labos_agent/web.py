@@ -14,7 +14,7 @@ from threading import Lock, Thread
 from urllib.parse import unquote, urlparse
 
 from .config import load_config
-from .lifecycle import ProjectPhase, normalize_phase, next_phase
+from .lifecycle import (LifecycleState, ProjectPhase, can_start_supervisor, lifecycle_state_path, normalize_phase, normalize_project_mode, next_phase, save_lifecycle_state)
 
 _PROJECT_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$")
 _REPO_RE = re.compile(r"^[^/\s]+/[^/\s]+$")
@@ -101,6 +101,7 @@ def _bootstrap_project_documents(root: str, name: str, idea: str) -> None:
         "ARCHITECTURE.md": "# Architecture\n\n_To be completed during documentation._\n",
         "DECISIONS.md": "# Architecture Decisions\n\nRecord important decisions and their rationale here.\n",
         "ROADMAP.md": "# Roadmap\n\n_To be created after requirements and architecture are agreed._\n",
+        "USER_FLOWS.md": "# User Flows\n\n_Document the important user workflows during the documentation phase._\n",
     }
     for filename, content in templates.items():
         path = docs / filename
@@ -202,6 +203,7 @@ def _event_snapshot(config_path: Path) -> dict[str, tuple]:
         snapshot[name] = (
             _file_signature(config_path.parent / "state" / name / "supervisor_state.json"),
             _file_signature(config_path.parent / "state" / name / "web-process.json"),
+            _file_signature(lifecycle_state_path(config_path.parent / "state", name)),
             _latest_event_signature(config_path, name),
         )
     return snapshot
@@ -369,6 +371,7 @@ def _project_view(config_path: Path, name: str, project) -> dict:
         "project_mode": project.project_mode,
         "lifecycle_phase": project.lifecycle_phase.value,
         "lifecycle_approved": project.lifecycle_approved,
+        "lifecycle_approved_at": project.lifecycle_approved_at,
         "project_url": project.project_url,
         "new_chat_selector": project.new_chat_selector,
         "ci_stage": project.ci_stage,
@@ -546,6 +549,10 @@ class Handler(BaseHTTPRequestHandler):
         projects = payload.setdefault("projects", {})
         if name in projects:
             return self._send(409, {"error": "project already exists"})
+        try:
+            project_mode = normalize_project_mode(body.get("project_mode", "guided"))
+        except ValueError as exc:
+            return self._send(400, {"error": str(exc)})
         create_repository = bool(body.get("create_repository", False))
         visibility = str(body.get("repository_visibility", "private")).strip().lower()
         if create_repository:
@@ -562,19 +569,25 @@ class Handler(BaseHTTPRequestHandler):
                 detail = (exc.stderr or exc.stdout or "").strip()
                 return self._send(502, {"error": detail or "GitHub repository creation or clone failed"})
         _bootstrap_project_documents(root, name, str(body.get("initial_idea", "")))
+        initial_phase = (
+            ProjectPhase.BRAINSTORM
+            if project_mode == "guided"
+            else ProjectPhase.DOCUMENTATION
+        )
         projects[name] = {
             "repository": repository,
             "project_root": root,
             "continuation_message": body.get("continuation_message") or f"Continue {name.title()}",
             "initial_idea": str(body.get("initial_idea", "")),
-            "lifecycle": {
-                "mode": str(body.get("project_mode", "guided")).strip().lower() or "guided",
-                "phase": "BRAINSTORM" if str(body.get("project_mode", "guided")).strip().lower() == "guided" else "DOCUMENTATION",
-                "approved": False,
-            },
+            "lifecycle": {"mode": project_mode},
         }
         self._apply_optional(projects[name], body)
         _write_config(self.config_path, payload)
+        save_lifecycle_state(
+            self.config_path.parent / "state",
+            name,
+            LifecycleState(phase=initial_phase),
+        )
         config = load_config(self.config_path)
         return self._send(201, _project_view(self.config_path, name, config.projects[name]))
 
@@ -643,32 +656,43 @@ class Handler(BaseHTTPRequestHandler):
 
 
     def _update_lifecycle(self, name: str, body: dict):
-        payload = _config_payload(self.config_path)
-        projects = payload.setdefault("projects", {})
-        project = projects.get(name)
-        if project is None:
+        config = load_config(self.config_path)
+        project_config = config.projects.get(name)
+        if project_config is None:
             return self._send(404, {"error": "project not found"})
-        lifecycle = project.setdefault("lifecycle", {})
-        current = normalize_phase(lifecycle.get("phase"))
+        if _process_status(self.config_path, name)["running"]:
+            return self._send(409, {"error": "stop the supervisor before changing the lifecycle"})
+        current = project_config.lifecycle_phase
         requested = body.get("phase")
         target = current if requested is None else normalize_phase(str(requested))
         approved = bool(body.get("approved", False))
         if "brainstorm_notes" in body:
+            payload = _config_payload(self.config_path)
+            project = payload["projects"][name]
             project["brainstorm_notes"] = str(body.get("brainstorm_notes", "")).strip()
             _write_brainstorm_notes(project["project_root"], str(project.get("initial_idea", "")), project["brainstorm_notes"])
+            _write_config(self.config_path, payload)
         if target == current and not approved and "brainstorm_notes" not in body:
             return self._send(400, {"error": "no lifecycle change requested"})
+        state = LifecycleState(
+            phase=current,
+            approved=project_config.lifecycle_approved,
+            approved_at=project_config.lifecycle_approved_at,
+        )
         if target != current:
             expected = next_phase(current)
             if target != expected:
                 return self._send(409, {"error": "invalid lifecycle transition"})
-            lifecycle["phase"] = target.value
-            lifecycle["approved"] = False
+            state = LifecycleState(phase=target)
         if approved:
-            if target.value != "DEVELOPMENT":
+            if target is not ProjectPhase.DEVELOPMENT:
                 return self._send(400, {"error": "human approval is required only for the DEVELOPMENT gate"})
-            lifecycle["approved"] = True
-        _write_config(self.config_path, payload)
+            state = LifecycleState(
+                phase=target,
+                approved=True,
+                approved_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
+            )
+        save_lifecycle_state(self.config_path.parent / "state", name, state)
         config = load_config(self.config_path)
         return self._send(200, _project_view(self.config_path, name, config.projects[name]))
     def _stop_supervisor(self, name: str):
@@ -684,8 +708,17 @@ class Handler(BaseHTTPRequestHandler):
 
     def _start_supervisor(self, name: str, body: dict):
         config = load_config(self.config_path)
-        if name not in config.projects:
+        project = config.projects.get(name)
+        if project is None:
             return self._send(404, {"error": "project not found"})
+        if not can_start_supervisor(project.lifecycle_phase, project.lifecycle_approved):
+            return self._send(
+                409,
+                {
+                    "error": "human approval is required before starting the supervisor in the DEVELOPMENT lifecycle phase",
+                    "phase": project.lifecycle_phase.value,
+                },
+            )
         existing_status = _process_status(self.config_path, name)
         if existing_status["running"]:
             return self._send(409, {"error": "supervisor already running", "pid": existing_status["pid"]})
