@@ -6,6 +6,7 @@ from enum import StrEnum
 import json
 from pathlib import Path
 import re
+import shutil
 
 
 class ProjectPhase(StrEnum):
@@ -158,11 +159,13 @@ def validate_acceptance_criteria(project_root: Path) -> tuple[bool, tuple[str, .
         return False, ("implementation plan contains no acceptance criteria",)
     if any(not criterion for criterion in criteria):
         return False, ("every acceptance criterion must start with an AC-* identifier",)
+    validation_lines = validation_text.splitlines()
     missing = []
     for criterion_id in criteria:
-        if criterion_id not in validation_text:
+        matching = [line for line in validation_lines if re.search(rf"\b{re.escape(criterion_id)}\b", line, re.IGNORECASE)]
+        if not matching:
             missing.append(f"{criterion_id} is missing from validation")
-        elif "PASS" not in validation_text[validation_text.index(criterion_id):validation_text.index(criterion_id) + 300].upper():
+        elif not any(re.search(r"\bPASS\b", line, re.IGNORECASE) for line in matching):
             missing.append(f"{criterion_id} is not marked PASS")
     return not missing, tuple(missing)
 
@@ -247,6 +250,22 @@ def load_lifecycle_state(
             raise ValueError("lifecycle state approved_at must be a string or null")
         return LifecycleState(phase=phase, approved=approved_raw, approved_at=approved_at)
     except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        backup = path.with_suffix(path.suffix + ".bak")
+        if backup.exists():
+            try:
+                raw = json.loads(backup.read_text(encoding="utf-8"))
+                if not isinstance(raw, dict) or "phase" not in raw:
+                    raise ValueError("invalid lifecycle backup")
+                phase = normalize_phase(raw.get("phase"))
+                approved_raw = raw.get("approved", False)
+                if not isinstance(approved_raw, bool):
+                    raise ValueError("invalid lifecycle backup approval")
+                approved_at = raw.get("approved_at")
+                if approved_at is not None and not isinstance(approved_at, str):
+                    raise ValueError("invalid lifecycle backup approval timestamp")
+                return LifecycleState(phase=phase, approved=approved_raw, approved_at=approved_at)
+            except (OSError, ValueError, TypeError, json.JSONDecodeError):
+                pass
         raise ValueError(f"invalid lifecycle state for project {project}") from exc
 
 
@@ -263,6 +282,9 @@ def save_lifecycle_state(
         "approved_at": state.approved_at,
         "approval_required": state.approval_required,
     }
+    backup = path.with_suffix(path.suffix + ".bak")
+    if path.exists():
+        shutil.copy2(path, backup)
     tmp = path.with_suffix(".tmp")
     tmp.write_text(
         json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
