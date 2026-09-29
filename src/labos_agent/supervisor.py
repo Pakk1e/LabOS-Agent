@@ -336,11 +336,14 @@ Start now by inspecting the current repository state and continue the task.
                 tracker.record(state=state.value if state else "INVALID")
 
                 if state is None:
+                    tracker.finish_iteration("INVALID", datetime.now(timezone.utc), "missing or invalid state marker")
+                    trace("iteration.complete", project=self.project_name, iteration=iteration.number, success=False, state="INVALID")
                     response = chat.send_and_wait_for_response(
                         REMIND_MESSAGE,
                         timeout_seconds=self.config.browser.response_timeout_seconds,
                         quiet_seconds=self.config.browser.quiet_seconds,
                     )
+                    tracker.start_iteration(datetime.now(timezone.utc))
                 elif state == ChatState.DONE:
                     tracker.finish_iteration("DONE", datetime.now(timezone.utc))
                     tracker.finish_run("DONE", datetime.now(timezone.utc))
