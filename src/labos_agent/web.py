@@ -352,6 +352,10 @@ def _project_view(config_path: Path, name: str, project) -> dict:
         "project_root": str(project.project_root),
         "project_name": project.project_name or name,
         "continuation_message": project.continuation_message,
+        "initial_idea": project.initial_idea,
+        "project_mode": project.project_mode,
+        "lifecycle_phase": project.lifecycle_phase.value,
+        "lifecycle_approved": project.lifecycle_approved,
         "project_url": project.project_url,
         "new_chat_selector": project.new_chat_selector,
         "ci_stage": project.ci_stage,
@@ -476,6 +480,9 @@ class Handler(BaseHTTPRequestHandler):
             body = self._json()
             if parsed.path == "/api/projects":
                 return self._create_project(body)
+            if parsed.path.startswith("/api/projects/") and parsed.path.endswith("/lifecycle"):
+                name = unquote(parsed.path.removeprefix("/api/projects/").removesuffix("/lifecycle")).strip("/")
+                return self._update_lifecycle(name, body)
             if parsed.path.startswith("/api/projects/") and parsed.path.endswith("/supervise"):
                 name = unquote(parsed.path.removeprefix("/api/projects/").removesuffix("/supervise")).strip("/")
                 return self._start_supervisor(name, body)
@@ -610,6 +617,32 @@ class Handler(BaseHTTPRequestHandler):
         return self._send(202, {"action": action, "run_id": run_id, "project": name})
 
 
+    def _update_lifecycle(self, name: str, body: dict):
+        payload = _config_payload(self.config_path)
+        projects = payload.setdefault("projects", {})
+        project = projects.get(name)
+        if project is None:
+            return self._send(404, {"error": "project not found"})
+        lifecycle = project.setdefault("lifecycle", {})
+        current = normalize_phase(lifecycle.get("phase"))
+        requested = body.get("phase")
+        target = current if requested is None else normalize_phase(str(requested))
+        approved = bool(body.get("approved", False))
+        if target == current and not approved:
+            return self._send(400, {"error": "no lifecycle change requested"})
+        if target != current:
+            expected = next_phase(current)
+            if target != expected:
+                return self._send(409, {"error": "invalid lifecycle transition"})
+            lifecycle["phase"] = target.value
+            lifecycle["approved"] = False
+        if approved:
+            if target.value != "DEVELOPMENT":
+                return self._send(400, {"error": "human approval is required only for the DEVELOPMENT gate"})
+            lifecycle["approved"] = True
+        _write_config(self.config_path, payload)
+        config = load_config(self.config_path)
+        return self._send(200, _project_view(self.config_path, name, config.projects[name]))
     def _stop_supervisor(self, name: str):
         status = _process_status(self.config_path, name)
         if not status["running"]:
