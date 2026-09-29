@@ -228,7 +228,7 @@ def _sse_event(event: str, data: dict, *, retry: int | None = None) -> bytes:
         lines.append(f"retry: {retry}")
     lines.append(f"event: {event}")
     lines.append(f"data: {json.dumps(data, ensure_ascii=False, separators=(',', ':'))}")
-    return ("\\n".join(lines) + "\\n\\n").encode("utf-8")
+    return ("\n".join(lines) + "\n\n").encode("utf-8")
 
 
 def _process_record(config_path: Path, name: str) -> Path:
