@@ -65,17 +65,18 @@ def _get_json(url: str) -> dict:
             return json.load(response)
 
 
-def _gh_run_json(repository: str, ci_run_id: int | None = None) -> dict | None:
-    if ci_run_id is None:
-        command = [
-            "gh", "run", "list", "-R", repository, "--limit", "1",
-            "--json", "databaseId,status,conclusion,headSha,name,createdAt,url",
-        ]
-    else:
-        command = [
-            "gh", "run", "view", str(ci_run_id), "-R", repository,
-            "--json", "databaseId,status,conclusion,headSha,name,createdAt,url",
-        ]
+def _gh_run_json(
+    repository: str,
+    ci_run_id: int | None = None,
+    *,
+    head_sha: str | None = None,
+) -> dict | None:
+    fields = "databaseId,number,status,conclusion,headSha,name,createdAt,url"
+    command = [
+        "gh", "run", "list", "-R", repository,
+        "--limit", "20" if ci_run_id is None else "100",
+        "--json", fields,
+    ]
     try:
         result = subprocess.run(
             command,
@@ -86,10 +87,16 @@ def _gh_run_json(repository: str, ci_run_id: int | None = None) -> dict | None:
         )
     except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return None
+    runs = json.loads(result.stdout)
     if ci_run_id is None:
-        runs = json.loads(result.stdout)
         return runs[0] if runs else None
-    return json.loads(result.stdout)
+    # LABOS_STATE.CI_RUN is the workflow run number, not GitHub's database ID.
+    matches = [
+        run for run in runs
+        if run.get("number") == ci_run_id
+        and (head_sha is None or run.get("headSha") == head_sha)
+    ]
+    return matches[0] if matches else None
 
 
 def observe_github(repository: str, *, ci_run_id: int | None = None) -> GitHubObservation:
@@ -99,7 +106,7 @@ def observe_github(repository: str, *, ci_run_id: int | None = None) -> GitHubOb
     ref = _get_json(f"https://api.github.com/repos/{owner}/{name}/git/ref/heads/{branch}")
     commit_sha = str(ref["object"]["sha"])
 
-    latest = _gh_run_json(repository, ci_run_id)
+    latest = _gh_run_json(repository, ci_run_id, head_sha=commit_sha)
     return GitHubObservation(
         branch=branch,
         commit_sha=commit_sha,
