@@ -313,6 +313,14 @@ Start now by inspecting the current repository state and continue the task.
     def _prompt(self, message: str) -> str:
         return message.rstrip() + "\n\n" + STATE_BLOCK_INSTRUCTION
 
+    def _stop_if_turn_limit(self, tracker: RunTracker, response: str) -> str | None:
+        if not self.max_turns or self.turns < self.max_turns:
+            return None
+        tracker.finish_run("STOPPED", datetime.now(timezone.utc))
+        trace_summary(tracker.box(), project=self.project_name)
+        trace("run.stop", project=self.project_name, run=tracker.summary.run_number)
+        return response
+
     def run(self) -> str:
         run_started_at = datetime.now(timezone.utc)
         tracker = RunTracker(self.project_name, _next_run_number(), run_started_at)
@@ -391,6 +399,9 @@ Start now by inspecting the current repository state and continue the task.
                         timeout_seconds=self.config.browser.response_timeout_seconds,
                         quiet_seconds=self.config.browser.quiet_seconds,
                     )
+                    stopped = self._stop_if_turn_limit(tracker, response)
+                    if stopped is not None:
+                        return stopped
                     tracker.start_iteration(datetime.now(timezone.utc))
                 elif state is None:
                     tracker.finish_iteration("INVALID", datetime.now(timezone.utc), "missing or invalid state marker")
@@ -400,6 +411,9 @@ Start now by inspecting the current repository state and continue the task.
                         timeout_seconds=self.config.browser.response_timeout_seconds,
                         quiet_seconds=self.config.browser.quiet_seconds,
                     )
+                    stopped = self._stop_if_turn_limit(tracker, response)
+                    if stopped is not None:
+                        return stopped
                     tracker.start_iteration(datetime.now(timezone.utc))
                 elif state == ChatState.DONE:
                     observed = observe_github(
@@ -461,24 +475,39 @@ Start now by inspecting the current repository state and continue the task.
                     )
                     trace("iteration.complete", project=self.project_name, iteration=iteration.number, success=passed, state="WAIT_CI")
                     trace_summary(tracker.box(), project=self.project_name, success=passed)
+                    stopped = self._stop_if_turn_limit(tracker, response)
+                    if stopped is not None:
+                        return stopped
                     response = chat.send_and_wait_for_response(
                         CI_PASSED_MESSAGE if passed else CI_FAILED_MESSAGE,
                         timeout_seconds=self.config.browser.response_timeout_seconds,
                         quiet_seconds=self.config.browser.quiet_seconds,
                     )
+                    stopped = self._stop_if_turn_limit(tracker, response)
+                    if stopped is not None:
+                        return stopped
                     tracker.start_iteration(datetime.now(timezone.utc))
                 elif state == ChatState.FIX_CI:
                     tracker.finish_iteration("FIX_CI", datetime.now(timezone.utc))
                     trace("iteration.complete", project=self.project_name, iteration=iteration.number, success=False, state="FIX_CI")
+                    stopped = self._stop_if_turn_limit(tracker, response)
+                    if stopped is not None:
+                        return stopped
                     response = chat.send_and_wait_for_response(
                         CI_FAILED_MESSAGE,
                         timeout_seconds=self.config.browser.response_timeout_seconds,
                         quiet_seconds=self.config.browser.quiet_seconds,
                     )
+                    stopped = self._stop_if_turn_limit(tracker, response)
+                    if stopped is not None:
+                        return stopped
                     tracker.start_iteration(datetime.now(timezone.utc))
                 else:
                     tracker.finish_iteration("CONTINUE", datetime.now(timezone.utc))
                     trace("iteration.complete", project=self.project_name, iteration=iteration.number, success=True, state="CONTINUE")
+                    stopped = self._stop_if_turn_limit(tracker, response)
+                    if stopped is not None:
+                        return stopped
                     response = chat.send_and_wait_for_response(
                         CONTINUE_MESSAGE,
                         timeout_seconds=self.config.browser.response_timeout_seconds,
@@ -486,8 +515,3 @@ Start now by inspecting the current repository state and continue the task.
                     )
                     tracker.start_iteration(datetime.now(timezone.utc))
 
-                if self.max_turns and self.turns >= self.max_turns:
-                    tracker.finish_run("STOPPED", datetime.now(timezone.utc))
-                    trace_summary(tracker.box(), project=self.project_name)
-                    trace("run.stop", project=self.project_name, run=tracker.summary.run_number)
-                    return response
