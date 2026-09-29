@@ -375,3 +375,24 @@ def test_lifecycle_state_ignores_interrupted_temp_file(tmp_path):
     )
     assert loaded.phase is ProjectPhase.PLANNING
     assert not loaded.approved
+
+
+def test_corrupt_lifecycle_state_recovers_from_backup(tmp_path):
+    state_root = tmp_path / "state"
+    save_lifecycle_state(state_root, "demo", LifecycleState(phase=ProjectPhase.PLANNING))
+    save_lifecycle_state(state_root, "demo", LifecycleState(phase=ProjectPhase.DEVELOPMENT, approved=True, approved_at="2026-09-29T00:00:00+00:00"))
+    (state_root / "demo" / "project_lifecycle.json").write_text("{broken", encoding="utf-8")
+    loaded = load_lifecycle_state(state_root, "demo")
+    assert loaded.phase is ProjectPhase.PLANNING
+    assert not loaded.approved
+
+
+def test_acceptance_validation_does_not_match_pass_from_next_criterion(tmp_path):
+    from labos_agent.lifecycle import validate_acceptance_criteria
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "PLAN.md").write_text("# Plan\n\n## Acceptance Criteria\n- AC-1 first\n- AC-2 second", encoding="utf-8")
+    (root / "VALIDATION.md").write_text("# Validation\n\n## Validation Results\nAC-1 NOT PASS\nAC-2 PASS", encoding="utf-8")
+    ok, missing = validate_acceptance_criteria(root)
+    assert not ok
+    assert "AC-1 is not marked PASS" in missing
