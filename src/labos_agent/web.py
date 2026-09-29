@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 import os
 import re
 import subprocess
@@ -690,7 +691,7 @@ class Handler(BaseHTTPRequestHandler):
             state = LifecycleState(
                 phase=target,
                 approved=True,
-                approved_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
+                approved_at=datetime.now(timezone.utc).isoformat(),
             )
         save_lifecycle_state(self.config_path.parent / "state", name, state)
         config = load_config(self.config_path)
