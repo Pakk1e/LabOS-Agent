@@ -263,10 +263,19 @@ turns the agreed discussion into requirements, product definition,
 architecture, decisions and roadmap. PLANNING converts that documentation
 into implementation tasks and acceptance criteria.
 
-Human approval is required before DEVELOPMENT can run. The LabOS UI exposes
-the current lifecycle phase, the next phase, and the development approval
-gate. The low-level supervisor state protocol (CONTINUE, WAIT_CI, FIX_CI,
-DONE) remains separate from the project lifecycle.
+Lifecycle transitions are evidence-gated. Moving into PLANNING requires the
+durable documentation set to exist and contain non-placeholder content.
+Moving into DEVELOPMENT requires a requirements document plus an implementation
+plan containing an **Acceptance Criteria** section. Human approval is then
+required as a separate action before DEVELOPMENT can run. Moving into
+MAINTENANCE requires a validation report containing **Validation Results** and
+**Acceptance Criteria** sections. Lifecycle transitions and approvals are
+recorded in `state/<project>/lifecycle_history.jsonl`.
+
+The LabOS UI exposes the current lifecycle phase, next phase, approval status,
+and the evidence gate with missing items. The low-level supervisor state
+protocol (CONTINUE, WAIT_CI, FIX_CI, DONE) remains separate from the project
+lifecycle.
 
 Projects may also use **specification** mode when the human already has a
 sufficiently complete specification; this starts at DOCUMENTATION rather than
