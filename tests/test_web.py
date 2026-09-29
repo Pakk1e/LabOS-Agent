@@ -538,3 +538,70 @@ def test_concurrent_lifecycle_transition_allows_only_one_winner(tmp_path):
     for thread in threads: thread.join()
     assert sorted(results) == [200, 400]
     assert load_config(config_path).projects["demo"].lifecycle_phase.name == "DEVELOPMENT"
+
+
+def test_create_project_rejects_false_string_as_true_boolean(tmp_path):
+    from labos_agent.web import Handler
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("projects: {}\n", encoding="utf-8")
+    root = tmp_path / "repo"
+    handler = object.__new__(Handler)
+    handler.server = type("Server", (), {"config_path": config_path})()
+    sent = {}
+    handler._send = lambda status, body, content_type="application/json": sent.update(status=status, body=body)
+    handler._create_project({
+        "name": "demo",
+        "repository": "example/demo",
+        "project_root": str(root),
+        "project_mode": "guided",
+        "initial_idea": "Idea",
+        "create_repository": "false",
+    })
+    assert sent["status"] == 201
+    assert not (root / ".git").exists()
+
+
+def test_create_project_rejects_malformed_boolean(tmp_path):
+    from labos_agent.web import Handler
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("projects: {}\n", encoding="utf-8")
+    handler = object.__new__(Handler)
+    handler.server = type("Server", (), {"config_path": config_path})()
+    sent = {}
+    handler._send = lambda status, body, content_type="application/json": sent.update(status=status, body=body)
+    handler._create_project({
+        "name": "demo",
+        "repository": "example/demo",
+        "project_root": str(tmp_path / "repo"),
+        "project_mode": "guided",
+        "initial_idea": "Idea",
+        "create_repository": "yes",
+    })
+    assert sent["status"] == 400
+    assert "boolean" in sent["body"]["error"]
+
+
+def test_existing_repository_project_root_update_requires_git(tmp_path):
+    from labos_agent.web import Handler
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        f"""projects:
+  demo:
+    repository: example/demo
+    project_root: {tmp_path / "repo"}
+    continuation_message: Continue demo
+    lifecycle:
+      mode: existing_repository
+      phase: DOCUMENTATION
+""",
+        encoding="utf-8",
+    )
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    handler = object.__new__(Handler)
+    handler.server = type("Server", (), {"config_path": config_path})()
+    sent = {}
+    handler._send = lambda status, body, content_type="application/json": sent.update(status=status, body=body)
+    handler._update_project("demo", {"project_root": str(tmp_path / "not-git")})
+    assert sent["status"] == 400
