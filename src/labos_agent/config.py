@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 import yaml
 
+from .lifecycle import ProjectPhase, normalize_phase
+
 @dataclass(frozen=True)
 class BrowserConfig:
     cdp_url: str = "http://127.0.0.1:9222"
@@ -31,6 +33,10 @@ class ProjectConfig:
     execution_command_timeout_seconds: float = 300.0
     remote_ci_timeout_seconds: float = 1200.0
     remote_ci_poll_seconds: float = 5.0
+    lifecycle_phase: ProjectPhase = ProjectPhase.IDEA
+    lifecycle_approved: bool = False
+    project_mode: str = "guided"
+    initial_idea: str = ""
 
 @dataclass(frozen=True)
 class AppConfig:
@@ -80,5 +86,9 @@ def load_config(path: Path) -> AppConfig:
             execution_command_timeout_seconds=float(value.get("execution",{}).get("command_timeout_seconds",300)),
             remote_ci_timeout_seconds=float(value.get("remote_ci",{}).get("timeout_seconds",1200)),
             remote_ci_poll_seconds=float(value.get("remote_ci",{}).get("poll_seconds",5)),
+            lifecycle_phase=normalize_phase(value.get("lifecycle", {}).get("phase")),
+            lifecycle_approved=bool(value.get("lifecycle", {}).get("approved", False)),
+            project_mode=str(value.get("lifecycle", {}).get("mode", "guided")),
+            initial_idea=str(value.get("initial_idea", "")),
         )
     return AppConfig(browser=browser, projects=projects)
