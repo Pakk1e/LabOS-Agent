@@ -102,3 +102,32 @@ def test_supervisor_refuses_unapproved_development(tmp_path):
     supervisor = ConversationSupervisor(AppConfig(projects={"demo": project}), "demo")
     with pytest.raises(SupervisorError, match="human approval"):
         supervisor.run()
+
+
+def test_config_reads_runtime_lifecycle_state(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """projects:
+  demo:
+    repository: example/demo
+    project_root: /tmp/demo
+    continuation_message: Continue demo
+    lifecycle:
+      mode: guided
+      phase: BRAINSTORM
+""",
+        encoding="utf-8",
+    )
+    save_lifecycle_state(
+        tmp_path / "state",
+        "demo",
+        LifecycleState(
+            phase=ProjectPhase.PLANNING,
+            approved=False,
+        ),
+    )
+    from labos_agent.config import load_config
+
+    project = load_config(config_path).projects["demo"]
+    assert project.lifecycle_phase is ProjectPhase.PLANNING
+    assert project.project_mode == "guided"
