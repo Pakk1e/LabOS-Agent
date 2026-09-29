@@ -790,6 +790,23 @@ def test_workspace_helpers_expose_documentation_validation_and_assessment(tmp_pa
     assert assessment == {}
 
 
+def test_web_json_rejects_non_object_body():
+    from labos_agent.web import Handler
+    handler = object.__new__(Handler)
+    handler.headers = {"Content-Length": "2", "Content-Type": "application/json"}
+    handler.rfile = __import__("io").BytesIO(b"[]")
+    with __import__("pytest").raises(ValueError, match="JSON body must be an object"):
+        handler._json()
+
+
+def test_existing_repository_requires_valid_git_metadata(tmp_path):
+    from labos_agent.web import _is_git_repository
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / ".git").mkdir()
+    assert not _is_git_repository(root)
+
+
 def test_web_json_rejects_oversized_body():
     from labos_agent.web import Handler
     handler = object.__new__(Handler)

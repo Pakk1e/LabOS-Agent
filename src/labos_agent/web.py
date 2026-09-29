@@ -380,13 +380,26 @@ def _ci_jobs(repository: str, run_id: int) -> list[dict]:
 
 
 
+def _is_git_repository(root: Path) -> bool:
+    if not root.is_dir():
+        return False
+    try:
+        subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--git-dir"],
+            check=True, capture_output=True, text=True, timeout=10,
+        )
+        return True
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return False
+
+
 def _assess_existing_repository(config_path: Path, project: str, root: Path) -> Path:
     path = config_path.parent / "state" / project / "repository_assessment.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     assessment = {
         "project": project,
         "root": str(root),
-        "git_repository": (root / ".git").exists(),
+        "git_repository": _is_git_repository(root),
         "branch": None,
         "head": None,
         "dirty": None,
@@ -573,7 +586,10 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", "0"))
             if length > _MAX_BODY_BYTES:
                 raise ValueError("request body too large")
-            return json.loads(self.rfile.read(length) or b"{}")
+            payload = json.loads(self.rfile.read(length) or b"{}")
+            if not isinstance(payload, dict):
+                raise ValueError("JSON body must be an object")
+            return payload
         except json.JSONDecodeError as exc:
             raise ValueError("invalid JSON body") from exc
 
@@ -731,9 +747,8 @@ class Handler(BaseHTTPRequestHandler):
             target = Path(root).expanduser()
             if not target.is_dir():
                 return self._send(400, {"error": "existing_repository mode requires an existing local repository directory"})
-            git_metadata = target / ".git"
-            if not git_metadata.exists():
-                return self._send(400, {"error": "existing_repository mode requires a local Git repository"})
+            if not _is_git_repository(target):
+                return self._send(400, {"error": "existing_repository mode requires a valid local Git repository"})
         if create_repository:
             if project_mode == "existing_repository":
                 return self._send(
@@ -812,8 +827,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(400, {"error": "project_root must be absolute"})
             if project.get("lifecycle", {}).get("mode") == "existing_repository":
                 target = Path(root).expanduser()
-                if not target.is_dir() or not (target / ".git").exists():
-                    return self._send(400, {"error": "existing_repository mode requires a local Git repository"})
+                if not _is_git_repository(target):
+                    return self._send(400, {"error": "existing_repository mode requires a valid local Git repository"})
             project["project_root"] = root
         if "continuation_message" in body:
             project["continuation_message"] = str(body["continuation_message"]).strip()
