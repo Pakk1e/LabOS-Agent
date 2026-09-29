@@ -82,3 +82,28 @@ def test_run_events_missing_timeline_is_empty(tmp_path):
     from labos_agent.web import _run_events
 
     assert _run_events(tmp_path / "config.yaml", "weather", 7) == []
+
+def test_process_record_is_cleared_when_pid_is_stale(tmp_path):
+    from labos_agent.web import _process_record, _process_status
+
+    record = _process_record(tmp_path / "config.yaml", "weather")
+    record.parent.mkdir(parents=True)
+    record.write_text(
+        '{"pid": 999999999, "project": "weather", "config": "' + str(tmp_path / "config.yaml") + '"}',
+        encoding="utf-8",
+    )
+    assert _process_status(tmp_path / "config.yaml", "weather")["running"] is False
+    assert not record.exists()
+
+
+def test_persist_process_writes_project_identity(tmp_path):
+    from labos_agent.web import _persist_process, _process_record
+
+    class FakeProcess:
+        pid = 12345
+
+    config = tmp_path / "config.yaml"
+    _persist_process(config, "weather", FakeProcess())
+    record = _process_record(config, "weather")
+    data = __import__("json").loads(record.read_text(encoding="utf-8"))
+    assert data == {"pid": 12345, "project": "weather", "config": str(config)}
