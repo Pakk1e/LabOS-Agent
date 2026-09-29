@@ -152,3 +152,27 @@ def test_lifecycle_state_rejects_corrupt_approved_file(tmp_path):
     )
     with pytest.raises(ValueError, match="invalid lifecycle state"):
         load_lifecycle_state(state_root, "demo")
+
+
+def test_lifecycle_state_rejects_missing_phase(tmp_path):
+    state_root = tmp_path / "state"
+    path = state_root / "demo"
+    path.mkdir(parents=True)
+    (path / "project_lifecycle.json").write_text(
+        '{"approved":false,"approved_at":null}',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="invalid lifecycle state"):
+        load_lifecycle_state(state_root, "demo")
+
+
+def test_lifecycle_state_rejects_non_boolean_approval(tmp_path):
+    state_root = tmp_path / "state"
+    path = state_root / "demo"
+    path.mkdir(parents=True)
+    (path / "project_lifecycle.json").write_text(
+        '{"phase":"DEVELOPMENT","approved":"false","approved_at":null}',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="invalid lifecycle state"):
+        load_lifecycle_state(state_root, "demo")
