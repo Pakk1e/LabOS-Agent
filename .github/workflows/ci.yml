@@ -1,5 +1,9 @@
 name: LabOS-Agent CI
 
+concurrency:
+  group: labos-agent-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [main, "agent/**"]
@@ -7,6 +11,7 @@ on:
 
 jobs:
   test:
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,4 +23,4 @@ jobs:
       - name: Install browser
         run: python -m playwright install --with-deps chromium
       - name: Test
-        run: python -m pytest -q
+        run: python -m pytest -vv --durations=20
