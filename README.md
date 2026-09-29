@@ -146,3 +146,15 @@ The control UI now includes the next operations-console layers:
 The UI exposes these through the **Overview**, **Runs**, **CI / Actions**, and **Settings** views. GitHub Actions data is read through the authenticated `gh` CLI on the Lab OS server, so the UI does not maintain a second GitHub authentication mechanism.
 
 Completed supervisor runs are persisted under `state/<project>/runs/`. Existing state is preserved when a project is archived from `config.yaml`.
+
+### Milestone 4 — Live operations
+
+The UI also exposes live operational state:
+
+- supervisor process state and PID;
+- persisted per-run event timelines;
+- run timeline inspection from the Runs view;
+- live workflow/job inspection through the authenticated GitHub CLI;
+- completed-run artifacts remain available after the supervisor exits.
+
+Run events are stored alongside each run as state/<project>/runs/<run>.events.jsonl. The event stream is intentionally append-only and contains operational metadata rather than ChatGPT prompt contents.
