@@ -126,7 +126,9 @@ Open `http://127.0.0.1:8080`. The dashboard provides:
 - repository, branch, commit and ChatGPT Project context;
 - supervisor start control;
 - project creation, persisted into the configured `config.yaml`;
-- automatic polling of supervisor memory.
+- event-driven supervisor state updates over Server-Sent Events (SSE);
+- adaptive GitHub Actions refresh only while a run is active;
+- a 60-second refresh fallback when the SSE connection is unavailable;
 
 The web service is intended for the trusted Lab OS server and binds to
 localhost by default. Put an authenticated reverse proxy in front of it before
