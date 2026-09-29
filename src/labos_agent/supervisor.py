@@ -60,9 +60,15 @@ def _next_run_number(project: str) -> int:
     root = Path("state") / project / "runs"
     existing = []
     if root.exists():
-        for path in root.glob("*.json"):
+        for path in root.iterdir():
+            if path.suffix == ".json":
+                candidate = path.stem
+            elif path.name.endswith(".events.jsonl"):
+                candidate = path.name.removesuffix(".events.jsonl")
+            else:
+                continue
             try:
-                existing.append(int(path.stem))
+                existing.append(int(candidate))
             except ValueError:
                 continue
     _RUN_NUMBER = max(_RUN_NUMBER, max(existing, default=0)) + 1
