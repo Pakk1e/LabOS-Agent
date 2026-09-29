@@ -115,6 +115,49 @@ def phase_evidence(project_root: Path, phase: ProjectPhase) -> tuple[bool, tuple
     return not missing, tuple(missing)
 
 
+
+def _find_evidence_file(project_root: Path, key: str) -> Path | None:
+    return next(
+        (project_root / relative for relative in ALTERNATIVE_EVIDENCE[key] if (project_root / relative).is_file()),
+        None,
+    )
+
+
+def validate_acceptance_criteria(project_root: Path) -> tuple[bool, tuple[str, ...]]:
+    """Verify every plan acceptance criterion has a PASS result in validation."""
+    plan = _find_evidence_file(project_root, "implementation_plan")
+    validation = _find_evidence_file(project_root, "validation_report")
+    if plan is None:
+        return False, ("implementation plan is missing",)
+    if validation is None:
+        return False, ("validation report is missing",)
+    try:
+        plan_text = plan.read_text(encoding="utf-8")
+        validation_text = validation.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        return False, (f"cannot read acceptance evidence: {exc}",)
+    criteria = []
+    in_section = False
+    for line in plan_text.splitlines():
+        stripped = line.strip()
+        if stripped.lower().startswith("## ") and "acceptance criteria" in stripped.lower():
+            in_section = True
+            continue
+        if in_section and stripped.startswith("## "):
+            break
+        if in_section and stripped.startswith("- "):
+            criteria.append(stripped[2:].strip())
+    if not criteria:
+        return False, ("implementation plan contains no acceptance criteria",)
+    missing = []
+    for criterion in criteria:
+        criterion_id = criterion.split(":", 1)[0].split(" ", 1)[0]
+        if criterion_id not in validation_text:
+            missing.append(f"{criterion_id} is missing from validation")
+        elif "PASS" not in validation_text[validation_text.index(criterion_id):validation_text.index(criterion_id) + 300].upper():
+            missing.append(f"{criterion_id} is not marked PASS")
+    return not missing, tuple(missing)
+
 def can_advance(project_root: Path, current: ProjectPhase, target: ProjectPhase) -> tuple[bool, tuple[str, ...]]:
     expected = next_phase(current)
     if target is not expected:
@@ -124,7 +167,10 @@ def can_advance(project_root: Path, current: ProjectPhase, target: ProjectPhase)
     if target is ProjectPhase.DEVELOPMENT:
         return phase_evidence(project_root, ProjectPhase.PLANNING)
     if target is ProjectPhase.MAINTENANCE:
-        return phase_evidence(project_root, ProjectPhase.VALIDATION)
+        ok, missing = phase_evidence(project_root, ProjectPhase.VALIDATION)
+        if not ok:
+            return ok, missing
+        return validate_acceptance_criteria(project_root)
     return True, ()
 
 
