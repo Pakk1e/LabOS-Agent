@@ -211,3 +211,51 @@ def test_config_rejects_non_boolean_legacy_approval(tmp_path):
     from labos_agent.config import load_config
     with pytest.raises(ValueError, match="must be a boolean"):
         load_config(config_path)
+
+
+def test_phase_evidence_requires_non_placeholder_documentation(tmp_path):
+    from labos_agent.lifecycle import can_advance, phase_evidence
+    root = tmp_path / "repo"
+    (root / "docs").mkdir(parents=True)
+    for name in ("PRODUCT.md", "REQUIREMENTS.md", "ARCHITECTURE.md", "DECISIONS.md", "ROADMAP.md", "USER_FLOWS.md"):
+        (root / "docs" / name).write_text("real project content", encoding="utf-8")
+    (root / "AGENTS.md").write_text("project rules", encoding="utf-8")
+    (root / "docs" / "PRODUCT.md").write_text("_To be completed._", encoding="utf-8")
+    ok, missing = phase_evidence(root, ProjectPhase.DOCUMENTATION)
+    assert not ok
+    assert "docs/PRODUCT.md" in missing
+    (root / "docs" / "PRODUCT.md").write_text("Product definition", encoding="utf-8")
+    ok, missing = can_advance(root, ProjectPhase.DOCUMENTATION, ProjectPhase.PLANNING)
+    assert ok
+    assert not missing
+
+
+def test_planning_gate_requires_plan_and_acceptance_criteria(tmp_path):
+    from labos_agent.lifecycle import can_advance
+    root = tmp_path / "repo"
+    (root / "docs").mkdir(parents=True)
+    (root / "docs" / "REQUIREMENTS.md").write_text("Requirements", encoding="utf-8")
+    ok, missing = can_advance(root, ProjectPhase.PLANNING, ProjectPhase.DEVELOPMENT)
+    assert not ok
+    assert any("PLAN.md" in item for item in missing)
+    (root / "PLAN.md").write_text("# Plan\n\n## Acceptance Criteria\n- AC-1", encoding="utf-8")
+    ok, missing = can_advance(root, ProjectPhase.PLANNING, ProjectPhase.DEVELOPMENT)
+    assert ok
+    assert not missing
+
+
+def test_validation_gate_requires_validation_report(tmp_path):
+    from labos_agent.lifecycle import can_advance
+    root = tmp_path / "repo"
+    (root / "docs").mkdir(parents=True)
+    (root / "docs" / "REQUIREMENTS.md").write_text("Requirements", encoding="utf-8")
+    ok, missing = can_advance(root, ProjectPhase.VALIDATION, ProjectPhase.MAINTENANCE)
+    assert not ok
+    assert any("VALIDATION.md" in item for item in missing)
+    (root / "VALIDATION.md").write_text(
+        "# Validation\n\n## Validation Results\nPASS\n\n## Acceptance Criteria\nAC-1 PASS",
+        encoding="utf-8",
+    )
+    ok, missing = can_advance(root, ProjectPhase.VALIDATION, ProjectPhase.MAINTENANCE)
+    assert ok
+    assert not missing
