@@ -357,6 +357,41 @@ def _ci_jobs(repository: str, run_id: int) -> list[dict]:
 
 
 
+def _assess_existing_repository(config_path: Path, project: str, root: Path) -> Path:
+    path = config_path.parent / "state" / project / "repository_assessment.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    assessment = {
+        "project": project,
+        "root": str(root),
+        "git_repository": (root / ".git").exists(),
+        "branch": None,
+        "head": None,
+        "dirty": None,
+    }
+    try:
+        branch = subprocess.run(
+            ["git", "-C", str(root), "branch", "--show-current"],
+            check=True, capture_output=True, text=True, timeout=10,
+        )
+        head = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "HEAD"],
+            check=True, capture_output=True, text=True, timeout=10,
+        )
+        status = subprocess.run(
+            ["git", "-C", str(root), "status", "--porcelain"],
+            check=True, capture_output=True, text=True, timeout=10,
+        )
+        assessment.update(
+            branch=branch.stdout.strip() or None,
+            head=head.stdout.strip() or None,
+            dirty=bool(status.stdout.strip()),
+        )
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        assessment["inspection_error"] = "git metadata could not be read"
+    path.write_text(json.dumps(assessment, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
 def _lifecycle_history_path(config_path: Path, project: str) -> Path:
     return config_path.parent / "state" / project / "lifecycle_history.jsonl"
 
@@ -601,7 +636,9 @@ class Handler(BaseHTTPRequestHandler):
             except subprocess.CalledProcessError as exc:
                 detail = (exc.stderr or exc.stdout or "").strip()
                 return self._send(502, {"error": detail or "GitHub repository creation or clone failed"})
-        if project_mode != "existing_repository":
+        if project_mode == "existing_repository":
+            _assess_existing_repository(self.config_path, name, Path(root).expanduser())
+        else:
             _bootstrap_project_documents(root, name, str(body.get("initial_idea", "")))
         initial_phase = (
             ProjectPhase.BRAINSTORM
