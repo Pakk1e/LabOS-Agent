@@ -51,7 +51,7 @@ def test_run_history_and_process_status(tmp_path):
         encoding="utf-8",
     )
     assert _run_history(tmp_path / "config.yaml", "weather")[0]["run_number"] == 7
-    status = _process_status("weather")
+    status = _process_status(tmp_path / "config.yaml", "weather")
     assert status["running"] is False
 
 
