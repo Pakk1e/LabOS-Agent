@@ -78,6 +78,18 @@ def _create_github_repository(repository: str, visibility: str) -> None:
     )
 
 
+def _write_brainstorm_notes(root: str, idea: str, notes: str) -> None:
+    path = Path(root).expanduser() / "docs" / "IDEA.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    base = path.read_text(encoding="utf-8") if path.exists() else "# Project Idea\n"
+    heading = "## LabOS brainstorming notes"
+    if heading in base:
+        base = base.split(heading, 1)[0].rstrip() + "\n\n"
+    else:
+        base = base.rstrip() + "\n\n"
+    content = base + heading + "\n\n" + (notes.strip() or "_No manual brainstorming notes recorded yet._") + "\n"
+    path.write_text(content, encoding="utf-8")
+
 def _bootstrap_project_documents(root: str, name: str, idea: str) -> None:
     target = Path(root).expanduser()
     docs = target / "docs"
@@ -643,6 +655,7 @@ class Handler(BaseHTTPRequestHandler):
         approved = bool(body.get("approved", False))
         if "brainstorm_notes" in body:
             project["brainstorm_notes"] = str(body.get("brainstorm_notes", "")).strip()
+            _write_brainstorm_notes(project["project_root"], str(project.get("initial_idea", "")), project["brainstorm_notes"])
         if target == current and not approved and "brainstorm_notes" not in body:
             return self._send(400, {"error": "no lifecycle change requested"})
         if target != current:
