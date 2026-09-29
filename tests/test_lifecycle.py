@@ -249,6 +249,7 @@ def test_validation_gate_requires_validation_report(tmp_path):
     root = tmp_path / "repo"
     (root / "docs").mkdir(parents=True)
     (root / "docs" / "REQUIREMENTS.md").write_text("Requirements", encoding="utf-8")
+    (root / "PLAN.md").write_text("# Plan\n\n## Acceptance Criteria\n- AC-1 user can save", encoding="utf-8")
     ok, missing = can_advance(root, ProjectPhase.VALIDATION, ProjectPhase.MAINTENANCE)
     assert not ok
     assert any("VALIDATION.md" in item for item in missing)
