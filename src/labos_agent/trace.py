@@ -38,8 +38,8 @@ _EVENT_LABELS = {
     "trajectory.error": "Trajectory log warning",
     "recovery.start": "Recovering previous run",
     "recovery.complete": "Recovery complete",
+    "run.summary": "Run summary",
 }
-
 _LEVEL_TEXT = {
     "DEBUG": ("DBG", "·"),
     "INFO": ("INF", "›"),
@@ -96,11 +96,12 @@ def _details(fields: dict[str, Any]) -> str:
         "project",
         "error",
         "detail",
+        "summary",
     }
     priority = (
         "iteration", "stage", "success", "meaningful", "count",
         "action", "actions", "sha", "conclusion", "status",
-        "duration_seconds", "reason", "summary", "timeout_seconds",
+        "duration_seconds", "reason", "timeout_seconds",
         "worktree_fingerprint",
     )
     keys = [key for key in priority if key in fields and key not in hidden]
@@ -134,6 +135,22 @@ def _details(fields: dict[str, Any]) -> str:
     return "  " + "  ".join(parts) if parts else ""
 
 
+def _print_prefix(event: str, fields: dict[str, Any]) -> None:
+    level = _level(event, fields)
+    level_text, icon = _LEVEL_TEXT[level]
+    now = datetime.now().astimezone().strftime("%H:%M:%S")
+    elapsed = time.monotonic() - _START
+    project = _short(fields.get("project", ""), 32).strip()
+    scope = f" [{project}]" if project else ""
+    label = _EVENT_LABELS.get(event, event.replace(".", " › "))
+    details = _details(fields)
+    print(
+        f"{now} {level_text} {icon} +{elapsed:7.1f}s{scope} {label}{details}",
+        file=sys.stderr,
+        flush=True,
+    )
+
+
 def trace(event: str, **fields: object) -> None:
     """Write concise operator-facing logs to stderr."""
     if not enabled():
@@ -149,17 +166,26 @@ def trace(event: str, **fields: object) -> None:
         print("[LABOS] " + json.dumps(payload, ensure_ascii=False, default=str), file=sys.stderr, flush=True)
         return
 
-    level = _level(event, fields)
-    level_text, icon = _LEVEL_TEXT[level]
-    now = datetime.now().astimezone().strftime("%H:%M:%S")
-    elapsed = time.monotonic() - _START
-    project = _short(fields.get("project", ""), 32).strip()
-    scope = f" [{project}]" if project else ""
-    label = _EVENT_LABELS.get(event, event.replace(".", " › "))
-    details = _details(fields)
+    _print_prefix(event, fields)
 
-    print(
-        f"{now} {level_text} {icon} +{elapsed:7.1f}s{scope} {label}{details}",
-        file=sys.stderr,
-        flush=True,
-    )
+
+def trace_summary(summary: str, *, project: str = "", success: bool | None = None) -> None:
+    """Print a multi-line operator summary while preserving the box layout."""
+    if not enabled():
+        return
+
+    fields = {"project": project, "success": success} if success is not None else {"project": project}
+    payload = {
+        "ts": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "event": "run.summary",
+        "project": project,
+        "summary": summary,
+        **({"success": success} if success is not None else {}),
+    }
+
+    if _json_enabled():
+        print("[LABOS] " + json.dumps(payload, ensure_ascii=False, default=str), file=sys.stderr, flush=True)
+        return
+
+    _print_prefix("run.summary", fields)
+    print(summary, file=sys.stderr, flush=True)
