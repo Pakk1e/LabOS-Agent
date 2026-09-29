@@ -149,7 +149,7 @@ def validate_acceptance_criteria(project_root: Path) -> tuple[bool, tuple[str, .
             break
         if in_section and stripped.startswith("- "):
             criterion = stripped[2:].strip()
-            match = re.match(r"(AC-[A-Za-z0-9._-]+)\\b", criterion)
+            match = re.match(r"(AC-[A-Za-z0-9._-]+)\b", criterion)
             if not match:
                 criteria.append("")
             else:
