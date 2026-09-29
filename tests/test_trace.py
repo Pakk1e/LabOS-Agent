@@ -1,4 +1,4 @@
-from labos_agent.trace import trace
+from labos_agent.trace import trace, trace_summary
 
 
 def test_trace_is_human_friendly(capsys, monkeypatch):
@@ -43,3 +43,19 @@ def test_trace_supports_json_diagnostics(capsys, monkeypatch):
     assert output.startswith("[LABOS] ")
     assert '"event": "ci.complete"' in output
     assert '"project": "weather"' in output
+
+def test_trace_summary_preserves_box_layout(capsys, monkeypatch):
+    monkeypatch.setenv("LABOS_TRACE", "1")
+
+    trace_summary(
+        "┌─ LabOS Run #42 ─────────
+│ Result        DONE
+└────────────────────────",
+        project="weather",
+        success=True,
+    )
+
+    output = capsys.readouterr().err
+    assert "Run summary" in output
+    assert "LabOS Run #42" in output
+    assert "│ Result        DONE" in output
