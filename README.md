@@ -136,3 +136,13 @@ The UI deliberately uses the existing Python runtime and browser/GitHub
 supervisor state. It is a control surface, not a second implementation of the
 supervisor state machine.
 
+### Control UI milestones
+
+The control UI now includes the next operations-console layers:
+
+- **Milestone 2 — Operations:** persisted supervisor run history, run outcomes and iteration summaries; GitHub Actions run history; workflow job/step inspection; live supervisor/CI state.
+- **Milestone 3 — Management:** start/stop supervisor controls with a configurable turn limit; project settings editing; project archiving; project creation remains available from the UI.
+
+The UI exposes these through the **Overview**, **Runs**, **CI / Actions**, and **Settings** views. GitHub Actions data is read through the authenticated `gh` CLI on the Lab OS server, so the UI does not maintain a second GitHub authentication mechanism.
+
+Completed supervisor runs are persisted under `state/<project>/runs/`. Existing state is preserved when a project is archived from `config.yaml`.
