@@ -548,7 +548,19 @@ class Handler(BaseHTTPRequestHandler):
             except subprocess.CalledProcessError as exc:
                 detail = (exc.stderr or exc.stdout or "").strip()
                 return self._send(502, {"error": detail or "GitHub repository creation or clone failed"})
-        if create_repository:\n            _bootstrap_project_documents(root, name, str(body.get("initial_idea", "")))\n        projects[name] = {\n            "repository": repository,\n            "project_root": root,\n            "continuation_message": body.get("continuation_message") or f"Continue {name.title()}",\n            "initial_idea": str(body.get("initial_idea", "")),\n            "lifecycle": {\n                "mode": str(body.get("project_mode", "guided")).strip().lower() or "guided",\n                "phase": "BRAINSTORM" if str(body.get("project_mode", "guided")).strip().lower() == "guided" else "DOCUMENTATION",\n                "approved": False,\n            },\n        }\n        self._apply_optional(projects[name], body)
+        _bootstrap_project_documents(root, name, str(body.get("initial_idea", "")))
+        projects[name] = {
+            "repository": repository,
+            "project_root": root,
+            "continuation_message": body.get("continuation_message") or f"Continue {name.title()}",
+            "initial_idea": str(body.get("initial_idea", "")),
+            "lifecycle": {
+                "mode": str(body.get("project_mode", "guided")).strip().lower() or "guided",
+                "phase": "BRAINSTORM" if str(body.get("project_mode", "guided")).strip().lower() == "guided" else "DOCUMENTATION",
+                "approved": False,
+            },
+        }
+        self._apply_optional(projects[name], body)
         _write_config(self.config_path, payload)
         config = load_config(self.config_path)
         return self._send(201, _project_view(self.config_path, name, config.projects[name]))
