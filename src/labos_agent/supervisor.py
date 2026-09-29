@@ -414,7 +414,10 @@ Start now by inspecting the current repository state and continue the task.
                     )
                     tracker.start_iteration(datetime.now(timezone.utc))
                 elif state == ChatState.DONE:
-                    observed = observe_github(self.project.repository)
+                    observed = observe_github(
+                        self.project.repository,
+                        ci_run_id=analysis.ci_run if analysis.structured else None,
+                    )
                     reconciliation = reconcile(
                         analysis,
                         observed,
@@ -430,7 +433,10 @@ Start now by inspecting the current repository state and continue the task.
                     trace("run.complete", project=self.project_name, run=tracker.summary.run_number, success=verified)
                     return response
                 elif state == ChatState.WAIT_CI:
-                    observed = observe_github(self.project.repository)
+                    observed = observe_github(
+                        self.project.repository,
+                        ci_run_id=analysis.ci_run if analysis.structured else None,
+                    )
                     reconciliation = reconcile(
                         analysis,
                         observed,
