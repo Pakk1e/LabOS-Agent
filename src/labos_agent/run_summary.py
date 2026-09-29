@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Iterable
+from typing import Iterable, Any
 
 
 @dataclass
@@ -110,6 +110,35 @@ class RunTracker:
         self.summary.result = result
         self.summary.finished_at = finished_at
         self.summary.reason = reason
+
+    def to_dict(self, *, now: datetime | None = None) -> dict[str, Any]:
+        summary = self.summary
+        return {
+            "project": summary.project,
+            "run_number": summary.run_number,
+            "started_at": summary.started_at.isoformat(),
+            "finished_at": summary.finished_at.isoformat() if summary.finished_at else None,
+            "result": summary.result,
+            "reason": summary.reason,
+            "duration_seconds": summary.elapsed_seconds(now),
+            "iterations": [
+                {
+                    "number": item.number,
+                    "started_at": item.started_at.isoformat(),
+                    "finished_at": item.finished_at.isoformat() if item.finished_at else None,
+                    "state": item.state,
+                    "chatgpt_work": item.chatgpt_work,
+                    "repository_changed": item.repository_changed,
+                    "local_tests_passed": item.local_tests_passed,
+                    "commit_pushed": item.commit_pushed,
+                    "remote_ci_passed": item.remote_ci_passed,
+                    "remote_ci_failed": item.remote_ci_failed,
+                    "reason": item.reason,
+                    "duration_seconds": item.elapsed_seconds(now),
+                }
+                for item in summary.iterations
+            ],
+        }
 
     def one_line(self, *, now: datetime | None = None) -> str:
         iteration = self.iteration
