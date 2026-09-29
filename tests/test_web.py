@@ -227,7 +227,7 @@ def test_existing_repository_creation_does_not_bootstrap_files(tmp_path):
     marker.write_text("# Existing repository\\n", encoding="utf-8")
 
     handler = object.__new__(Handler)
-    handler.config_path = config_path
+    handler.server = type("Server", (), {"config_path": config_path})()
 
     sent = {}
     handler._send = lambda status, body, content_type="application/json": sent.update(
@@ -261,7 +261,7 @@ def test_existing_repository_mode_rejects_repository_creation(tmp_path):
     root.mkdir()
 
     handler = object.__new__(Handler)
-    handler.config_path = config_path
+    handler.server = type("Server", (), {"config_path": config_path})()
 
     sent = {}
     handler._send = lambda status, body, content_type="application/json": sent.update(
