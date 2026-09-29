@@ -161,6 +161,15 @@ def _process_status(config_path: Path, name: str) -> dict:
         return {"running": False, "pid": None}
 
 
+def _ci_action(repository: str, run_id: int, action: str) -> None:
+    if action not in {"rerun", "cancel"}:
+        raise ValueError("unsupported CI action")
+    subprocess.run(
+        ["gh", "run", action, str(run_id), "--repo", repository],
+        cwd=Path.cwd(), check=True, capture_output=True, text=True, timeout=20,
+    )
+
+
 def _ci_jobs(repository: str, run_id: int) -> list[dict]:
     data = _gh_json(["run", "view", str(run_id), "--repo", repository, "--json", "jobs"])
     return data.get("jobs", []) if isinstance(data, dict) else []
@@ -276,6 +285,13 @@ class Handler(BaseHTTPRequestHandler):
             if parsed.path.startswith("/api/projects/") and parsed.path.endswith("/stop"):
                 name = unquote(parsed.path.removeprefix("/api/projects/").removesuffix("/stop")).strip("/")
                 return self._stop_supervisor(name)
+            if parsed.path.startswith("/api/projects/"):
+                tail = parsed.path.removeprefix("/api/projects/").strip("/")
+                parts = [unquote(x) for x in tail.split("/") if x]
+                if len(parts) == 3 and parts[1] == "ci" and parts[2].isdigit():
+                    name = parts[0]
+                    action = str(body.get("action", "")).strip().lower()
+                    return self._ci_action(name, int(parts[2]), action)
             return self._send(404, {"error": "not found"})
         except ValueError as exc:
             return self._send(400, {"error": str(exc)})
@@ -369,6 +385,23 @@ class Handler(BaseHTTPRequestHandler):
         projects.pop(name)
         _write_config(self.config_path, payload)
         return self._send(200, {"archived": True, "project": name})
+
+    def _ci_action(self, name: str, run_id: int, action: str):
+        config = load_config(self.config_path)
+        project = config.projects.get(name)
+        if project is None:
+            return self._send(404, {"error": "project not found"})
+        if action not in {"rerun", "cancel"}:
+            return self._send(400, {"error": "action must be rerun or cancel"})
+        try:
+            _ci_action(project.repository, run_id, action)
+        except subprocess.CalledProcessError as exc:
+            detail = (exc.stderr or exc.stdout or "").strip()
+            return self._send(502, {"error": detail or f"GitHub CLI {action} failed"})
+        except Exception as exc:
+            return self._send(502, {"error": str(exc)})
+        return self._send(202, {"action": action, "run_id": run_id, "project": name})
+
 
     def _stop_supervisor(self, name: str):
         status = _process_status(self.config_path, name)
