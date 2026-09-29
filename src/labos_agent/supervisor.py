@@ -289,6 +289,9 @@ Start now by inspecting the current repository state and continue the task.
         return message.rstrip() + "\n\n" + STATE_INSTRUCTION
 
     def run(self) -> str:
+        run_started_at = datetime.now(timezone.utc)
+        tracker = RunTracker(self.project_name, _next_run_number(), run_started_at)
+        trace("run.start", project=self.project_name, run=tracker.summary.run_number)
         with BrowserSession(
             self.config.browser.profile_dir,
             cdp_url=self.config.browser.cdp_url,
@@ -322,9 +325,15 @@ Start now by inspecting the current repository state and continue the task.
                 quiet_seconds=self.config.browser.quiet_seconds,
             )
 
+            tracker.start_iteration(run_started_at)
             while True:
                 self.turns += 1
+                iteration = tracker.iteration
+                tracker.record(chatgpt_work=True)
+                trace("iteration.start", project=self.project_name, iteration=iteration.number)
+                trace("chat.response", project=self.project_name, iteration=iteration.number, response_chars=len(response))
                 state = parse_state(response)
+                tracker.record(state=state.value if state else "INVALID")
 
                 if state is None:
                     response = chat.send_and_wait_for_response(
@@ -333,6 +342,11 @@ Start now by inspecting the current repository state and continue the task.
                         quiet_seconds=self.config.browser.quiet_seconds,
                     )
                 elif state == ChatState.DONE:
+                    tracker.finish_iteration("DONE", datetime.now(timezone.utc))
+                    tracker.finish_run("DONE", datetime.now(timezone.utc))
+                    trace("iteration.complete", project=self.project_name, iteration=iteration.number, success=True, state="DONE")
+                    trace_summary(tracker.box(), project=self.project_name, success=True)
+                    trace("run.complete", project=self.project_name, run=tracker.summary.run_number, success=True)
                     return response
                 elif state == ChatState.WAIT_CI:
                     passed, _summary = wait_for_ci(
