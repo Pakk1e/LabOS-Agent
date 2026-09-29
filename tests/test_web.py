@@ -107,3 +107,12 @@ def test_persist_process_writes_project_identity(tmp_path):
     record = _process_record(config, "weather")
     data = __import__("json").loads(record.read_text(encoding="utf-8"))
     assert data == {"pid": 12345, "project": "weather", "config": str(config)}
+
+
+def test_terminate_recovered_process_uses_pid(monkeypatch):
+    from labos_agent.web import _terminate_process
+
+    calls = []
+    monkeypatch.setattr("labos_agent.web.os.kill", lambda pid, sig: calls.append((pid, sig)))
+    _terminate_process("weather", 4321)
+    assert calls == [(4321, 15)]
