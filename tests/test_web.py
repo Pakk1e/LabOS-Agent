@@ -320,7 +320,7 @@ def test_lifecycle_rejects_invalid_transition_without_saving_notes(tmp_path):
         {"phase": "VALIDATION", "brainstorm_notes": "must not be saved"},
     )
     assert sent["status"] == 409
-    assert "invalid lifecycle transition" in sent["body"]["error"]
+    assert "lifecycle evidence gate" in sent["body"]["error"]
     assert load_config(config_path).projects["demo"].brainstorm_notes == ""
 
 
