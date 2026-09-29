@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -307,7 +308,7 @@ class Handler(BaseHTTPRequestHandler):
         project = projects.get(name)
         if project is None:
             return self._send(404, {"error": "project not found"})
-        if any(p is not None and _processes.get(name) is p and p.poll() is None for p in [_processes.get(name)]):
+        if _process_status(self.config_path, name)["running"]:
             return self._send(409, {"error": "stop the supervisor before editing the project"})
         if "repository" in body:
             repository = str(body["repository"]).strip()
@@ -331,32 +332,35 @@ class Handler(BaseHTTPRequestHandler):
         projects = payload.setdefault("projects", {})
         if name not in projects:
             return self._send(404, {"error": "project not found"})
-        with _process_lock:
-            process = _processes.get(name)
-            if process is not None and process.poll() is None:
-                return self._send(409, {"error": "stop the supervisor before archiving the project"})
+        if _process_status(self.config_path, name)["running"]:
+            return self._send(409, {"error": "stop the supervisor before archiving the project"})
         projects.pop(name)
         _write_config(self.config_path, payload)
         return self._send(200, {"archived": True, "project": name})
 
     def _stop_supervisor(self, name: str):
+        status = _process_status(self.config_path, name)
+        if not status["running"]:
+            return self._send(409, {"error": "supervisor is not running"})
+        pid = status["pid"]
         with _process_lock:
             process = _processes.get(name)
-            if process is None or process.poll() is not None:
-                _processes.pop(name, None)
-                return self._send(409, {"error": "supervisor is not running"})
-            process.terminate()
+            if process is not None and process.poll() is None:
+                process.terminate()
+            else:
+                os.kill(pid, 15)
+            _processes.pop(name, None)
             _clear_process_record(self.config_path, name)
-        return self._send(202, {"stopped": True, "project": name, "pid": process.pid})
+        return self._send(202, {"stopped": True, "project": name, "pid": pid})
 
     def _start_supervisor(self, name: str, body: dict):
         config = load_config(self.config_path)
         if name not in config.projects:
             return self._send(404, {"error": "project not found"})
+        existing_status = _process_status(self.config_path, name)
+        if existing_status["running"]:
+            return self._send(409, {"error": "supervisor already running", "pid": existing_status["pid"]})
         with _process_lock:
-            existing = _processes.get(name)
-            if existing is not None and existing.poll() is None:
-                return self._send(409, {"error": "supervisor already running", "pid": existing.pid})
             max_turns = int(body.get("max_turns", 0))
             if max_turns < 0 or max_turns > 1000:
                 return self._send(400, {"error": "max_turns must be between 0 and 1000"})
