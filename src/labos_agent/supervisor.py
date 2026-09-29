@@ -289,7 +289,15 @@ class ConversationSupervisor:
 
     def _lifecycle_context(self) -> str:
         phase = self.project.lifecycle_phase
-        return (\n            f"PROJECT LIFECYCLE PHASE: {phase.value}\\n"\n            f"PROJECT MODE: {self.project.project_mode}\\n"\n            f"HUMAN APPROVAL: {'APPROVED' if self.project.lifecycle_approved else 'NOT APPROVED'}\\n"\n            f"PHASE RULE: {phase_instruction(phase)}"\n        )\n\n    def _recovery_context(self, memory: SupervisorMemory, observation: GitHubObservation) -> str:
+        approval = "APPROVED" if self.project.lifecycle_approved else "NOT APPROVED"
+        return (
+            f"PROJECT LIFECYCLE PHASE: {phase.value}\n"
+            f"PROJECT MODE: {self.project.project_mode}\n"
+            f"HUMAN APPROVAL: {approval}\n"
+            f"PHASE RULE: {phase_instruction(phase)}"
+        )
+
+    def _recovery_context(self, memory: SupervisorMemory, observation: GitHubObservation) -> str:
         if not memory.last_analysis:
             return (
                 "No previous structured supervisor state exists. Treat this as a fresh run "
