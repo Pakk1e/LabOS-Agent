@@ -104,7 +104,7 @@ def phase_evidence(project_root: Path, phase: ProjectPhase) -> tuple[bool, tuple
         if not content or any(marker in content for marker in PLACEHOLDER_MARKERS):
             missing.append(relative)
             continue
-        if relative in alternatives:
+        if relative in alternatives or phase is ProjectPhase.BRAINSTORM:
             for marker in PHASE_EVIDENCE_MARKERS.get(phase, ()):
                 if marker not in content:
                     missing.append(f"{relative} (missing '{marker}')")
