@@ -223,6 +223,7 @@ def test_existing_repository_creation_does_not_bootstrap_files(tmp_path):
     config_path.write_text("projects: {}\n", encoding="utf-8")
     root = tmp_path / "existing"
     root.mkdir()
+    (root / ".git").mkdir()
     marker = root / "README.md"
     marker.write_text("# Existing repository\\n", encoding="utf-8")
 
