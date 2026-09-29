@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 import json
 from pathlib import Path
+import re
 
 
 class ProjectPhase(StrEnum):
@@ -146,12 +147,18 @@ def validate_acceptance_criteria(project_root: Path) -> tuple[bool, tuple[str, .
         if in_section and stripped.startswith("## "):
             break
         if in_section and stripped.startswith("- "):
-            criteria.append(stripped[2:].strip())
+            criterion = stripped[2:].strip()
+            match = re.match(r"(AC-[A-Za-z0-9._-]+)\\b", criterion)
+            if not match:
+                criteria.append("")
+            else:
+                criteria.append(match.group(1))
     if not criteria:
         return False, ("implementation plan contains no acceptance criteria",)
+    if any(not criterion for criterion in criteria):
+        return False, ("every acceptance criterion must start with an AC-* identifier",)
     missing = []
-    for criterion in criteria:
-        criterion_id = criterion.split(":", 1)[0].split(" ", 1)[0]
+    for criterion_id in criteria:
         if criterion_id not in validation_text:
             missing.append(f"{criterion_id} is missing from validation")
         elif "PASS" not in validation_text[validation_text.index(criterion_id):validation_text.index(criterion_id) + 300].upper():
