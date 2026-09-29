@@ -1,0 +1,66 @@
+"""Read-only GitHub observations used by the supervisor state machine."""
+from __future__ import annotations
+
+from dataclasses import dataclass
+import json
+import os
+import subprocess
+from urllib.request import Request, urlopen
+
+@dataclass(frozen=True)
+class GitHubObservation:
+    branch: str
+    commit_sha: str
+    ci_run_id: int | None
+    ci_status: str | None
+    ci_conclusion: str | None
+    ci_sha: str | None
+    ci_name: str | None
+    ci_created_at: str | None
+    ci_url: str | None
+
+def _headers() -> dict[str, str]:
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2026-03-10",
+        "User-Agent": "LabOS-Agent",
+    }
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if not token:
+        try:
+            token = subprocess.run(
+                ["gh", "auth", "token"], check=True, capture_output=True,
+                text=True, timeout=5,
+            ).stdout.strip()
+        except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            token = ""
+    if token:
+        headers["Authorization"] = "Bearer " + token
+    return headers
+
+def _get_json(url: str) -> dict:
+    request = Request(url, headers=_headers(), method="GET")
+    with urlopen(request, timeout=30) as response:
+        return json.load(response)
+
+def observe_github(repository: str) -> GitHubObservation:
+    owner, name = repository.split("/", 1)
+    repo = _get_json(f"https://api.github.com/repos/{owner}/{name}")
+    branch = str(repo["default_branch"])
+    ref = _get_json(f"https://api.github.com/repos/{owner}/{name}/git/ref/heads/{branch}")
+    commit_sha = str(ref["object"]["sha"])
+    runs = _get_json(
+        f"https://api.github.com/repos/{owner}/{name}/actions/runs?branch={branch}&per_page=20"
+    ).get("workflow_runs", [])
+    latest = runs[0] if runs else {}
+    return GitHubObservation(
+        branch=branch,
+        commit_sha=commit_sha,
+        ci_run_id=int(latest["id"]) if latest.get("id") is not None else None,
+        ci_status=str(latest["status"]) if latest.get("status") is not None else None,
+        ci_conclusion=str(latest["conclusion"]) if latest.get("conclusion") is not None else None,
+        ci_sha=str(latest["head_sha"]) if latest.get("head_sha") else None,
+        ci_name=str(latest["name"]) if latest.get("name") else None,
+        ci_created_at=str(latest["created_at"]) if latest.get("created_at") else None,
+        ci_url=str(latest["html_url"]) if latest.get("html_url") else None,
+    )
