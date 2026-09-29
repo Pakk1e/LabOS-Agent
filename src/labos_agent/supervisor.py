@@ -27,6 +27,16 @@ from .supervisor_memory import SupervisorMemory, load_memory, memory_path, save_
 from .supervisor_state_machine import reconcile
 from .trace import trace, trace_summary
 
+def _save_run_summary(project: str, tracker: RunTracker) -> None:
+    path = Path("state") / project / "runs" / f"{tracker.summary.run_number:06d}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(
+        json.dumps(tracker.to_dict(), indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    tmp.replace(path)
+
 
 _RUN_NUMBER = 0
 
@@ -317,6 +327,7 @@ Start now by inspecting the current repository state and continue the task.
         if not self.max_turns or self.turns < self.max_turns:
             return None
         tracker.finish_run("STOPPED", datetime.now(timezone.utc))
+        _save_run_summary(self.project_name, tracker)
         trace_summary(tracker.box(), project=self.project_name)
         trace("run.stop", project=self.project_name, run=tracker.summary.run_number)
         return response
@@ -431,6 +442,7 @@ Start now by inspecting the current repository state and continue the task.
                     tracker.finish_iteration("DONE", datetime.now(timezone.utc), reason)
                     tracker.finish_run(result, datetime.now(timezone.utc), reason)
                     trace("iteration.complete", project=self.project_name, iteration=iteration.number, success=verified, state=result)
+                    _save_run_summary(self.project_name, tracker)
                     trace_summary(tracker.box(), project=self.project_name, success=verified)
                     trace("run.complete", project=self.project_name, run=tracker.summary.run_number, success=verified)
                     return response
