@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 import yaml
 
-from .lifecycle import ProjectPhase, normalize_phase
+from .lifecycle import ProjectPhase, load_lifecycle_state, normalize_phase, normalize_project_mode
 
 @dataclass(frozen=True)
 class BrowserConfig:
@@ -35,6 +35,7 @@ class ProjectConfig:
     remote_ci_poll_seconds: float = 5.0
     lifecycle_phase: ProjectPhase = ProjectPhase.IDEA
     lifecycle_approved: bool = False
+    lifecycle_approved_at: str | None = None
     project_mode: str = "guided"
     initial_idea: str = ""
     brainstorm_notes: str = ""
@@ -72,6 +73,15 @@ def load_config(path: Path) -> AppConfig:
     for key, value in raw.get("projects", {}).items():
         root = Path(value["project_root"]).expanduser()
         allowed = tuple(Path(p).expanduser() for p in value.get("execution", {}).get("allowed_roots", [str(root)]))
+        lifecycle = value.get("lifecycle", {})
+        legacy_phase = normalize_phase(lifecycle.get("phase"))
+        lifecycle_state = load_lifecycle_state(
+            path.parent / "state",
+            key,
+            fallback_phase=legacy_phase,
+            fallback_approved=bool(lifecycle.get("approved", False)),
+            fallback_approved_at=lifecycle.get("approved_at"),
+        )
         projects[key] = ProjectConfig(
             name=key, repository=value["repository"], project_root=root,
             continuation_message=value.get("continuation_message",f"Continue {key.title()}"),
@@ -87,9 +97,10 @@ def load_config(path: Path) -> AppConfig:
             execution_command_timeout_seconds=float(value.get("execution",{}).get("command_timeout_seconds",300)),
             remote_ci_timeout_seconds=float(value.get("remote_ci",{}).get("timeout_seconds",1200)),
             remote_ci_poll_seconds=float(value.get("remote_ci",{}).get("poll_seconds",5)),
-            lifecycle_phase=normalize_phase(value.get("lifecycle", {}).get("phase")),
-            lifecycle_approved=bool(value.get("lifecycle", {}).get("approved", False)),
-            project_mode=str(value.get("lifecycle", {}).get("mode", "guided")),
+            lifecycle_phase=lifecycle_state.phase,
+            lifecycle_approved=lifecycle_state.approved,
+            lifecycle_approved_at=lifecycle_state.approved_at,
+            project_mode=normalize_project_mode(lifecycle.get("mode", "guided")),
             initial_idea=str(value.get("initial_idea", "")),
             brainstorm_notes=str(value.get("brainstorm_notes", "")),
         )
