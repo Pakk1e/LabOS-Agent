@@ -1,13 +1,7 @@
-"""Lightweight Lab OS control UI and local API.
-
-The web service is intentionally dependency-free beyond LabOS-Agent's existing
-PyYAML dependency. It is designed for the trusted local server, not public
-internet exposure.
-"""
+"""Lightweight Lab OS control UI and local API."""
 from __future__ import annotations
 
 import json
-import os
 import re
 import subprocess
 import sys
@@ -31,7 +25,6 @@ def _config_payload(path: Path) -> dict:
 
 def _write_config(path: Path, payload: dict) -> None:
     import yaml
-    path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(yaml.safe_dump(payload, sort_keys=False, allow_unicode=True), encoding="utf-8")
     tmp.replace(path)
@@ -45,6 +38,44 @@ def _memory(config_path: Path, project: str) -> dict:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
+
+
+def _run_history(config_path: Path, project: str) -> list[dict]:
+    root = config_path.parent / "state" / project / "runs"
+    records = []
+    if not root.exists():
+        return records
+    for path in sorted(root.glob("*.json"), reverse=True):
+        try:
+            records.append(json.loads(path.read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            continue
+    return records[:50]
+
+
+def _gh_json(args: list[str]):
+    result = subprocess.run(
+        ["gh", *args],
+        cwd=Path.cwd(),
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    return json.loads(result.stdout or "null")
+
+
+def _ci_runs(repository: str, limit: int = 30) -> list[dict]:
+    data = _gh_json([
+        "run", "list", "--repo", repository, "--limit", str(min(max(limit, 1), 100)),
+        "--json", "databaseId,number,status,conclusion,headSha,name,createdAt,updatedAt,url,displayTitle",
+    ])
+    return data if isinstance(data, list) else []
+
+
+def _ci_jobs(repository: str, run_id: int) -> list[dict]:
+    data = _gh_json(["run", "view", str(run_id), "--repo", repository, "--json", "jobs"])
+    return data.get("jobs", []) if isinstance(data, dict) else []
 
 
 def _project_view(config_path: Path, name: str, project) -> dict:
@@ -61,6 +92,7 @@ def _project_view(config_path: Path, name: str, project) -> dict:
         "project_root": str(project.project_root),
         "project_name": project.project_name or name,
         "project_url": project.project_url,
+        "new_chat_selector": project.new_chat_selector,
         "ci_stage": project.ci_stage,
         "running": running,
         "pid": process.pid if running else None,
@@ -80,7 +112,7 @@ def _project_view(config_path: Path, name: str, project) -> dict:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "LabOS-Web/0.1"
+    server_version = "LabOS-Web/0.2"
 
     @property
     def config_path(self) -> Path:
@@ -88,8 +120,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def _send(self, status: int, body, content_type: str = "application/json") -> None:
         raw = body if isinstance(body, bytes) else (
-            json.dumps(body, ensure_ascii=False).encode() if content_type == "application/json"
-            else str(body).encode()
+            json.dumps(body, ensure_ascii=False).encode()
+            if content_type == "application/json" else str(body).encode()
         )
         self.send_response(status)
         self.send_header("Content-Type", content_type)
@@ -105,6 +137,10 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, json.JSONDecodeError) as exc:
             raise ValueError("invalid JSON body") from exc
 
+    def _project_name_from(self, suffix: str) -> str:
+        prefix = "/api/projects/"
+        return unquote(self.path.split("?", 1)[0].removeprefix(prefix).removesuffix(suffix)).strip("/")
+
     def do_GET(self):
         parsed = urlparse(self.path)
         if parsed.path == "/":
@@ -112,15 +148,27 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, path.read_bytes(), "text/html; charset=utf-8")
         if parsed.path == "/api/projects":
             config = load_config(self.config_path)
-            return self._send(200, {
-                "projects": [_project_view(self.config_path, n, p) for n, p in config.projects.items()]
-            })
+            return self._send(200, {"projects": [_project_view(self.config_path, n, p) for n, p in config.projects.items()]})
         if parsed.path.startswith("/api/projects/"):
-            name = unquote(parsed.path.removeprefix("/api/projects/")).strip("/")
+            tail = parsed.path.removeprefix("/api/projects/").strip("/")
+            parts = [unquote(x) for x in tail.split("/") if x]
+            name = parts[0] if parts else ""
             config = load_config(self.config_path)
             project = config.projects.get(name)
             if project is None:
                 return self._send(404, {"error": "project not found"})
+            if len(parts) == 2 and parts[1] == "runs":
+                return self._send(200, {"runs": _run_history(self.config_path, name)})
+            if len(parts) == 2 and parts[1] == "ci":
+                try:
+                    return self._send(200, {"runs": _ci_runs(project.repository)})
+                except Exception as exc:
+                    return self._send(502, {"error": f"GitHub CLI unavailable: {exc}"})
+            if len(parts) == 3 and parts[1] == "ci" and parts[2].isdigit():
+                try:
+                    return self._send(200, {"jobs": _ci_jobs(project.repository, int(parts[2]))})
+                except Exception as exc:
+                    return self._send(502, {"error": f"GitHub CLI unavailable: {exc}"})
             return self._send(200, _project_view(self.config_path, name, project))
         return self._send(404, {"error": "not found"})
 
@@ -142,12 +190,29 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             return self._send(500, {"error": str(exc)})
 
+    def do_PUT(self):
+        try:
+            body = self._json()
+            name = unquote(self.path.removeprefix("/api/projects/")).strip("/")
+            return self._update_project(name, body)
+        except ValueError as exc:
+            return self._send(400, {"error": str(exc)})
+        except Exception as exc:
+            return self._send(500, {"error": str(exc)})
+
+    def do_DELETE(self):
+        try:
+            name = unquote(self.path.removeprefix("/api/projects/")).strip("/")
+            return self._delete_project(name)
+        except Exception as exc:
+            return self._send(500, {"error": str(exc)})
+
     def _create_project(self, body: dict):
         name = str(body.get("name", "")).strip()
         repository = str(body.get("repository", "")).strip()
         root = str(body.get("project_root", "")).strip()
         if not _PROJECT_RE.fullmatch(name):
-            return self._send(400, {"error": "name must use letters, numbers, dot, dash or underscore"})
+            return self._send(400, {"error": "invalid project name"})
         if not _REPO_RE.fullmatch(repository):
             return self._send(400, {"error": "repository must be owner/name"})
         if not root.startswith("/"):
@@ -156,18 +221,64 @@ class Handler(BaseHTTPRequestHandler):
         projects = payload.setdefault("projects", {})
         if name in projects:
             return self._send(409, {"error": "project already exists"})
-        project = {
+        projects[name] = {
             "repository": repository,
             "project_root": root,
             "continuation_message": body.get("continuation_message") or f"Continue {name.title()}",
         }
-        for key in ("project_name", "project_url", "new_chat_selector", "ci_stage"):
-            if body.get(key):
-                project[key] = body[key]
-        projects[name] = project
+        self._apply_optional(projects[name], body)
         _write_config(self.config_path, payload)
         config = load_config(self.config_path)
         return self._send(201, _project_view(self.config_path, name, config.projects[name]))
+
+    @staticmethod
+    def _apply_optional(project: dict, body: dict) -> None:
+        for key in ("project_name", "project_url", "new_chat_selector", "ci_stage"):
+            value = str(body.get(key, "")).strip()
+            if value:
+                project[key] = value
+            elif key in project and key in body:
+                project.pop(key, None)
+
+    def _update_project(self, name: str, body: dict):
+        if not _PROJECT_RE.fullmatch(name):
+            return self._send(400, {"error": "invalid project name"})
+        payload = _config_payload(self.config_path)
+        projects = payload.setdefault("projects", {})
+        project = projects.get(name)
+        if project is None:
+            return self._send(404, {"error": "project not found"})
+        if any(p is not None and _processes.get(name) is p and p.poll() is None for p in [_processes.get(name)]):
+            return self._send(409, {"error": "stop the supervisor before editing the project"})
+        if "repository" in body:
+            repository = str(body["repository"]).strip()
+            if not _REPO_RE.fullmatch(repository):
+                return self._send(400, {"error": "repository must be owner/name"})
+            project["repository"] = repository
+        if "project_root" in body:
+            root = str(body["project_root"]).strip()
+            if not root.startswith("/"):
+                return self._send(400, {"error": "project_root must be absolute"})
+            project["project_root"] = root
+        if "continuation_message" in body:
+            project["continuation_message"] = str(body["continuation_message"]).strip()
+        self._apply_optional(project, body)
+        _write_config(self.config_path, payload)
+        config = load_config(self.config_path)
+        return self._send(200, _project_view(self.config_path, name, config.projects[name]))
+
+    def _delete_project(self, name: str):
+        payload = _config_payload(self.config_path)
+        projects = payload.setdefault("projects", {})
+        if name not in projects:
+            return self._send(404, {"error": "project not found"})
+        with _process_lock:
+            process = _processes.get(name)
+            if process is not None and process.poll() is None:
+                return self._send(409, {"error": "stop the supervisor before archiving the project"})
+        projects.pop(name)
+        _write_config(self.config_path, payload)
+        return self._send(200, {"archived": True, "project": name})
 
     def _stop_supervisor(self, name: str):
         with _process_lock:
@@ -187,11 +298,13 @@ class Handler(BaseHTTPRequestHandler):
             if existing is not None and existing.poll() is None:
                 return self._send(409, {"error": "supervisor already running", "pid": existing.pid})
             max_turns = int(body.get("max_turns", 0))
+            if max_turns < 0 or max_turns > 1000:
+                return self._send(400, {"error": "max_turns must be between 0 and 1000"})
             cmd = [sys.executable, "-m", "labos_agent.cli", "supervise", name,
                    "--config", str(self.config_path), "--max-turns", str(max_turns)]
             process = subprocess.Popen(cmd, cwd=str(self.config_path.parent))
             _processes[name] = process
-        return self._send(202, {"started": True, "pid": process.pid, "project": name})
+        return self._send(202, {"started": True, "pid": process.pid, "project": name, "max_turns": max_turns})
 
 
 def serve(config_path: Path, host: str = "127.0.0.1", port: int = 8080) -> None:
