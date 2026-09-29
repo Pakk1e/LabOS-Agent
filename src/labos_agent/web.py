@@ -186,6 +186,8 @@ class Handler(BaseHTTPRequestHandler):
                     "runs": _run_history(self.config_path, name),
                     "process": _process_status(name),
                 })
+            if len(parts) == 3 and parts[1] == "runs" and parts[2].isdigit():
+                return self._send(200, {"events": _run_events(self.config_path, name, int(parts[2]))})
             if len(parts) == 2 and parts[1] == "ci":
                 try:
                     return self._send(200, {"runs": _ci_runs(project.repository)})
