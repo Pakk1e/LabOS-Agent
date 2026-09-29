@@ -39,3 +39,17 @@ def test_web_config_write_round_trip(tmp_path):
     loaded = _config_payload(config_path)
     assert loaded["browser"]["cdp_url"] == "http://127.0.0.1:9222"
     assert loaded["projects"] == {}
+
+
+def test_run_history_and_process_status(tmp_path):
+    from labos_agent.web import _run_history, _process_status
+
+    root = tmp_path / "state" / "weather" / "runs"
+    root.mkdir(parents=True)
+    (root / "000007.json").write_text(
+        '{"project":"weather","run_number":7,"result":"DONE_VERIFIED","iterations":[]}',
+        encoding="utf-8",
+    )
+    assert _run_history(tmp_path / "config.yaml", "weather")[0]["run_number"] == 7
+    status = _process_status("weather")
+    assert status["running"] is False
