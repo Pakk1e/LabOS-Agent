@@ -33,7 +33,10 @@ def build_parser():
     ci.add_argument("project")
     ci.add_argument("--stage",default="test")
     ci.add_argument("--config",default="config.yaml")
-    web=sub.add_parser("web",help="run the Lab OS control UI")\n    web.add_argument("--config",default="config.yaml")\n    web.add_argument("--host",default="127.0.0.1")\n    web.add_argument("--port",type=int,default=8080)\n    browser=sub.add_parser("browser-smoke",help="open persistent ChatGPT browser for manual smoke testing")
+    web=sub.add_parser("web",help="run the Lab OS control UI")
+    web.add_argument("--config",default="config.yaml")
+    web.add_argument("--host",default="127.0.0.1")
+    web.add_argument("--port",type=int,default=8080)\n    browser=sub.add_parser("browser-smoke",help="open persistent ChatGPT browser for manual smoke testing")
     browser.add_argument("--profile-dir",default="./browser-profile"); browser.add_argument("--headless",action="store_true")
     browser.add_argument("--display"); browser.add_argument("--test-message"); browser.add_argument("--keep-open",action="store_true")
     diag=sub.add_parser("browser-project-diagnose",help="inspect Project/new-chat UI without clicking")
@@ -128,7 +131,11 @@ def continue_command(args):
     if result.state.reason: print(f"Reason: {result.state.reason}")
     if result.response: print(result.response)
 
-def web_command(args):\n    from .web import serve\n    serve(Path(args.config), args.host, args.port)\n\ndef browser_project_diagnose_command(args):
+def web_command(args):
+    from .web import serve
+    serve(Path(args.config), args.host, args.port)
+
+\ndef browser_project_diagnose_command(args):
     session=BrowserSession(Path("."))
     try:
         context=session.connect_over_cdp(args.cdp)
@@ -382,6 +389,7 @@ def main():
     elif args.command=="run": run_command(args)
     elif args.command=="continue": continue_command(args)
     elif args.command=="supervise": supervise_command(args)
+    elif args.command=="web": web_command(args)
     elif args.command=="browser-project-diagnose": browser_project_diagnose_command(args)
     elif args.command=="browser-project-new-chat-test": browser_project_new_chat_test_command(args)
     elif args.command=="browser-project-rollover-test": browser_project_rollover_test_command(args)
