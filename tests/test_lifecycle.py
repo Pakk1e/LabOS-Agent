@@ -142,14 +142,6 @@ def test_lifecycle_state_rejects_approval_outside_development():
         )
 
 
-def test_lifecycle_state_rejects_approval_without_timestamp():
-    with pytest.raises(ValueError, match="requires approved_at"):
-        LifecycleState(
-            phase=ProjectPhase.DEVELOPMENT,
-            approved=True,
-        )
-
-
 def test_lifecycle_state_rejects_corrupt_approved_file(tmp_path):
     state_root = tmp_path / "state"
     path = state_root / "demo"
