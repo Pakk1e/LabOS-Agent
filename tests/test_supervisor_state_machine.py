@@ -1,0 +1,59 @@
+from labos_agent.github_observer import GitHubObservation
+from labos_agent.response_protocol import parse_labos_response
+from labos_agent.supervisor_state_machine import SupervisorPhase, reconcile
+
+
+def observation(sha="abc1234", conclusion="success", ci_sha="abc1234"):
+    return GitHubObservation(
+        branch="main",
+        commit_sha=sha,
+        ci_run_id=166,
+        ci_status="completed",
+        ci_conclusion=conclusion,
+        ci_sha=ci_sha,
+        ci_name="CI",
+        ci_created_at="2026-09-29T08:00:00Z",
+        ci_url="https://example.test/ci/166",
+    )
+
+
+def response(state="DONE", commit="abc1234", ci_status="PASSED"):
+    return parse_labos_response(f"""<LABOS_STATE>
+STATE => {state}
+TASK_STATUS => {'COMPLETE' if state == 'DONE' else 'IN_PROGRESS'}
+CURRENT_COMMIT => {commit}
+COMMIT_STATUS => PUSHED
+REPOSITORY_CHANGED => YES
+LOCAL_TESTS => PASSED
+CI_RUN => 166
+CI_STATUS => {ci_status}
+NEXT_ACTION => {'FINISH' if state == 'DONE' else 'WAIT_FOR_CI'}
+</LABOS_STATE>
+(STATE {state} STATE)
+""")
+
+
+def test_done_is_verified_against_github():
+    result = reconcile(response(), observation())
+    assert result.phase == SupervisorPhase.DONE
+    assert result.verified is True
+    assert result.ci_verified is True
+
+
+def test_done_conflict_is_not_verified():
+    result = reconcile(response(), observation(sha="def5678"))
+    assert result.phase == SupervisorPhase.CONFLICT
+    assert result.verified is False
+
+
+def test_wait_ci_becomes_verified_when_exact_commit_ci_passed():
+    result = reconcile(response("WAIT_CI", ci_status="IN_PROGRESS"), observation())
+    assert result.phase == SupervisorPhase.WAITING_CI
+    assert result.ci_verified is True
+
+
+def test_legacy_done_is_unverified():
+    legacy = parse_labos_response("(STATE DONE STATE)")
+    result = reconcile(legacy, observation())
+    assert result.phase == SupervisorPhase.DONE
+    assert result.verified is False
