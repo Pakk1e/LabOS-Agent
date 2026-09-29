@@ -734,9 +734,9 @@ def test_full_lifecycle_browser_api_flow(tmp_path):
             page.get_by_role("button", name="Save notes").click()
             page.locator("#brainstormNotes").fill("Goals, users, constraints and alternatives")
             page.get_by_role("button", name="Save notes").click()
-            page.evaluate("fetch('/api/projects/demo/lifecycle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phase:'DOCUMENTATION'})})")
+            assert page.evaluate("""async () => (await fetch('/api/projects/demo/lifecycle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phase:'DOCUMENTATION'})})).status""") == 200
             page.evaluate("refresh()")
-            page.wait_for_function("document.body.innerText.includes('DOCUMENTATION')")
+            page.wait_for_function("document.body.innerText.includes('DOCUMENTATION')", timeout=10000)
             docs = root / "docs"
             docs.mkdir()
             for name in ("PRODUCT.md", "REQUIREMENTS.md", "ARCHITECTURE.md", "DECISIONS.md", "ROADMAP.md", "USER_FLOWS.md"):
@@ -807,3 +807,18 @@ def test_ui_exposes_engineering_workspaces_and_toasts():
         assert value in html
     assert "toastStack" in html
     assert "aria-modal" in html
+
+
+def test_web_server_is_local_only_by_default(monkeypatch, tmp_path):
+    import os
+    from labos_agent.web import _is_loopback_host, serve
+    assert _is_loopback_host("127.0.0.1")
+    assert _is_loopback_host("::1")
+    assert not _is_loopback_host("0.0.0.0")
+    monkeypatch.delenv("LABOS_ALLOW_REMOTE", raising=False)
+    try:
+        serve(tmp_path / "missing.yaml", "0.0.0.0", 0)
+    except RuntimeError as exc:
+        assert "local-only" in str(exc)
+    else:
+        raise AssertionError("remote binding was allowed without explicit opt-in")
