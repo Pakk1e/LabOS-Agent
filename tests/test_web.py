@@ -147,4 +147,4 @@ def test_ci_action_invokes_gh(monkeypatch):
     calls = []
     monkeypatch.setattr("labos_agent.web.subprocess.run", lambda *args, **kwargs: calls.append((args, kwargs)))
     _ci_action("Pakk1e/test", 123, "rerun")
-    assert calls[0][0][0:4] == (["gh", "run", "rerun", "123"],)
+    assert calls[0][0] == ["gh", "run", "rerun", "123", "--repo", "Pakk1e/test"]
