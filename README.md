@@ -134,6 +134,30 @@ The web service is intended for the trusted Lab OS server and binds to
 localhost by default. Put an authenticated reverse proxy in front of it before
 exposing it beyond the server.
 
+### Persistent server service
+
+For an unattended server, install the supplied systemd unit:
+
+```bash
+sudo install -m 0644 deploy/labos-web.service /etc/systemd/system/labos-web.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now labos-web
+sudo systemctl status labos-web
+```
+
+The unit runs as `park-pro`, uses the repository virtual environment, restarts
+after an unexpected web-process failure, and writes its output to the systemd
+journal. Once installed, the web service does not depend on an SSH session or
+an open browser window. The ChatGPT supervisor still requires the persistent
+Chromium/CDP service to be available when a supervisor is started.
+
+Useful commands:
+
+```bash
+sudo systemctl restart labos-web
+sudo journalctl -u labos-web -f
+```
+
 The UI deliberately uses the existing Python runtime and browser/GitHub
 supervisor state. It is a control surface, not a second implementation of the
 supervisor state machine.
@@ -160,3 +184,28 @@ The UI also exposes live operational state:
 - completed-run artifacts remain available after the supervisor exits.
 
 Run events are stored alongside each run as state/<project>/runs/<run>.events.jsonl. The event stream is intentionally append-only and contains operational metadata rather than ChatGPT prompt contents.
+
+
+### Parallel supervisors
+
+Supervisor execution is isolated per project. A filesystem lock at
+`state/<project>/supervisor.lock` prevents two supervisor processes from
+operating the same project at once, while supervisors for different projects
+may run concurrently.
+
+For example, Weather and Worlds can run at the same time:
+
+```text
+Weather supervisor  -> Weather Project/page -> VilaPro-Weather CI
+Worlds supervisor   -> Worlds Project/page  -> VilaPro-Worlds CI
+```
+
+Each concurrently running project must have its own identifiable ChatGPT
+Project page in the attached Chromium session. The browser adapter selects a
+page using the configured Project context and fails closed if it cannot find a
+matching page. Two supervisors must not share the same project.
+
+The per-project lock is a process-level safety boundary: if a second supervisor
+for the same project is started, it exits with a clear "supervisor already
+running" error instead of competing for the same ChatGPT conversation, state,
+or CI result.
