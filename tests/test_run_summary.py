@@ -64,3 +64,14 @@ def test_tracker_renders_ci_failure():
     assert "✗ GitHub Actions" in output
     assert "Result        FIX_CI" in output
     assert "Reason        test=failure" in output
+
+
+def test_tracker_shows_active_state_before_run_finishes():
+    tracker = RunTracker("weather", 8, _time(0))
+    tracker.start_iteration(_time(0))
+    tracker.record(state="WAIT_CI", chatgpt_work=True, remote_ci_passed=True)
+    tracker.finish_iteration("WAIT_CI", _time(5))
+
+    output = tracker.box()
+
+    assert "Result        WAIT_CI" in output
