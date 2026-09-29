@@ -220,7 +220,7 @@ def test_existing_repository_creation_does_not_bootstrap_files(tmp_path):
     from labos_agent.web import Handler
 
     config_path = tmp_path / "config.yaml"
-    config_path.write_text("projects: {}\\n", encoding="utf-8")
+    config_path.write_text("projects: {}\n", encoding="utf-8")
     root = tmp_path / "existing"
     root.mkdir()
     marker = root / "README.md"
