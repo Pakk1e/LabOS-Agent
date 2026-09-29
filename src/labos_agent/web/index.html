@@ -10,10 +10,10 @@
 </style></style></head>
 <body>
 <div class="app"><aside class="side"><div class="brand">LAB OS<small>Engineering control plane</small></div>
-<button class="primary" style="width:100%;margin-bottom:14px" onclick="openCreate()">＋ New Project</button><div id="projectList"></div></aside>
+<button class="primary" style="width:100%;margin-bottom:14px" aria-label="Create new project" onclick="openCreate()">＋ New Project</button><div id="projectList"></div></aside>
 <main><div class="top"><div><div class="eyebrow">Workspace</div><div class="title" id="pageTitle">Lab OS</div><div class="repo" id="pageRepo">Select a project</div></div>
-<div class="actions"><button onclick="refresh()">↻</button><button id="startBtn" class="primary" onclick="toggleSupervisor()" disabled>▶ Start</button></div></div>
-<div id="tabs" class="tabs"></div><div id="content"><div class="empty">Loading…</div></div></main></div>
+<div class="actions"><button aria-label="Refresh project" title="Refresh" onclick="refresh()">↻</button><button id="startBtn" class="primary" onclick="toggleSupervisor()" disabled>▶ Start</button></div></div>
+<nav id="tabs" class="tabs" aria-label="Project views"></nav><div id="content"><div class="empty">Loading…</div></div></main></div>
 <div class="modal" id="modal"><div class="dialog" id="dialog"></div></div>
 <script>
 let projects=[],selected=null,view='overview',ciCache=[],jobsCache={};
