@@ -559,7 +559,7 @@ class Handler(BaseHTTPRequestHandler):
             if length > _MAX_BODY_BYTES:
                 raise ValueError("request body too large")
             return json.loads(self.rfile.read(length) or b"{}")
-        except (ValueError, json.JSONDecodeError) as exc:
+        except json.JSONDecodeError as exc:
             raise ValueError("invalid JSON body") from exc
 
     def _project_name_from(self, suffix: str) -> str:
