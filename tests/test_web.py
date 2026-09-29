@@ -886,3 +886,69 @@ def test_lifecycle_state_path_rejects_absolute_project_names(tmp_path):
     from labos_agent.lifecycle import lifecycle_state_path
     with __import__("pytest").raises(ValueError):
         lifecycle_state_path(tmp_path, "/tmp/escape")
+
+
+def test_project_creation_modes_api(tmp_path, monkeypatch):
+    from http.client import HTTPConnection
+    from http.server import ThreadingHTTPServer
+    import subprocess
+    import yaml
+    from labos_agent.web import Handler, EventHub
+
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("projects: {}\n", encoding="utf-8")
+    existing = tmp_path / "existing"
+    existing.mkdir()
+    subprocess.run(["git", "-C", str(existing), "init"], check=True, capture_output=True)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server.config_path = config_path
+    server.event_hub = EventHub(config_path, interval=0.01)
+    server.event_hub.start()
+    try:
+        conn = HTTPConnection("127.0.0.1", server.server_port)
+        body = '{"name":"spec","repository":"example/spec","project_root":"' + str(tmp_path / "spec") + '","project_mode":"specification","create_repository":false}'
+        conn.request("POST", "/api/projects", body=body, headers={"Content-Type":"application/json"})
+        response = conn.getresponse()
+        assert response.status == 201
+        data = __import__("json").loads(response.read())
+        assert data["lifecycle_phase"] == "DOCUMENTATION"
+
+        conn = HTTPConnection("127.0.0.1", server.server_port)
+        body = '{"name":"existing","repository":"example/existing","project_root":"' + str(existing) + '","project_mode":"existing_repository","create_repository":false}'
+        conn.request("POST", "/api/projects", body=body, headers={"Content-Type":"application/json"})
+        response = conn.getresponse()
+        assert response.status == 201
+        data = __import__("json").loads(response.read())
+        assert data["project_mode"] == "existing_repository"
+        assert data["lifecycle_phase"] == "DOCUMENTATION"
+
+        saved = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        assert set(saved["projects"]) == {"spec", "existing"}
+        assert saved["projects"]["existing"]["lifecycle"]["mode"] == "existing_repository"
+    finally:
+        server.shutdown()
+        server.event_hub.stop()
+
+
+def test_project_creation_rejects_existing_repository_without_git(tmp_path):
+    from http.server import ThreadingHTTPServer
+    from labos_agent.web import Handler, EventHub
+    from http.client import HTTPConnection
+    root = tmp_path / "not-git"
+    root.mkdir()
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("projects: {}\n", encoding="utf-8")
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server.config_path = config_path
+    server.event_hub = EventHub(config_path, interval=0.01)
+    server.event_hub.start()
+    try:
+        conn = HTTPConnection("127.0.0.1", server.server_port)
+        body = '{"name":"bad","repository":"example/bad","project_root":"' + str(root) + '","project_mode":"existing_repository","create_repository":false}'
+        conn.request("POST", "/api/projects", body=body, headers={"Content-Type":"application/json"})
+        response = conn.getresponse()
+        assert response.status == 400
+        assert "local Git repository" in response.read().decode()
+    finally:
+        server.shutdown()
+        server.event_hub.stop()
