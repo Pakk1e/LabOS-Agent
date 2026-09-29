@@ -256,8 +256,7 @@ def test_existing_repository_mode_rejects_repository_creation(tmp_path):
     from labos_agent.web import Handler
 
     config_path = tmp_path / "config.yaml"
-    config_path.write_text("projects: {}
-", encoding="utf-8")
+    config_path.write_text("projects: {}\\n", encoding="utf-8")
     root = tmp_path / "existing"
     root.mkdir()
 
