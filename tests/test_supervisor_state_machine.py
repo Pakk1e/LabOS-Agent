@@ -57,3 +57,27 @@ def test_legacy_done_is_unverified():
     result = reconcile(legacy, observation())
     assert result.phase == SupervisorPhase.DONE
     assert result.verified is False
+
+
+def test_wait_for_ci_filters_to_target_sha():
+    from labos_agent.supervisor import CIRun, wait_for_ci
+    from datetime import datetime, timezone
+
+    runs = [
+        CIRun(1, "wrong", "completed", "success", "2026-09-29T08:00:00Z", "", "Wrong CI"),
+        CIRun(2, "target", "completed", "success", "2026-09-29T08:01:00Z", "", "Target CI"),
+    ]
+
+    passed, summary = wait_for_ci(
+        "owner/repo",
+        datetime(2026, 9, 29, 8, 2, tzinfo=timezone.utc),
+        baseline_run_ids=set(),
+        timeout_seconds=1,
+        poll_seconds=0,
+        target_sha="target",
+        request_fn=lambda _repository: runs,
+        sleep_fn=lambda _seconds: None,
+    )
+
+    assert passed is True
+    assert summary == "GitHub CI passed: Target CI=success"
