@@ -740,6 +740,8 @@ def test_full_lifecycle_browser_api_flow(tmp_path):
             for name in ("PRODUCT.md", "REQUIREMENTS.md", "ARCHITECTURE.md", "DECISIONS.md", "ROADMAP.md", "USER_FLOWS.md"):
                 (docs / name).write_text("Approved content", encoding="utf-8")
             (root / "AGENTS.md").write_text("Rules", encoding="utf-8")
+            from labos_agent.lifecycle import phase_evidence, ProjectPhase
+            assert phase_evidence(root, ProjectPhase.BRAINSTORM)[0]
             assert page.evaluate("""async () => (await fetch('/api/projects/demo/lifecycle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phase:'DOCUMENTATION'})})).status""") == 200
             page.evaluate("refresh()")
             page.wait_for_function("document.body.innerText.includes('DOCUMENTATION')", timeout=10000)
