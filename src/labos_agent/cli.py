@@ -94,12 +94,10 @@ def ci_command(args):
     for command in result.commands:
         print(f"$ {' '.join(command.command)}")
         if command.stdout:
-            print(command.stdout, end="" if command.stdout.endswith("
-") else "
+            print(command.stdout, end="" if command.stdout.endswith("\n") else "
 ")
         if command.stderr:
-            print(command.stderr, end="" if command.stderr.endswith("
-") else "
+            print(command.stderr, end="" if command.stderr.endswith("\n") else "
 ")
     if not result.success:
         raise SystemExit(result.commands[-1].returncode or 1)
