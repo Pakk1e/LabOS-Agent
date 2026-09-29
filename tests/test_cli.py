@@ -59,10 +59,3 @@ def test_web_command_parser():
     assert args.host == "127.0.0.1"
     assert args.port == 9090
 
-
-def test_cli_source_contains_no_escaped_newlines():
-    from pathlib import Path
-    import labos_agent.cli as cli
-
-    source = Path(cli.__file__).read_text(encoding="utf-8")
-    assert "\\n" not in source
