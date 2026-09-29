@@ -699,7 +699,10 @@ class Handler(BaseHTTPRequestHandler):
         current = project_config.lifecycle_phase
         requested = body.get("phase")
         target = current if requested is None else normalize_phase(str(requested))
-        approved = bool(body.get("approved", False))
+        approved_raw = body.get("approved", False)
+        if not isinstance(approved_raw, bool):
+            return self._send(400, {"error": "approved must be a boolean"})
+        approved = approved_raw
         has_notes = "brainstorm_notes" in body
         if target == current and not approved and not has_notes:
             return self._send(400, {"error": "no lifecycle change requested"})
