@@ -904,6 +904,8 @@ def test_project_creation_modes_api(tmp_path, monkeypatch):
     server.config_path = config_path
     server.event_hub = EventHub(config_path, interval=0.01)
     server.event_hub.start()
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
     try:
         conn = HTTPConnection("127.0.0.1", server.server_port)
         body = '{"name":"spec","repository":"example/spec","project_root":"' + str(tmp_path / "spec") + '","project_mode":"specification","create_repository":false}'
@@ -928,6 +930,7 @@ def test_project_creation_modes_api(tmp_path, monkeypatch):
     finally:
         server.shutdown()
         server.event_hub.stop()
+        thread.join(timeout=2)
 
 
 def test_project_creation_rejects_existing_repository_without_git(tmp_path):

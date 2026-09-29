@@ -18,7 +18,7 @@ from .config import load_config
 from .lifecycle import (LifecycleState, ProjectPhase, can_advance, can_start_supervisor, lifecycle_state_path, normalize_phase, normalize_project_mode, next_phase, phase_evidence, save_lifecycle_state)
 
 _PROJECT_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$")
-_REPO_RE = re.compile(r"^[^/\s]+/[^/\s]+$")
+_REPO_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,38}/[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
 _URL_RE = re.compile(r"^https?://[^\s]+$")
 _MAX_BODY_BYTES = 1024 * 1024
 _processes: dict[str, subprocess.Popen] = {}
