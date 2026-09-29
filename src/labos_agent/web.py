@@ -164,11 +164,16 @@ def _latest_run_events(config_path: Path, project: str, limit: int = 20) -> list
     _, path = max(candidates, key=lambda item: item[0])
     events = []
     try:
-        for line in path.read_text(encoding="utf-8").splitlines():
-            if line.strip():
-                events.append(json.loads(line))
-    except (OSError, ValueError):
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
         return []
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            events.append(json.loads(line))
+        except (ValueError, TypeError):
+            continue
     return events[-max(1, min(limit, 100)):]
 
 
@@ -178,11 +183,16 @@ def _run_events(config_path: Path, project: str, run_number: int) -> list[dict]:
         return []
     events = []
     try:
-        for line in path.read_text(encoding="utf-8").splitlines():
-            if line.strip():
-                events.append(json.loads(line))
-    except (OSError, ValueError):
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
         return []
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            events.append(json.loads(line))
+        except (ValueError, TypeError):
+            continue
     return events[-500:]
 
 
@@ -429,11 +439,16 @@ def _lifecycle_history(config_path: Path, project: str, limit: int = 100) -> lis
         return []
     records = []
     try:
-        for line in path.read_text(encoding="utf-8").splitlines():
-            if line.strip():
-                records.append(json.loads(line))
-    except (OSError, ValueError):
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
         return []
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            records.append(json.loads(line))
+        except (ValueError, TypeError):
+            continue
     return records[-max(1, min(limit, 500)):]
 
 
