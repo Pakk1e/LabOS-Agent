@@ -53,3 +53,12 @@ def test_run_history_and_process_status(tmp_path):
     assert _run_history(tmp_path / "config.yaml", "weather")[0]["run_number"] == 7
     status = _process_status("weather")
     assert status["running"] is False
+
+
+def test_project_repository_validation_accepts_normal_github_names():
+    from labos_agent.web import _REPO_RE
+
+    assert _REPO_RE.fullmatch("Pakk1e/VilaPro-Weather")
+    assert _REPO_RE.fullmatch("org/repo-with-s")
+    assert not _REPO_RE.fullmatch("org/repo name")
+    assert not _REPO_RE.fullmatch("/repo")
