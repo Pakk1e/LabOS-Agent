@@ -62,3 +62,23 @@ def test_project_repository_validation_accepts_normal_github_names():
     assert _REPO_RE.fullmatch("org/repo-with-s")
     assert not _REPO_RE.fullmatch("org/repo name")
     assert not _REPO_RE.fullmatch("/repo")
+
+
+def test_run_events_reads_persisted_timeline(tmp_path):
+    from labos_agent.web import _run_events
+
+    root = tmp_path / "state" / "weather" / "runs"
+    root.mkdir(parents=True)
+    (root / "000007.events.jsonl").write_text(
+        '{"ts":"2026-09-29T10:00:00Z","event":"run.start","state":"WORKING"}\n'
+        '{"ts":"2026-09-29T10:01:00Z","event":"iteration.complete","state":"WAITING_CI"}\n',
+        encoding="utf-8",
+    )
+    events = _run_events(tmp_path / "config.yaml", "weather", 7)
+    assert [event["event"] for event in events] == ["run.start", "iteration.complete"]
+
+
+def test_run_events_missing_timeline_is_empty(tmp_path):
+    from labos_agent.web import _run_events
+
+    assert _run_events(tmp_path / "config.yaml", "weather", 7) == []
