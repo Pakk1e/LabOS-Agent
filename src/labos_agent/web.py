@@ -74,6 +74,8 @@ def _project_view(config_path: Path, name: str, project) -> dict:
         "task_status": analysis.get("task_status") or analysis.get("TASK_STATUS") or "UNKNOWN",
         "next_action": analysis.get("next_action") or analysis.get("NEXT_ACTION") or "—",
         "updated_at": memory.get("updated_at"),
+        "last_response": memory.get("last_response"),
+        "analysis": analysis,
     }
 
 
@@ -131,6 +133,9 @@ class Handler(BaseHTTPRequestHandler):
             if parsed.path.startswith("/api/projects/") and parsed.path.endswith("/supervise"):
                 name = unquote(parsed.path.removeprefix("/api/projects/").removesuffix("/supervise")).strip("/")
                 return self._start_supervisor(name, body)
+            if parsed.path.startswith("/api/projects/") and parsed.path.endswith("/stop"):
+                name = unquote(parsed.path.removeprefix("/api/projects/").removesuffix("/stop")).strip("/")
+                return self._stop_supervisor(name)
             return self._send(404, {"error": "not found"})
         except ValueError as exc:
             return self._send(400, {"error": str(exc)})
@@ -163,6 +168,15 @@ class Handler(BaseHTTPRequestHandler):
         _write_config(self.config_path, payload)
         config = load_config(self.config_path)
         return self._send(201, _project_view(self.config_path, name, config.projects[name]))
+
+    def _stop_supervisor(self, name: str):
+        with _process_lock:
+            process = _processes.get(name)
+            if process is None or process.poll() is not None:
+                _processes.pop(name, None)
+                return self._send(409, {"error": "supervisor is not running"})
+            process.terminate()
+        return self._send(202, {"stopped": True, "project": name, "pid": process.pid})
 
     def _start_supervisor(self, name: str, body: dict):
         config = load_config(self.config_path)
