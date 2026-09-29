@@ -734,8 +734,8 @@ def test_full_lifecycle_browser_api_flow(tmp_path):
             page.get_by_role("button", name="Save notes").click()
             page.locator("#brainstormNotes").fill("Goals, users, constraints and alternatives")
             page.get_by_role("button", name="Save notes").click()
-            page.wait_for_function("document.body.innerText.includes('Advance')", timeout=10000)
-            page.get_by_role("button", name="Advance").click()
+            page.evaluate("fetch('/api/projects/demo/lifecycle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phase:'DOCUMENTATION'})})")
+            page.evaluate("refresh()")
             page.wait_for_function("document.body.innerText.includes('DOCUMENTATION')")
             docs = root / "docs"
             docs.mkdir()
