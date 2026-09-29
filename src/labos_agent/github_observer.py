@@ -43,16 +43,21 @@ def _get_json(url: str) -> dict:
     with urlopen(request, timeout=30) as response:
         return json.load(response)
 
-def observe_github(repository: str) -> GitHubObservation:
+def observe_github(repository: str, *, ci_run_id: int | None = None) -> GitHubObservation:
     owner, name = repository.split("/", 1)
     repo = _get_json(f"https://api.github.com/repos/{owner}/{name}")
     branch = str(repo["default_branch"])
     ref = _get_json(f"https://api.github.com/repos/{owner}/{name}/git/ref/heads/{branch}")
     commit_sha = str(ref["object"]["sha"])
-    runs = _get_json(
-        f"https://api.github.com/repos/{owner}/{name}/actions/runs?branch={branch}&per_page=20"
-    ).get("workflow_runs", [])
-    latest = runs[0] if runs else {}
+    if ci_run_id is not None:
+        latest = _get_json(
+            f"https://api.github.com/repos/{owner}/{name}/actions/runs/{ci_run_id}"
+        )
+    else:
+        runs = _get_json(
+            f"https://api.github.com/repos/{owner}/{name}/actions/runs?branch={branch}&per_page=20"
+        ).get("workflow_runs", [])
+        latest = runs[0] if runs else {}
     return GitHubObservation(
         branch=branch,
         commit_sha=commit_sha,
