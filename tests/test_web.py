@@ -677,6 +677,7 @@ def test_lifecycle_ui_browser_flow(tmp_path):
             errors = []
             page.on("pageerror", lambda error: errors.append(str(error)))
             page.goto(f"http://127.0.0.1:{server.server_port}/", wait_until="domcontentloaded")
+            assert page.evaluate("typeof refresh") == "function", errors
             page.wait_for_function("document.querySelector('#projectList')?.innerText.includes('demo')", timeout=10000)
             assert not errors, errors
             page.get_by_text("DEVELOPMENT", exact=True).first.wait_for()
