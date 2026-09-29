@@ -10,7 +10,9 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
 import os
+import fcntl
 from pathlib import Path
+from contextlib import contextmanager
 import subprocess
 import time
 from urllib.error import HTTPError, URLError
@@ -129,6 +131,22 @@ class CIRun:
 
 class SupervisorError(RuntimeError):
     pass
+
+
+@contextmanager
+def _project_execution_lock(project: str):
+    """Allow one supervisor process per project while permitting other projects to run."""
+    path = Path("state") / project / "supervisor.lock"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise SupervisorError(f"supervisor already running for project: {project}") from exc
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def _github_get(repository: str, *, per_page: int = 30) -> list[CIRun]:
@@ -361,6 +379,10 @@ Start now by inspecting the current repository state and continue the task.
         return response
 
     def run(self) -> str:
+        with _project_execution_lock(self.project_name):
+            return self._run_locked()
+
+    def _run_locked(self) -> str:
         run_started_at = datetime.now(timezone.utc)
         tracker = RunTracker(self.project_name, _next_run_number(self.project_name), run_started_at)
         trace("run.start", project=self.project_name, run=tracker.summary.run_number)
