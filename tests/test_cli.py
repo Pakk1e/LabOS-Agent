@@ -49,3 +49,12 @@ def test_ci_command_parser():
     assert args.project == "weather"
     assert args.stage == "build"
     assert args.config == "config.yaml"
+
+
+def test_web_command_parser():
+    parser = build_parser()
+    args = parser.parse_args(["web", "--host", "127.0.0.1", "--port", "9090"])
+    assert args.command == "web"
+    assert args.config == "config.yaml"
+    assert args.host == "127.0.0.1"
+    assert args.port == 9090
