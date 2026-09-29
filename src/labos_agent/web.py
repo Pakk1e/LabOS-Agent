@@ -87,13 +87,46 @@ def _run_events(config_path: Path, project: str, run_number: int) -> list[dict]:
     return events[-500:]
 
 
-def _process_status(name: str) -> dict:
+def _process_record(config_path: Path, name: str) -> Path:
+    return config_path.parent / "state" / name / "web-process.json"
+
+
+def _persist_process(config_path: Path, name: str, process: subprocess.Popen) -> None:
+    path = _process_record(config_path, name)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"pid": process.pid, "project": name, "config": str(config_path)}) + "\n", encoding="utf-8")
+    tmp.replace(path)
+
+
+def _clear_process_record(config_path: Path, name: str) -> None:
+    try:
+        _process_record(config_path, name).unlink()
+    except FileNotFoundError:
+        pass
+
+
+def _process_status(config_path: Path, name: str) -> dict:
     with _process_lock:
         process = _processes.get(name)
-        if process is None:
-            return {"running": False, "pid": None}
-        running = process.poll() is None
-        return {"running": running, "pid": process.pid if running else None, "returncode": None if running else process.returncode}
+        if process is not None:
+            running = process.poll() is None
+            if running:
+                return {"running": True, "pid": process.pid}
+            _processes.pop(name, None)
+            _clear_process_record(config_path, name)
+            return {"running": False, "pid": None, "returncode": process.returncode}
+        try:
+            record = json.loads(_process_record(config_path, name).read_text(encoding="utf-8"))
+            pid = int(record["pid"])
+            cmdline = Path("/proc/{}/cmdline".format(pid)).read_bytes().decode(errors="replace")
+            expected = "-m\x00labos_agent.cli\x00supervise\x00{}".format(name)
+            if record.get("project") == name and record.get("config") == str(config_path) and expected in cmdline:
+                return {"running": True, "pid": pid}
+        except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+            pass
+        _clear_process_record(config_path, name)
+        return {"running": False, "pid": None}
 
 
 def _ci_jobs(repository: str, run_id: int) -> list[dict]:
@@ -104,11 +137,8 @@ def _ci_jobs(repository: str, run_id: int) -> list[dict]:
 def _project_view(config_path: Path, name: str, project) -> dict:
     memory = _memory(config_path, name)
     analysis = memory.get("last_analysis") or {}
-    with _process_lock:
-        process = _processes.get(name)
-        running = process is not None and process.poll() is None
-        if process is not None and not running:
-            _processes.pop(name, None)
+    process_status = _process_status(config_path, name)
+    running = process_status["running"]
     return {
         "name": name,
         "repository": project.repository,
@@ -184,7 +214,7 @@ class Handler(BaseHTTPRequestHandler):
             if len(parts) == 2 and parts[1] == "runs":
                 return self._send(200, {
                     "runs": _run_history(self.config_path, name),
-                    "process": _process_status(name),
+                    "process": _process_status(self.config_path, name),
                 })
             if len(parts) == 3 and parts[1] == "runs" and parts[2].isdigit():
                 return self._send(200, {"events": _run_events(self.config_path, name, int(parts[2]))})
@@ -316,6 +346,7 @@ class Handler(BaseHTTPRequestHandler):
                 _processes.pop(name, None)
                 return self._send(409, {"error": "supervisor is not running"})
             process.terminate()
+            _clear_process_record(self.config_path, name)
         return self._send(202, {"stopped": True, "project": name, "pid": process.pid})
 
     def _start_supervisor(self, name: str, body: dict):
@@ -333,6 +364,7 @@ class Handler(BaseHTTPRequestHandler):
                    "--config", str(self.config_path), "--max-turns", str(max_turns)]
             process = subprocess.Popen(cmd, cwd=str(self.config_path.parent))
             _processes[name] = process
+            _persist_process(self.config_path, name, process)
         return self._send(202, {"started": True, "pid": process.pid, "project": name, "max_turns": max_turns})
 
 
