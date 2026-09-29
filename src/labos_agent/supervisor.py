@@ -371,6 +371,9 @@ IMPLEMENTATION AND CI WORKFLOW:
 CURRENT TASK:
 {task}
 
+LIFECYCLE:
+{self._lifecycle_context()}
+
 {recovery_context}
 
 Start now by inspecting the current repository state and continue the task.
@@ -390,6 +393,14 @@ Start now by inspecting the current repository state and continue the task.
         return response
 
     def run(self) -> str:
+        if not can_start_supervisor(
+            self.project.lifecycle_phase,
+            self.project.lifecycle_approved,
+        ):
+            raise SupervisorError(
+                "human approval is required before starting the supervisor in "
+                "the DEVELOPMENT lifecycle phase"
+            )
         with _project_execution_lock(self.project_name):
             return self._run_locked()
 
