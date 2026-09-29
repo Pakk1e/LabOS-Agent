@@ -15,7 +15,7 @@ from threading import Lock, Thread
 from urllib.parse import unquote, urlparse
 
 from .config import load_config
-from .lifecycle import (LifecycleState, ProjectPhase, can_start_supervisor, lifecycle_state_path, normalize_phase, normalize_project_mode, next_phase, save_lifecycle_state)
+from .lifecycle import (LifecycleState, ProjectPhase, can_advance, can_start_supervisor, lifecycle_state_path, normalize_phase, normalize_project_mode, next_phase, save_lifecycle_state)
 
 _PROJECT_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$")
 _REPO_RE = re.compile(r"^[^/\s]+/[^/\s]+$")
@@ -693,9 +693,17 @@ class Handler(BaseHTTPRequestHandler):
             approved_at=project_config.lifecycle_approved_at,
         )
         if target != current:
-            expected = next_phase(current)
-            if target != expected:
-                return self._send(409, {"error": "invalid lifecycle transition"})
+            allowed, missing = can_advance(project_config.project_root, current, target)
+            if not allowed:
+                return self._send(
+                    409,
+                    {
+                        "error": "lifecycle evidence gate not satisfied",
+                        "phase": current.value,
+                        "target": target.value,
+                        "missing_evidence": list(missing),
+                    },
+                )
             state = LifecycleState(phase=target)
         if approved:
             state = LifecycleState(
