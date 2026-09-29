@@ -421,6 +421,74 @@ def _lifecycle_gate(project) -> dict:
         return {"target": None, "satisfied": True, "missing": []}
     satisfied, missing = phase_evidence(project.project_root, target)
     return {"target": target.value, "satisfied": satisfied, "missing": list(missing)}
+def _lifecycle_history(config_path: Path, project: str, limit: int = 100) -> list[dict]:
+    path = _lifecycle_history_path(config_path, project)
+    if not path.exists():
+        return []
+    records = []
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                records.append(json.loads(line))
+    except (OSError, ValueError):
+        return []
+    return records[-max(1, min(limit, 500)):]
+
+
+def _repository_assessment(config_path: Path, project: str) -> dict:
+    path = config_path.parent / "state" / project / "repository_assessment.json"
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def _documentation_inventory(root: str) -> list[dict]:
+    target = Path(root).expanduser()
+    docs = [
+        "IDEA.md", "PRODUCT.md", "REQUIREMENTS.md", "ARCHITECTURE.md",
+        "DECISIONS.md", "ROADMAP.md", "USER_FLOWS.md", "PLAN.md",
+    ]
+    result = []
+    for name in docs:
+        path = target / "docs" / name
+        exists = path.exists()
+        content = ""
+        if exists:
+            try:
+                content = path.read_text(encoding="utf-8")
+            except OSError:
+                content = ""
+        placeholder = any(token in content for token in (
+            "_To be completed", "_To be created", "TODO", "TBD",
+        ))
+        result.append({"name": name, "path": str(path), "exists": exists, "placeholder": placeholder, "bytes": len(content.encode("utf-8"))})
+    agents = target / "AGENTS.md"
+    result.append({"name": "AGENTS.md", "path": str(agents), "exists": agents.exists(), "placeholder": False, "bytes": agents.stat().st_size if agents.exists() else 0})
+    return result
+
+
+def _validation_summary(root: str) -> dict:
+    target = Path(root).expanduser()
+    candidates = [
+        target / "docs" / "VALIDATION.md",
+        target / "docs" / "VALIDATION_REPORT.md",
+        target / "VALIDATION.md",
+    ]
+    report = next((p for p in candidates if p.exists()), None)
+    if report is None:
+        return {"exists": False, "path": None, "acceptance_criteria": [], "passed": 0, "total": 0}
+    try:
+        text = report.read_text(encoding="utf-8")
+    except OSError:
+        return {"exists": False, "path": str(report), "acceptance_criteria": [], "passed": 0, "total": 0}
+    ids = sorted(set(re.findall(r"\bAC-[A-Za-z0-9._-]+\b", text)))
+    passed = [item for item in ids if re.search(re.escape(item) + r".{0,160}\bPASS\b", text, re.IGNORECASE | re.DOTALL)]
+    return {"exists": True, "path": str(report), "acceptance_criteria": [{"id": item, "passed": item in passed} for item in ids], "passed": len(passed), "total": len(ids)}
+
+
 def _project_view(config_path: Path, name: str, project) -> dict:
     memory = _memory(config_path, name)
     analysis = memory.get("last_analysis") or {}
@@ -537,6 +605,18 @@ class Handler(BaseHTTPRequestHandler):
             project = config.projects.get(name)
             if project is None:
                 return self._send(404, {"error": "project not found"})
+            if len(parts) == 2 and parts[1] == "lifecycle-history":
+                return self._send(200, {"history": _lifecycle_history(self.config_path, name)})
+
+            if len(parts) == 2 and parts[1] == "documentation":
+                return self._send(200, {"documents": _documentation_inventory(str(project.project_root))})
+
+            if len(parts) == 2 and parts[1] == "validation":
+                return self._send(200, _validation_summary(str(project.project_root)))
+
+            if len(parts) == 2 and parts[1] == "repository-assessment":
+                return self._send(200, _repository_assessment(self.config_path, name))
+
             if len(parts) == 2 and parts[1] == "runs":
                 return self._send(200, {
                     "runs": _run_history(self.config_path, name),
