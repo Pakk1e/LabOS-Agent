@@ -278,3 +278,60 @@ def test_existing_repository_mode_rejects_repository_creation(tmp_path):
 
     assert sent["status"] == 400
     assert "cannot create or clone" in sent["body"]["error"]
+
+
+def _make_lifecycle_handler(tmp_path, phase="PLANNING"):
+    from labos_agent.web import Handler
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        f"""projects:
+  demo:
+    repository: example/demo
+    project_root: {tmp_path / "repo"}
+    continuation_message: Continue demo
+    lifecycle:
+      mode: guided
+      phase: {phase}
+""",
+        encoding="utf-8",
+    )
+    handler = object.__new__(Handler)
+    handler.server = type("Server", (), {"config_path": config_path})()
+    sent = {}
+    handler._send = lambda status, body, content_type="application/json": sent.update(
+        status=status, body=body
+    )
+    return handler, config_path, sent
+
+
+def test_lifecycle_rejects_combined_transition_and_development_approval(tmp_path):
+    handler, config_path, sent = _make_lifecycle_handler(tmp_path)
+    handler._update_lifecycle("demo", {"phase": "DEVELOPMENT", "approved": True})
+    assert sent["status"] == 409
+    assert "advance to DEVELOPMENT" in sent["body"]["error"]
+    assert load_config(config_path).projects["demo"].lifecycle_phase.name == "PLANNING"
+
+
+def test_lifecycle_rejects_invalid_transition_without_saving_notes(tmp_path):
+    handler, config_path, sent = _make_lifecycle_handler(tmp_path)
+    handler._update_lifecycle(
+        "demo",
+        {"phase": "VALIDATION", "brainstorm_notes": "must not be saved"},
+    )
+    assert sent["status"] == 409
+    assert "invalid lifecycle transition" in sent["body"]["error"]
+    assert load_config(config_path).projects["demo"].brainstorm_notes == ""
+
+
+def test_lifecycle_requires_separate_development_transition_and_approval(tmp_path):
+    handler, config_path, sent = _make_lifecycle_handler(tmp_path)
+    handler._update_lifecycle("demo", {"phase": "DEVELOPMENT"})
+    assert sent["status"] == 200
+    assert load_config(config_path).projects["demo"].lifecycle_phase.name == "DEVELOPMENT"
+    assert not load_config(config_path).projects["demo"].lifecycle_approved
+
+    handler._update_lifecycle("demo", {"approved": True})
+    assert sent["status"] == 200
+    project = load_config(config_path).projects["demo"]
+    assert project.lifecycle_approved
+    assert project.lifecycle_approved_at
