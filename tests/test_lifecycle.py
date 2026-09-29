@@ -259,3 +259,18 @@ def test_validation_gate_requires_validation_report(tmp_path):
     ok, missing = can_advance(root, ProjectPhase.VALIDATION, ProjectPhase.MAINTENANCE)
     assert ok
     assert not missing
+
+
+def test_brainstorm_gate_requires_brainstorm_notes(tmp_path):
+    from labos_agent.lifecycle import can_advance
+    root = tmp_path / "repo"
+    (root / "docs").mkdir(parents=True)
+    idea = root / "docs" / "IDEA.md"
+    idea.write_text("# Project Idea\n\nInitial idea", encoding="utf-8")
+    ok, missing = can_advance(root, ProjectPhase.BRAINSTORM, ProjectPhase.DOCUMENTATION)
+    assert not ok
+    assert any("LabOS brainstorming notes" in item for item in missing)
+    idea.write_text("# Project Idea\n\nInitial idea\n\n## LabOS brainstorming notes\n\nGoals and scope", encoding="utf-8")
+    ok, missing = can_advance(root, ProjectPhase.BRAINSTORM, ProjectPhase.DOCUMENTATION)
+    assert ok
+    assert not missing
