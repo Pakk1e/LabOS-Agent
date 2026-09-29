@@ -736,6 +736,7 @@ def test_full_lifecycle_browser_api_flow(tmp_path):
             page.get_by_role("button", name="Save notes").click()
             docs = root / "docs"
             docs.mkdir(exist_ok=True)
+            (docs / "IDEA.md").write_text("# Project Idea\n\n## LabOS brainstorming notes\n\nGoals, users, constraints and alternatives", encoding="utf-8")
             for name in ("PRODUCT.md", "REQUIREMENTS.md", "ARCHITECTURE.md", "DECISIONS.md", "ROADMAP.md", "USER_FLOWS.md"):
                 (docs / name).write_text("Approved content", encoding="utf-8")
             (root / "AGENTS.md").write_text("Rules", encoding="utf-8")
