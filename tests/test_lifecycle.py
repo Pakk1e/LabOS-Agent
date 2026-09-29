@@ -176,3 +176,38 @@ def test_lifecycle_state_rejects_non_boolean_approval(tmp_path):
     )
     with pytest.raises(ValueError, match="invalid lifecycle state"):
         load_lifecycle_state(state_root, "demo")
+
+
+def test_supervisor_prompt_includes_lifecycle_contract(tmp_path):
+    project = ProjectConfig(
+        name="demo",
+        repository="example/demo",
+        project_root=tmp_path,
+        continuation_message="Continue demo",
+        lifecycle_phase=ProjectPhase.DOCUMENTATION,
+        project_mode="specification",
+    )
+    supervisor = ConversationSupervisor(AppConfig(projects={"demo": project}), "demo")
+    prompt = supervisor._bootstrap_prompt()
+    assert "PROJECT LIFECYCLE PHASE: DOCUMENTATION" in prompt
+    assert "PROJECT MODE: specification" in prompt
+    assert "Do not begin feature implementation" in prompt
+
+
+def test_config_rejects_non_boolean_legacy_approval(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """projects:
+  demo:
+    repository: example/demo
+    project_root: /tmp/demo
+    continuation_message: Continue demo
+    lifecycle:
+      phase: PLANNING
+      approved: "false"
+""",
+        encoding="utf-8",
+    )
+    from labos_agent.config import load_config
+    with pytest.raises(ValueError, match="must be a boolean"):
+        load_config(config_path)
