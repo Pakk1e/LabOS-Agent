@@ -274,3 +274,28 @@ def test_brainstorm_gate_requires_brainstorm_notes(tmp_path):
     ok, missing = can_advance(root, ProjectPhase.BRAINSTORM, ProjectPhase.DOCUMENTATION)
     assert ok
     assert not missing
+
+
+def test_maintenance_gate_validates_each_acceptance_criterion(tmp_path):
+    from labos_agent.lifecycle import can_advance
+    root = tmp_path / "repo"
+    (root / "docs").mkdir(parents=True)
+    (root / "docs" / "REQUIREMENTS.md").write_text("Requirements", encoding="utf-8")
+    (root / "PLAN.md").write_text(
+        "# Plan\n\n## Acceptance Criteria\n- AC-1 user can save\n- AC-2 user can export",
+        encoding="utf-8",
+    )
+    (root / "VALIDATION.md").write_text(
+        "# Validation\n\n## Validation Results\nPASS\n\n## Acceptance Criteria\nAC-1 PASS",
+        encoding="utf-8",
+    )
+    ok, missing = can_advance(root, ProjectPhase.VALIDATION, ProjectPhase.MAINTENANCE)
+    assert not ok
+    assert any("AC-2" in item for item in missing)
+    (root / "VALIDATION.md").write_text(
+        "# Validation\n\n## Validation Results\nPASS\n\n## Acceptance Criteria\nAC-1 PASS\nAC-2 PASS",
+        encoding="utf-8",
+    )
+    ok, missing = can_advance(root, ProjectPhase.VALIDATION, ProjectPhase.MAINTENANCE)
+    assert ok
+    assert not missing
