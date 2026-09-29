@@ -52,8 +52,18 @@ PHASE_EVIDENCE_FILES = {
         "docs/USER_FLOWS.md",
         "AGENTS.md",
     ),
-    ProjectPhase.PLANNING: ("PLAN.md", "docs/REQUIREMENTS.md"),
-    ProjectPhase.VALIDATION: ("VALIDATION.md", "docs/REQUIREMENTS.md"),
+    ProjectPhase.PLANNING: ("docs/REQUIREMENTS.md",),
+    ProjectPhase.VALIDATION: ("docs/REQUIREMENTS.md",),
+}
+
+PHASE_EVIDENCE_MARKERS = {
+    ProjectPhase.PLANNING: ("Acceptance Criteria",),
+    ProjectPhase.VALIDATION: ("Validation Results", "Acceptance Criteria"),
+}
+
+ALTERNATIVE_EVIDENCE = {
+    "implementation_plan": ("PLAN.md", "docs/PLAN.md"),
+    "validation_report": ("VALIDATION.md", "docs/VALIDATION.md"),
 }
 
 PLACEHOLDER_MARKERS = (
@@ -68,6 +78,19 @@ def phase_evidence(project_root: Path, phase: ProjectPhase) -> tuple[bool, tuple
     """Return whether the repository contains the minimum evidence for entering phase."""
     required = PHASE_EVIDENCE_FILES.get(phase, ())
     missing: list[str] = []
+    alternatives = ALTERNATIVE_EVIDENCE.get(
+        "implementation_plan" if phase is ProjectPhase.PLANNING else "validation_report",
+        (),
+    )
+    if alternatives:
+        existing_alternative = next(
+            (relative for relative in alternatives if (project_root / relative).is_file()),
+            None,
+        )
+        if existing_alternative is None:
+            missing.append(" or ".join(alternatives))
+        else:
+            required = required + (existing_alternative,)
     for relative in required:
         path = project_root / relative
         if not path.is_file():
@@ -80,6 +103,10 @@ def phase_evidence(project_root: Path, phase: ProjectPhase) -> tuple[bool, tuple
             continue
         if not content or any(marker in content for marker in PLACEHOLDER_MARKERS):
             missing.append(relative)
+            continue
+        for marker in PHASE_EVIDENCE_MARKERS.get(phase, ()):
+            if marker not in content:
+                missing.append(f"{relative} (missing '{marker}')")
     return not missing, tuple(missing)
 
 
