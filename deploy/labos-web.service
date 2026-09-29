@@ -1,0 +1,18 @@
+[Unit]
+Description=Vadovsky Tech LabOS control web
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=park-pro
+Group=park-pro
+WorkingDirectory=/home/park-pro/LabOS-Agent
+ExecStart=/home/park-pro/LabOS-Agent/.venv/bin/python -m labos_agent.cli web --config /home/park-pro/LabOS-Agent/config.yaml --host 127.0.0.1 --port 8080
+Restart=on-failure
+RestartSec=5
+KillMode=control-group
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
