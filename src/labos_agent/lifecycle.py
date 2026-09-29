@@ -162,10 +162,29 @@ def validate_acceptance_criteria(project_root: Path) -> tuple[bool, tuple[str, .
     validation_lines = validation_text.splitlines()
     missing = []
     for criterion_id in criteria:
-        matching = [line for line in validation_lines if re.search(rf"\b{re.escape(criterion_id)}\b", line, re.IGNORECASE)]
+        matching = [
+            line
+            for line in validation_lines
+            if re.search(rf"\b{re.escape(criterion_id)}\b", line, re.IGNORECASE)
+        ]
         if not matching:
             missing.append(f"{criterion_id} is missing from validation")
-        elif not any(re.search(r"\bPASS\b", line, re.IGNORECASE) for line in matching):
+            continue
+        passed = False
+        for line in matching:
+            status_text = re.sub(
+                rf"^.*?\b{re.escape(criterion_id)}\b",
+                "",
+                line,
+                count=1,
+                flags=re.IGNORECASE,
+            )
+            if re.search(r"\bNOT\s+PASS\b", status_text, re.IGNORECASE):
+                continue
+            if re.search(r"\bPASS\b", status_text, re.IGNORECASE):
+                passed = True
+                break
+        if not passed:
             missing.append(f"{criterion_id} is not marked PASS")
     return not missing, tuple(missing)
 
