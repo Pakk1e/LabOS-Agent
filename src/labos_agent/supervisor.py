@@ -28,6 +28,7 @@ from .github_observer import GitHubObservation, observe_github
 from .supervisor_memory import SupervisorMemory, load_memory, memory_path, save_memory
 from .supervisor_state_machine import reconcile
 from .trace import trace, trace_summary
+from .lifecycle import can_start_supervisor, phase_instruction
 
 def _save_run_summary(project: str, tracker: RunTracker) -> None:
     path = Path("state") / project / "runs" / f"{tracker.summary.run_number:06d}.json"
@@ -286,7 +287,9 @@ class ConversationSupervisor:
         )
         self.turns = 0
 
-    def _recovery_context(self, memory: SupervisorMemory, observation: GitHubObservation) -> str:
+    def _lifecycle_context(self) -> str:
+        phase = self.project.lifecycle_phase
+        return (\n            f"PROJECT LIFECYCLE PHASE: {phase.value}\\n"\n            f"PROJECT MODE: {self.project.project_mode}\\n"\n            f"HUMAN APPROVAL: {'APPROVED' if self.project.lifecycle_approved else 'NOT APPROVED'}\\n"\n            f"PHASE RULE: {phase_instruction(phase)}"\n        )\n\n    def _recovery_context(self, memory: SupervisorMemory, observation: GitHubObservation) -> str:
         if not memory.last_analysis:
             return (
                 "No previous structured supervisor state exists. Treat this as a fresh run "
