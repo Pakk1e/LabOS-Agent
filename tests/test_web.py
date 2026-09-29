@@ -501,7 +501,7 @@ def test_ui_contains_lifecycle_gate_and_approval_controls():
     html = Path(__file__).resolve().parents[1] / "src" / "labos_agent" / "web" / "index.html"
     text = html.read_text(encoding="utf-8")
     assert "lifecycle_gate" in text
-    assert "Approve Development" in text
+    assert "Approve development" in text
     assert "advanceLifecycle" in text
     assert "/lifecycle" in text
 
@@ -675,6 +675,7 @@ def test_lifecycle_ui_browser_flow(tmp_path):
             browser = playwright.chromium.launch()
             page = browser.new_page()
             page.goto(f"http://127.0.0.1:{server.server_port}/", wait_until="domcontentloaded")
+            page.wait_for_function("document.querySelector('#projectList')?.innerText.includes('demo')")
             page.get_by_text("DEVELOPMENT", exact=True).first.wait_for()
             page.get_by_role("button", name="Approve Development").click()
             page.get_by_text("Approved", exact=True).wait_for()
