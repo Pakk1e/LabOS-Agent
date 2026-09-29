@@ -48,9 +48,7 @@ def test_trace_summary_preserves_box_layout(capsys, monkeypatch):
     monkeypatch.setenv("LABOS_TRACE", "1")
 
     trace_summary(
-        "┌─ LabOS Run #42 ─────────
-│ Result        DONE
-└────────────────────────",
+        "┌─ LabOS Run #42 ─────────\n│ Result        DONE\n└────────────────────────",
         project="weather",
         success=True,
     )
