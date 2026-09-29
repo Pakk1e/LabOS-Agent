@@ -556,6 +556,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(400, {"error": str(exc)})
         create_repository = bool(body.get("create_repository", False))
         visibility = str(body.get("repository_visibility", "private")).strip().lower()
+        if project_mode == "existing_repository" and not create_repository:
+            target = Path(root).expanduser()
+            if not target.is_dir():
+                return self._send(400, {"error": "existing_repository mode requires an existing local repository directory"})
+            git_metadata = target / ".git"
+            if not git_metadata.exists():
+                return self._send(400, {"error": "existing_repository mode requires a local Git repository"})
         if create_repository:
             if project_mode == "existing_repository":
                 return self._send(
