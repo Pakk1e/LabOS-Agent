@@ -504,3 +504,37 @@ def test_ui_contains_lifecycle_gate_and_approval_controls():
     assert "Approve Development" in text
     assert "advanceLifecycle" in text
     assert "/lifecycle" in text
+
+
+def test_concurrent_lifecycle_transition_allows_only_one_winner(tmp_path):
+    import threading
+    from labos_agent.web import Handler
+    config_path = tmp_path / "config.yaml"
+    repo = tmp_path / "repo"
+    (repo / "docs").mkdir(parents=True)
+    (repo / "docs" / "REQUIREMENTS.md").write_text("Requirements", encoding="utf-8")
+    (repo / "PLAN.md").write_text("# Plan\n\n## Acceptance Criteria\n- AC-1 works", encoding="utf-8")
+    config_path.write_text(
+        f"""projects:
+  demo:
+    repository: example/demo
+    project_root: {repo}
+    continuation_message: Continue demo
+    lifecycle:
+      phase: PLANNING
+""",
+        encoding="utf-8",
+    )
+    results = []
+    def worker():
+        handler = object.__new__(Handler)
+        handler.server = type("Server", (), {"config_path": config_path})()
+        sent = {}
+        handler._send = lambda status, body, content_type="application/json": sent.update(status=status, body=body)
+        handler._update_lifecycle("demo", {"phase": "DEVELOPMENT"})
+        results.append(sent["status"])
+    threads = [threading.Thread(target=worker) for _ in range(2)]
+    for thread in threads: thread.start()
+    for thread in threads: thread.join()
+    assert sorted(results) == [200, 400]
+    assert load_config(config_path).projects["demo"].lifecycle_phase.name == "DEVELOPMENT"
