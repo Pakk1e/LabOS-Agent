@@ -605,3 +605,34 @@ def test_existing_repository_project_root_update_requires_git(tmp_path):
     handler._send = lambda status, body, content_type="application/json": sent.update(status=status, body=body)
     handler._update_project("demo", {"project_root": str(tmp_path / "not-git")})
     assert sent["status"] == 400
+
+
+def test_new_project_bootstrap_matches_lifecycle_documentation_gate(tmp_path):
+    from labos_agent.web import Handler
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("projects: {}\n", encoding="utf-8")
+    root = tmp_path / "repo"
+    handler = object.__new__(Handler)
+    handler.server = type("Server", (), {"config_path": config_path})()
+    sent = {}
+    handler._send = lambda status, body, content_type="application/json": sent.update(status=status, body=body)
+    handler._create_project({
+        "name": "demo",
+        "repository": "example/demo",
+        "project_root": str(root),
+        "project_mode": "guided",
+        "initial_idea": "Initial idea",
+    })
+    expected = {"IDEA.md", "PRODUCT.md", "REQUIREMENTS.md", "ARCHITECTURE.md", "DECISIONS.md", "ROADMAP.md", "USER_FLOWS.md"}
+    assert {p.name for p in (root / "docs").iterdir()} == expected
+    assert (root / "AGENTS.md").is_file()
+    project = load_config(config_path).projects["demo"]
+    assert project.lifecycle_phase.name == "BRAINSTORM"
+
+
+def test_lifecycle_change_is_blocked_while_supervisor_running(tmp_path, monkeypatch):
+    handler, config_path, sent = _make_lifecycle_handler(tmp_path)
+    monkeypatch.setattr("labos_agent.web._process_status", lambda *args: {"running": True, "pid": 123})
+    handler._update_lifecycle("demo", {"phase": "DOCUMENTATION"})
+    assert sent["status"] == 409
+    assert "stop the supervisor" in sent["body"]["error"]
