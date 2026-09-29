@@ -37,6 +37,7 @@ class ProjectConfig:
     lifecycle_approved: bool = False
     project_mode: str = "guided"
     initial_idea: str = ""
+    brainstorm_notes: str = ""
 
 @dataclass(frozen=True)
 class AppConfig:
@@ -90,5 +91,6 @@ def load_config(path: Path) -> AppConfig:
             lifecycle_approved=bool(value.get("lifecycle", {}).get("approved", False)),
             project_mode=str(value.get("lifecycle", {}).get("mode", "guided")),
             initial_idea=str(value.get("initial_idea", "")),
+            brainstorm_notes=str(value.get("brainstorm_notes", "")),
         )
     return AppConfig(browser=browser, projects=projects)
