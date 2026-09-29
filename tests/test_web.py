@@ -704,3 +704,42 @@ def test_ui_has_accessible_shell_controls():
     assert 'aria-label="Project views"' in text
     assert 'aria-label="Create new project"' in text
     assert "updateCreateMode()" in text
+
+
+def test_workspace_helpers_expose_documentation_validation_and_assessment(tmp_path):
+    from labos_agent.web import _documentation_inventory, _validation_summary, _repository_assessment
+    root = tmp_path / "repo"
+    (root / "docs").mkdir(parents=True)
+    (root / "docs" / "REQUIREMENTS.md").write_text("# Requirements\n", encoding="utf-8")
+    (root / "docs" / "PLAN.md").write_text("# Plan\n\n## Acceptance Criteria\nAC-1", encoding="utf-8")
+    (root / "docs" / "VALIDATION.md").write_text("# Validation Results\nAC-1 PASS", encoding="utf-8")
+    assert any(x["name"] == "REQUIREMENTS.md" and x["exists"] for x in _documentation_inventory(str(root)))
+    summary = _validation_summary(str(root))
+    assert summary["passed"] == 1
+    assert summary["total"] == 1
+    config = tmp_path / "config.yaml"
+    config.write_text("projects: {}\n", encoding="utf-8")
+    assessment = _repository_assessment(config, "missing")
+    assert assessment == {}
+
+
+def test_web_json_rejects_oversized_body():
+    from labos_agent.web import Handler
+    handler = object.__new__(Handler)
+    handler.headers = {"Content-Length": str(2 * 1024 * 1024), "Content-Type": "application/json"}
+    handler.rfile = __import__("io").BytesIO(b"{}")
+    try:
+        handler._json()
+    except ValueError as exc:
+        assert "too large" in str(exc)
+    else:
+        raise AssertionError("oversized JSON body was accepted")
+
+
+def test_ui_exposes_engineering_workspaces_and_toasts():
+    from pathlib import Path
+    html = (Path(__file__).resolve().parents[1] / "src" / "labos_agent" / "web" / "index.html").read_text(encoding="utf-8")
+    for value in ("lifecycle", "documentation", "planning", "validation", "repository", "runs", "ci"):
+        assert value in html
+    assert "toastStack" in html
+    assert "aria-modal" in html
