@@ -735,7 +735,7 @@ def test_full_lifecycle_browser_api_flow(tmp_path):
             page.locator("#brainstormNotes").fill("Goals, users, constraints and alternatives")
             page.get_by_role("button", name="Save notes").click()
             docs = root / "docs"
-            docs.mkdir()
+            docs.mkdir(exist_ok=True)
             for name in ("PRODUCT.md", "REQUIREMENTS.md", "ARCHITECTURE.md", "DECISIONS.md", "ROADMAP.md", "USER_FLOWS.md"):
                 (docs / name).write_text("Approved content", encoding="utf-8")
             (root / "AGENTS.md").write_text("Rules", encoding="utf-8")
