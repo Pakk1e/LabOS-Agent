@@ -181,3 +181,36 @@ def test_sse_event_uses_event_stream_format():
         'event: project_changed\n'
         'data: {"projects":["weather"]}\n\n'
     )
+
+
+def test_create_github_repository_uses_requested_visibility(monkeypatch):
+    from labos_agent.web import _create_github_repository
+    calls = []
+    monkeypatch.setattr(
+        "labos_agent.web.subprocess.run",
+        lambda *args, **kwargs: calls.append((args, kwargs)),
+    )
+    _create_github_repository("Pakk1e/NewProject", "private")
+    assert calls[0][0][0] == ["gh", "repo", "create", "Pakk1e/NewProject", "--private"]
+
+
+def test_clone_github_repository_requires_empty_target(tmp_path):
+    from labos_agent.web import _clone_github_repository
+    target = tmp_path / "repo"
+    target.mkdir()
+    (target / "existing.txt").write_text("keep", encoding="utf-8")
+    import pytest
+    with pytest.raises(ValueError, match="project_root must be empty"):
+        _clone_github_repository("Pakk1e/NewProject", str(target))
+
+
+def test_clone_github_repository_uses_gh_clone(monkeypatch, tmp_path):
+    from labos_agent.web import _clone_github_repository
+    calls = []
+    monkeypatch.setattr(
+        "labos_agent.web.subprocess.run",
+        lambda *args, **kwargs: calls.append((args, kwargs)),
+    )
+    target = tmp_path / "repo"
+    _clone_github_repository("Pakk1e/NewProject", str(target))
+    assert calls[0][0][0] == ["gh", "repo", "clone", "Pakk1e/NewProject", str(target)]
