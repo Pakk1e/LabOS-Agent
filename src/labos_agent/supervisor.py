@@ -24,6 +24,7 @@ from .response_protocol import LabOSResponse, STATE_BLOCK_INSTRUCTION, parse_lab
 from .run_summary import RunTracker
 from .github_observer import GitHubObservation, observe_github
 from .supervisor_memory import SupervisorMemory, load_memory, memory_path, save_memory
+from .supervisor_state_machine import reconcile
 from .trace import trace, trace_summary
 
 
@@ -413,40 +414,43 @@ Start now by inspecting the current repository state and continue the task.
                     )
                     tracker.start_iteration(datetime.now(timezone.utc))
                 elif state == ChatState.DONE:
-                    verified = False
-                    if analysis.structured and analysis.current_commit:
-                        try:
-                            observed = observe_github(self.project.repository)
-                            verified = (
-                                observed.commit_sha == analysis.current_commit
-                                and (
-                                    analysis.ci_status != "PASSED"
-                                    or (
-                                        observed.ci_sha == analysis.current_commit
-                                        and observed.ci_conclusion == "success"
-                                    )
-                                )
-                            )
-                        except Exception:
-                            verified = False
-                    else:
-                        verified = True
+                    observed = observe_github(self.project.repository)
+                    reconciliation = reconcile(
+                        analysis,
+                        observed,
+                        previous_commit=memory.last_observed_commit,
+                    )
+                    verified = reconciliation.verified
                     result = "DONE_VERIFIED" if verified else "DONE_UNVERIFIED"
-                    tracker.finish_iteration("DONE", datetime.now(timezone.utc), None if verified else "completion claims require GitHub reconciliation")
-                    tracker.finish_run(result, datetime.now(timezone.utc), None if verified else "completion claims require GitHub reconciliation")
+                    reason = None if verified else reconciliation.reason
+                    tracker.finish_iteration("DONE", datetime.now(timezone.utc), reason)
+                    tracker.finish_run(result, datetime.now(timezone.utc), reason)
                     trace("iteration.complete", project=self.project_name, iteration=iteration.number, success=verified, state=result)
                     trace_summary(tracker.box(), project=self.project_name, success=verified)
                     trace("run.complete", project=self.project_name, run=tracker.summary.run_number, success=verified)
                     return response
                 elif state == ChatState.WAIT_CI:
-                    trace("remote_ci.start", project=self.project_name, iteration=iteration.number)
-                    passed, summary = wait_for_ci(
-                        self.project.repository,
-                        datetime.now(timezone.utc),
-                        baseline_run_ids=ci_baseline,
-                        timeout_seconds=self.ci_timeout_seconds,
-                        poll_seconds=self.ci_poll_seconds,
+                    observed = observe_github(self.project.repository)
+                    reconciliation = reconcile(
+                        analysis,
+                        observed,
+                        previous_commit=memory.last_observed_commit,
                     )
+                    trace("remote_ci.start", project=self.project_name, iteration=iteration.number)
+                    if reconciliation.ci_verified:
+                        passed, summary = True, (
+                            f"GitHub CI already verified: run={observed.ci_run_id or 'unknown'} "
+                            f"conclusion={observed.ci_conclusion}"
+                        )
+                    else:
+                        passed, summary = wait_for_ci(
+                            self.project.repository,
+                            datetime.now(timezone.utc),
+                            baseline_run_ids=ci_baseline,
+                            timeout_seconds=self.ci_timeout_seconds,
+                            poll_seconds=self.ci_poll_seconds,
+                            target_sha=analysis.current_commit if analysis.structured else None,
+                        )
                     tracker.record(
                         remote_ci_passed=passed,
                         remote_ci_failed=not passed,
