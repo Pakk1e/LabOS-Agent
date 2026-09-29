@@ -353,6 +353,7 @@ def _project_view(config_path: Path, name: str, project) -> dict:
         "project_name": project.project_name or name,
         "continuation_message": project.continuation_message,
         "initial_idea": project.initial_idea,
+        "brainstorm_notes": project.brainstorm_notes,
         "project_mode": project.project_mode,
         "lifecycle_phase": project.lifecycle_phase.value,
         "lifecycle_approved": project.lifecycle_approved,
@@ -640,7 +641,9 @@ class Handler(BaseHTTPRequestHandler):
         requested = body.get("phase")
         target = current if requested is None else normalize_phase(str(requested))
         approved = bool(body.get("approved", False))
-        if target == current and not approved:
+        if "brainstorm_notes" in body:
+            project["brainstorm_notes"] = str(body.get("brainstorm_notes", "")).strip()
+        if target == current and not approved and "brainstorm_notes" not in body:
             return self._send(400, {"error": "no lifecycle change requested"})
         if target != current:
             expected = next_phase(current)
