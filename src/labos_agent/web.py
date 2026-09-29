@@ -557,6 +557,11 @@ class Handler(BaseHTTPRequestHandler):
         create_repository = bool(body.get("create_repository", False))
         visibility = str(body.get("repository_visibility", "private")).strip().lower()
         if create_repository:
+            if project_mode == "existing_repository":
+                return self._send(
+                    400,
+                    {"error": "existing_repository mode cannot create or clone a new repository"},
+                )
             target = Path(root).expanduser()
             if target.exists():
                 if not target.is_dir():
@@ -569,7 +574,8 @@ class Handler(BaseHTTPRequestHandler):
             except subprocess.CalledProcessError as exc:
                 detail = (exc.stderr or exc.stdout or "").strip()
                 return self._send(502, {"error": detail or "GitHub repository creation or clone failed"})
-        _bootstrap_project_documents(root, name, str(body.get("initial_idea", "")))
+        if project_mode != "existing_repository":
+            _bootstrap_project_documents(root, name, str(body.get("initial_idea", "")))
         initial_phase = (
             ProjectPhase.BRAINSTORM
             if project_mode == "guided"
