@@ -20,6 +20,7 @@ def test_observe_github_uses_gh_for_latest_ci_run(monkeypatch):
         return _Completed(
             json.dumps([{
                 "databaseId": 166,
+                "number": 42,
                 "status": "completed",
                 "conclusion": "success",
                 "headSha": "abc1234",
@@ -41,7 +42,7 @@ def test_observe_github_uses_gh_for_latest_ci_run(monkeypatch):
     assert calls[0][:5] == ["gh", "run", "list", "-R", "owner/repo"]
 
 
-def test_observe_github_uses_gh_for_exact_ci_run(monkeypatch):
+def test_observe_github_resolves_workflow_run_number(monkeypatch):
     def fake_get(url):
         if url.endswith("/repos/owner/repo"):
             return {"default_branch": "main"}
@@ -50,20 +51,33 @@ def test_observe_github_uses_gh_for_exact_ci_run(monkeypatch):
         raise AssertionError(url)
 
     def fake_run(command, **kwargs):
-        return _Completed(json.dumps({
-            "databaseId": 166,
-            "status": "completed",
-            "conclusion": "success",
-            "headSha": "abc1234",
-            "name": "Weather CI",
-            "createdAt": "2026-09-29T08:00:00Z",
-            "url": "https://example.test/166",
-        }))
+        return _Completed(json.dumps([
+            {
+                "databaseId": 166,
+                "number": 42,
+                "status": "completed",
+                "conclusion": "success",
+                "headSha": "abc1234",
+                "name": "Weather CI",
+                "createdAt": "2026-09-29T08:00:00Z",
+                "url": "https://example.test/166",
+            },
+            {
+                "databaseId": 165,
+                "number": 41,
+                "status": "completed",
+                "conclusion": "success",
+                "headSha": "other-sha",
+                "name": "Weather CI",
+                "createdAt": "2026-09-29T07:00:00Z",
+                "url": "https://example.test/165",
+            },
+        ]))
 
     monkeypatch.setattr(observer, "_get_json", fake_get)
     monkeypatch.setattr(observer.subprocess, "run", fake_run)
 
-    result = observer.observe_github("owner/repo", ci_run_id=166)
+    result = observer.observe_github("owner/repo", ci_run_id=42)
 
     assert result.ci_run_id == 166
     assert result.ci_sha == "abc1234"
