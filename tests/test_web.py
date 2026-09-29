@@ -825,3 +825,63 @@ def test_web_server_is_local_only_by_default(monkeypatch, tmp_path):
         assert "local-only" in str(exc)
     else:
         raise AssertionError("remote binding was allowed without explicit opt-in")
+
+
+def test_web_input_validation_boundaries():
+    from labos_agent.web import _parse_bool, _is_loopback_host, _REPO_RE, _URL_RE
+    assert _parse_bool(True, "x") is True
+    assert _parse_bool("false", "x") is False
+    with __import__("pytest").raises(ValueError):
+        _parse_bool("yes", "x")
+    assert _URL_RE.fullmatch("https://example.com")
+    assert not _URL_RE.fullmatch("javascript:alert(1)")
+    assert _is_loopback_host("localhost")
+    assert not _is_loopback_host("0.0.0.0")
+    assert _REPO_RE.fullmatch("owner/repo")
+    assert not _REPO_RE.fullmatch("../repo")
+
+
+def test_run_history_skips_corrupt_records(tmp_path):
+    from labos_agent.web import _run_history
+    root = tmp_path / "state" / "demo" / "runs"
+    root.mkdir(parents=True)
+    (root / "000001.json").write_text("{broken", encoding="utf-8")
+    (root / "000002.json").write_text('{"run_number":2,"result":"DONE_VERIFIED"}', encoding="utf-8")
+    records = _run_history(tmp_path / "config.yaml", "demo")
+    assert [x["run_number"] for x in records] == [2]
+
+
+def test_run_events_skip_corrupt_lines(tmp_path):
+    from labos_agent.web import _run_events
+    root = tmp_path / "state" / "demo" / "runs"
+    root.mkdir(parents=True)
+    (root / "000001.events.jsonl").write_text('{"event":"good"}\n{broken\n{"event":"also-good"}\n', encoding="utf-8")
+    events = _run_events(tmp_path / "config.yaml", "demo", 1)
+    assert events == []
+
+
+def test_documentation_inventory_marks_placeholders(tmp_path):
+    from labos_agent.web import _documentation_inventory
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "PRODUCT.md").write_text("_To be completed during documentation._", encoding="utf-8")
+    rows = _documentation_inventory(str(tmp_path))
+    product = next(row for row in rows if row["name"] == "PRODUCT.md")
+    assert product["exists"] is True
+    assert product["placeholder"] is True
+
+
+def test_repository_assessment_missing_is_empty(tmp_path):
+    from labos_agent.web import _repository_assessment
+    assert _repository_assessment(tmp_path / "config.yaml", "demo") == {}
+
+
+def test_lifecycle_transition_contract_is_sequential():
+    from labos_agent.lifecycle import can_advance, ProjectPhase
+    with __import__("pytest").raises(TypeError):
+        can_advance(Path("."), ProjectPhase.IDEA, ProjectPhase.DEVELOPMENT)
+
+
+def test_lifecycle_state_path_rejects_absolute_project_names(tmp_path):
+    from labos_agent.lifecycle import lifecycle_state_path
+    with __import__("pytest").raises(ValueError):
+        lifecycle_state_path(tmp_path, "/tmp/escape")
