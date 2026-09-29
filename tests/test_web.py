@@ -133,3 +133,18 @@ def test_latest_run_events_reads_newest_event_stream(tmp_path):
     )
     events = _latest_run_events(tmp_path / "config.yaml", "weather")
     assert [event["event"] for event in events] == ["new1", "new2"]
+
+
+def test_ci_action_rejects_unknown_action():
+    from labos_agent.web import _ci_action
+    import pytest
+    with pytest.raises(ValueError, match="unsupported CI action"):
+        _ci_action("Pakk1e/test", 123, "delete")
+
+
+def test_ci_action_invokes_gh(monkeypatch):
+    from labos_agent.web import _ci_action
+    calls = []
+    monkeypatch.setattr("labos_agent.web.subprocess.run", lambda *args, **kwargs: calls.append((args, kwargs)))
+    _ci_action("Pakk1e/test", 123, "rerun")
+    assert calls[0][0][0:4] == (["gh", "run", "rerun", "123"],)
