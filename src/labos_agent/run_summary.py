@@ -139,9 +139,12 @@ class RunTracker:
                 f"│ {_check(iteration.commit_pushed)} Commit pushed",
                 f"│ {_remote_check(iteration)} GitHub Actions",
             ])
+        displayed_result = summary.result
+        if displayed_result == "STARTING" and summary.current_iteration is not None:
+            displayed_result = summary.current_iteration.state
         lines.extend([
             "│",
-            f"│ Result        {summary.result}",
+            f"│ Result        {displayed_result}",
         ])
         if summary.reason:
             lines.append(f"│ Reason        {summary.reason}")
