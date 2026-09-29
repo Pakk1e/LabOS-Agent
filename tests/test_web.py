@@ -116,3 +116,23 @@ def test_terminate_recovered_process_uses_pid(monkeypatch):
     monkeypatch.setattr("labos_agent.web.os.kill", lambda pid, sig: calls.append((pid, sig)))
     _terminate_process("weather", 4321)
     assert calls == [(4321, 15)]
+
+
+def test_latest_run_events_reads_newest_event_stream(tmp_path):
+    from labos_agent.web import _latest_run_events
+
+    root = tmp_path / "state" / "weather" / "runs"
+    root.mkdir(parents=True)
+    (root / "000002.events.jsonl").write_text(
+        '{"event":"old"}
+',
+        encoding="utf-8",
+    )
+    (root / "000003.events.jsonl").write_text(
+        '{"event":"new1"}
+{"event":"new2"}
+',
+        encoding="utf-8",
+    )
+    events = _latest_run_events(tmp_path / "config.yaml", "weather")
+    assert [event["event"] for event in events] == ["new1", "new2"]
