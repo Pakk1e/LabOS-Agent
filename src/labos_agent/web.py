@@ -15,7 +15,7 @@ from threading import Lock, Thread
 from urllib.parse import unquote, urlparse
 
 from .config import load_config
-from .lifecycle import (LifecycleState, ProjectPhase, can_advance, can_start_supervisor, lifecycle_state_path, normalize_phase, normalize_project_mode, next_phase, save_lifecycle_state)
+from .lifecycle import (LifecycleState, ProjectPhase, can_advance, can_start_supervisor, lifecycle_state_path, normalize_phase, normalize_project_mode, next_phase, phase_evidence, save_lifecycle_state)
 
 _PROJECT_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$")
 _REPO_RE = re.compile(r"^[^/\s]+/[^/\s]+$")
@@ -356,6 +356,25 @@ def _ci_jobs(repository: str, run_id: int) -> list[dict]:
     return data.get("jobs", []) if isinstance(data, dict) else []
 
 
+
+def _lifecycle_history_path(config_path: Path, project: str) -> Path:
+    return config_path.parent / "state" / project / "lifecycle_history.jsonl"
+
+def _record_lifecycle_event(config_path: Path, project: str, *, phase: ProjectPhase, approved: bool, event: str, previous_phase: ProjectPhase | None = None) -> None:
+    path = _lifecycle_history_path(config_path, project)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    record = {"ts": datetime.now(timezone.utc).isoformat(), "event": event, "project": project, "phase": phase.value, "approved": approved}
+    if previous_phase is not None:
+        record["previous_phase"] = previous_phase.value
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+def _lifecycle_gate(project) -> dict:
+    target = next_phase(project.lifecycle_phase)
+    if target is None:
+        return {"target": None, "satisfied": True, "missing": []}
+    satisfied, missing = phase_evidence(project.project_root, target)
+    return {"target": target.value, "satisfied": satisfied, "missing": list(missing)}
 def _project_view(config_path: Path, name: str, project) -> dict:
     memory = _memory(config_path, name)
     analysis = memory.get("last_analysis") or {}
@@ -373,6 +392,7 @@ def _project_view(config_path: Path, name: str, project) -> dict:
         "lifecycle_phase": project.lifecycle_phase.value,
         "lifecycle_approved": project.lifecycle_approved,
         "lifecycle_approved_at": project.lifecycle_approved_at,
+        "lifecycle_gate": _lifecycle_gate(project),
         "project_url": project.project_url,
         "new_chat_selector": project.new_chat_selector,
         "ci_stage": project.ci_stage,
@@ -712,6 +732,7 @@ class Handler(BaseHTTPRequestHandler):
                 approved_at=datetime.now(timezone.utc).isoformat(),
             )
         save_lifecycle_state(self.config_path.parent / "state", name, state)
+        _record_lifecycle_event(self.config_path, name, phase=state.phase, approved=state.approved, event="approval_granted" if approved else ("phase_transition" if target != current else "state_updated"), previous_phase=current if target != current else None)
         if has_notes:
             payload = _config_payload(self.config_path)
             project = payload["projects"][name]
