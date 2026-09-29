@@ -666,8 +666,11 @@ def test_lifecycle_ui_browser_flow(tmp_path):
     )
     save_lifecycle_state(tmp_path / "state", "demo", LifecycleState(phase=ProjectPhase.DEVELOPMENT))
 
+    from labos_agent.web import EventHub
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     server.config_path = config_path
+    server.event_hub = EventHub(config_path, interval=0.05)
+    server.event_hub.start()
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -687,6 +690,7 @@ def test_lifecycle_ui_browser_flow(tmp_path):
             browser.close()
     finally:
         server.shutdown()
+        server.event_hub.stop()
         thread.join(timeout=2)
 
 
