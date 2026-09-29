@@ -399,3 +399,7 @@ def main():
     elif args.command=="browser-project-handoff-rollover-test": browser_project_handoff_rollover_test_command(args)
     elif args.command=="browser-attach": browser_attach_command(args)
     elif args.command=="browser-smoke": browser_smoke_command(args)
+
+
+if __name__ == "__main__":
+    main()
