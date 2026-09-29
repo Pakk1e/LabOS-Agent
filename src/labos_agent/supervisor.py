@@ -349,31 +349,57 @@ Start now by inspecting the current repository state and continue the task.
                     trace("run.complete", project=self.project_name, run=tracker.summary.run_number, success=True)
                     return response
                 elif state == ChatState.WAIT_CI:
-                    passed, _summary = wait_for_ci(
+                    trace("remote_ci.start", project=self.project_name, iteration=iteration.number)
+                    passed, summary = wait_for_ci(
                         self.project.repository,
                         datetime.now(timezone.utc),
                         baseline_run_ids=ci_baseline,
                         timeout_seconds=self.ci_timeout_seconds,
                         poll_seconds=self.ci_poll_seconds,
                     )
+                    tracker.record(
+                        remote_ci_passed=passed,
+                        remote_ci_failed=not passed,
+                        reason=None if passed else summary,
+                    )
                     ci_baseline = set(run.id for run in _github_get(self.project.repository))
+                    tracker.finish_iteration("WAIT_CI", datetime.now(timezone.utc), None if passed else summary)
+                    trace(
+                        "remote_ci.complete" if passed else "remote_ci.error",
+                        project=self.project_name,
+                        iteration=iteration.number,
+                        success=passed,
+                        summary=summary,
+                    )
+                    trace("iteration.complete", project=self.project_name, iteration=iteration.number, success=passed, state="WAIT_CI")
+                    trace_summary(tracker.box(), project=self.project_name, success=passed)
                     response = chat.send_and_wait_for_response(
                         CI_PASSED_MESSAGE if passed else CI_FAILED_MESSAGE,
                         timeout_seconds=self.config.browser.response_timeout_seconds,
                         quiet_seconds=self.config.browser.quiet_seconds,
                     )
+                    tracker.start_iteration(datetime.now(timezone.utc))
                 elif state == ChatState.FIX_CI:
+                    tracker.finish_iteration("FIX_CI", datetime.now(timezone.utc))
+                    trace("iteration.complete", project=self.project_name, iteration=iteration.number, success=false, state="FIX_CI")
                     response = chat.send_and_wait_for_response(
                         CI_FAILED_MESSAGE,
                         timeout_seconds=self.config.browser.response_timeout_seconds,
                         quiet_seconds=self.config.browser.quiet_seconds,
                     )
+                    tracker.start_iteration(datetime.now(timezone.utc))
                 else:
+                    tracker.finish_iteration("CONTINUE", datetime.now(timezone.utc))
+                    trace("iteration.complete", project=self.project_name, iteration=iteration.number, success=True, state="CONTINUE")
                     response = chat.send_and_wait_for_response(
                         CONTINUE_MESSAGE,
                         timeout_seconds=self.config.browser.response_timeout_seconds,
                         quiet_seconds=self.config.browser.quiet_seconds,
                     )
+                    tracker.start_iteration(datetime.now(timezone.utc))
 
                 if self.max_turns and self.turns >= self.max_turns:
+                    tracker.finish_run("STOPPED", datetime.now(timezone.utc))
+                    trace_summary(tracker.box(), project=self.project_name)
+                    trace("run.stop", project=self.project_name, run=tracker.summary.run_number)
                     return response
