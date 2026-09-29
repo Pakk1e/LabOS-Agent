@@ -877,8 +877,9 @@ def test_repository_assessment_missing_is_empty(tmp_path):
 
 def test_lifecycle_transition_contract_is_sequential():
     from labos_agent.lifecycle import can_advance, ProjectPhase
-    with __import__("pytest").raises(TypeError):
-        can_advance(Path("."), ProjectPhase.IDEA, ProjectPhase.DEVELOPMENT)
+    ok, missing = can_advance(Path("."), ProjectPhase.IDEA, ProjectPhase.DEVELOPMENT)
+    assert not ok
+    assert "invalid sequential lifecycle transition" in missing
 
 
 def test_lifecycle_state_path_rejects_absolute_project_names(tmp_path):
