@@ -673,14 +673,13 @@ class Handler(BaseHTTPRequestHandler):
         requested = body.get("phase")
         target = current if requested is None else normalize_phase(str(requested))
         approved = bool(body.get("approved", False))
-        if "brainstorm_notes" in body:
-            payload = _config_payload(self.config_path)
-            project = payload["projects"][name]
-            project["brainstorm_notes"] = str(body.get("brainstorm_notes", "")).strip()
-            _write_brainstorm_notes(project["project_root"], str(project.get("initial_idea", "")), project["brainstorm_notes"])
-            _write_config(self.config_path, payload)
-        if target == current and not approved and "brainstorm_notes" not in body:
+        has_notes = "brainstorm_notes" in body
+        if target == current and not approved and not has_notes:
             return self._send(400, {"error": "no lifecycle change requested"})
+        if approved and target is not ProjectPhase.DEVELOPMENT:
+            return self._send(400, {"error": "human approval is required only for the DEVELOPMENT gate"})
+        if approved and target != current:
+            return self._send(409, {"error": "advance to DEVELOPMENT before granting its approval"})
         state = LifecycleState(
             phase=current,
             approved=project_config.lifecycle_approved,
@@ -692,14 +691,18 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(409, {"error": "invalid lifecycle transition"})
             state = LifecycleState(phase=target)
         if approved:
-            if target is not ProjectPhase.DEVELOPMENT:
-                return self._send(400, {"error": "human approval is required only for the DEVELOPMENT gate"})
             state = LifecycleState(
                 phase=target,
                 approved=True,
                 approved_at=datetime.now(timezone.utc).isoformat(),
             )
         save_lifecycle_state(self.config_path.parent / "state", name, state)
+        if has_notes:
+            payload = _config_payload(self.config_path)
+            project = payload["projects"][name]
+            project["brainstorm_notes"] = str(body.get("brainstorm_notes", "")).strip()
+            _write_brainstorm_notes(project["project_root"], str(project.get("initial_idea", "")), project["brainstorm_notes"])
+            _write_config(self.config_path, payload)
         config = load_config(self.config_path)
         return self._send(200, _project_view(self.config_path, name, config.projects[name]))
     def _stop_supervisor(self, name: str):
