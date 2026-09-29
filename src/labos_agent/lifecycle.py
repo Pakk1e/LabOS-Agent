@@ -78,10 +78,14 @@ def phase_evidence(project_root: Path, phase: ProjectPhase) -> tuple[bool, tuple
     """Return whether the repository contains the minimum evidence for entering phase."""
     required = PHASE_EVIDENCE_FILES.get(phase, ())
     missing: list[str] = []
-    alternatives = ALTERNATIVE_EVIDENCE.get(
-        "implementation_plan" if phase is ProjectPhase.PLANNING else "validation_report",
-        (),
+    evidence_key = (
+        "implementation_plan"
+        if phase is ProjectPhase.PLANNING
+        else "validation_report"
+        if phase is ProjectPhase.VALIDATION
+        else None
     )
+    alternatives = ALTERNATIVE_EVIDENCE.get(evidence_key, ()) if evidence_key else ()
     if alternatives:
         existing_alternative = next(
             (relative for relative in alternatives if (project_root / relative).is_file()),
