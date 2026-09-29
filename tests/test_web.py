@@ -1,4 +1,5 @@
 from pathlib import Path
+from threading import Thread
 
 from labos_agent.config import load_config
 from labos_agent.web import _config_payload, _write_config, _project_view
@@ -694,6 +695,7 @@ def test_lifecycle_ui_browser_flow(tmp_path):
         server.shutdown()
         server.event_hub.stop()
         thread.join(timeout=2)
+        thread.join(timeout=2)
 
 
 def test_full_lifecycle_browser_api_flow(tmp_path):
@@ -760,6 +762,7 @@ def test_full_lifecycle_browser_api_flow(tmp_path):
     finally:
         server.shutdown()
         server.event_hub.stop()
+        thread.join(timeout=2)
         thread.join(timeout=2)
 
 
@@ -931,6 +934,7 @@ def test_project_creation_modes_api(tmp_path, monkeypatch):
         server.shutdown()
         server.event_hub.stop()
         thread.join(timeout=2)
+        thread.join(timeout=2)
 
 
 def test_project_creation_rejects_existing_repository_without_git(tmp_path):
@@ -945,6 +949,8 @@ def test_project_creation_rejects_existing_repository_without_git(tmp_path):
     server.config_path = config_path
     server.event_hub = EventHub(config_path, interval=0.01)
     server.event_hub.start()
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
     try:
         conn = HTTPConnection("127.0.0.1", server.server_port)
         body = '{"name":"bad","repository":"example/bad","project_root":"' + str(root) + '","project_mode":"existing_repository","create_repository":false}'
@@ -955,3 +961,4 @@ def test_project_creation_rejects_existing_repository_without_git(tmp_path):
     finally:
         server.shutdown()
         server.event_hub.stop()
+        thread.join(timeout=2)
