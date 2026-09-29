@@ -26,8 +26,6 @@ class LifecycleState:
     def __post_init__(self) -> None:
         if self.approved and self.phase is not ProjectPhase.DEVELOPMENT:
             raise ValueError("lifecycle approval is only valid in the DEVELOPMENT phase")
-        if self.approved and not self.approved_at:
-            raise ValueError("approved lifecycle state requires approved_at")
 
     @property
     def approval_required(self) -> bool:
