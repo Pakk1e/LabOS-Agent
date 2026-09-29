@@ -411,3 +411,96 @@ def test_lifecycle_rejects_non_boolean_approval_payload(tmp_path):
     handler._update_lifecycle("demo", {"approved": "false"})
     assert sent["status"] == 400
     assert "boolean" in sent["body"]["error"]
+
+
+def test_full_guided_lifecycle_end_to_end(tmp_path):
+    from labos_agent.web import Handler
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("projects: {}\n", encoding="utf-8")
+    root = tmp_path / "guided"
+    handler = object.__new__(Handler)
+    handler.server = type("Server", (), {"config_path": config_path})()
+    sent = {}
+    handler._send = lambda status, body, content_type="application/json": sent.update(status=status, body=body)
+
+    handler._create_project({
+        "name": "guided",
+        "repository": "example/guided",
+        "project_root": str(root),
+        "project_mode": "guided",
+        "initial_idea": "Build an engineering workspace",
+    })
+    assert sent["status"] == 201
+    assert load_config(config_path).projects["guided"].lifecycle_phase.name == "BRAINSTORM"
+
+    handler._update_lifecycle("guided", {"brainstorm_notes": "Goals, users, constraints, alternatives"})
+    handler._update_lifecycle("guided", {"phase": "DOCUMENTATION"})
+    assert sent["status"] == 200
+
+    docs = root / "docs"
+    for name in ("PRODUCT.md", "REQUIREMENTS.md", "ARCHITECTURE.md", "DECISIONS.md", "ROADMAP.md", "USER_FLOWS.md"):
+        (docs / name).write_text(f"# {name}\n\nApproved project content", encoding="utf-8")
+    (root / "AGENTS.md").write_text("# Guided\n\nProject rules", encoding="utf-8")
+    handler._update_lifecycle("guided", {"phase": "PLANNING"})
+    (root / "PLAN.md").write_text("# Plan\n\n## Acceptance Criteria\n- AC-1 core workflow works", encoding="utf-8")
+    handler._update_lifecycle("guided", {"phase": "DEVELOPMENT"})
+    handler._update_lifecycle("guided", {"approved": True})
+    assert load_config(config_path).projects["guided"].lifecycle_approved
+
+    handler._update_lifecycle("guided", {"phase": "VALIDATION"})
+    (root / "VALIDATION.md").write_text(
+        "# Validation\n\n## Validation Results\nPASS\n\n## Acceptance Criteria\nAC-1 PASS",
+        encoding="utf-8",
+    )
+    handler._update_lifecycle("guided", {"phase": "MAINTENANCE"})
+    project = load_config(config_path).projects["guided"]
+    assert project.lifecycle_phase.name == "MAINTENANCE"
+    assert not project.lifecycle_approved
+
+
+def test_existing_repository_persists_git_assessment(tmp_path):
+    from labos_agent.web import Handler
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("projects: {}\n", encoding="utf-8")
+    root = tmp_path / "existing"
+    root.mkdir()
+    (root / ".git").mkdir()
+    (root / "README.md").write_text("existing", encoding="utf-8")
+    handler = object.__new__(Handler)
+    handler.server = type("Server", (), {"config_path": config_path})()
+    sent = {}
+    handler._send = lambda status, body, content_type="application/json": sent.update(status=status, body=body)
+    handler._create_project({
+        "name": "existing",
+        "repository": "example/existing",
+        "project_root": str(root),
+        "project_mode": "existing_repository",
+    })
+    assessment = __import__("json").loads(
+        (tmp_path / "state" / "existing" / "repository_assessment.json").read_text(encoding="utf-8")
+    )
+    assert assessment["git_repository"] is True
+    assert assessment["head"] is None
+    assert (root / "README.md").read_text(encoding="utf-8") == "existing"
+    assert not (root / "docs").exists()
+
+
+def test_project_name_security_rejects_path_traversal(tmp_path):
+    handler, config_path, sent = _make_lifecycle_handler(tmp_path)
+    handler._update_lifecycle("../escape", {"approved": True})
+    assert sent["status"] == 404
+
+
+def test_lifecycle_update_serialization_lock_exists():
+    import labos_agent.web as web
+    assert web._lifecycle_lock is not None
+
+
+def test_ui_contains_lifecycle_gate_and_approval_controls():
+    from pathlib import Path
+    html = Path(__file__).resolve().parents[1] / "src" / "labos_agent" / "web" / "index.html"
+    text = html.read_text(encoding="utf-8")
+    assert "lifecycle_gate" in text
+    assert "Approve Development" in text
+    assert "advanceLifecycle" in text
+    assert "/lifecycle" in text
