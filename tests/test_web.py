@@ -731,9 +731,9 @@ def test_full_lifecycle_browser_api_flow(tmp_path):
             page.goto(f"http://127.0.0.1:{server.server_port}/", wait_until="domcontentloaded")
             page.wait_for_function("document.querySelector('#projectList')?.innerText.includes('demo')")
             page.locator("#projectList .project", has_text="demo").click()
-            page.get_by_role("button", name="Save notes").click()
             page.locator("#brainstormNotes").fill("Goals, users, constraints and alternatives")
-            page.get_by_role("button", name="Save notes").click()
+            with page.expect_response(lambda response: response.url.endswith("/api/projects/demo/lifecycle") and response.request.method == "POST"):
+                page.get_by_role("button", name="Save notes").click()
             docs = root / "docs"
             docs.mkdir(exist_ok=True)
             (docs / "IDEA.md").write_text("# Project Idea\n\n## LabOS brainstorming notes\n\nGoals, users, constraints and alternatives", encoding="utf-8")
