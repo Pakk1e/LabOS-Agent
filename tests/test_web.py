@@ -682,8 +682,10 @@ def test_lifecycle_ui_browser_flow(tmp_path):
             page.goto(f"http://127.0.0.1:{server.server_port}/", wait_until="domcontentloaded")
             assert page.evaluate("typeof refresh") == "function", errors
             page.wait_for_function("document.querySelector('#projectList')?.innerText.includes('demo')", timeout=10000)
+            page.locator("#projectList .project", has_text="demo").click()
+            page.locator("#content").wait_for()
             assert not errors, errors
-            page.get_by_text("DEVELOPMENT", exact=True).first.wait_for()
+            page.locator(".phase", has_text="DEVELOPMENT").wait_for()
             page.get_by_role("button", name="Approve Development").click()
             page.get_by_text("Approved", exact=True).wait_for()
             assert "Approved" in page.locator("#content").inner_text()
