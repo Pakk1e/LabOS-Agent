@@ -41,6 +41,61 @@ NEXT_PHASE = {
     ProjectPhase.VALIDATION: ProjectPhase.MAINTENANCE,
 }
 
+PHASE_EVIDENCE_FILES = {
+    ProjectPhase.BRAINSTORM: ("docs/IDEA.md",),
+    ProjectPhase.DOCUMENTATION: (
+        "docs/PRODUCT.md",
+        "docs/REQUIREMENTS.md",
+        "docs/ARCHITECTURE.md",
+        "docs/DECISIONS.md",
+        "docs/ROADMAP.md",
+        "docs/USER_FLOWS.md",
+        "AGENTS.md",
+    ),
+    ProjectPhase.PLANNING: ("PLAN.md", "docs/REQUIREMENTS.md"),
+    ProjectPhase.VALIDATION: ("VALIDATION.md", "docs/REQUIREMENTS.md"),
+}
+
+PLACEHOLDER_MARKERS = (
+    "_To be completed",
+    "_To be created",
+    "_Document the important",
+    "_No manual",
+)
+
+
+def phase_evidence(project_root: Path, phase: ProjectPhase) -> tuple[bool, tuple[str, ...]]:
+    """Return whether the repository contains the minimum evidence for entering phase."""
+    required = PHASE_EVIDENCE_FILES.get(phase, ())
+    missing: list[str] = []
+    for relative in required:
+        path = project_root / relative
+        if not path.is_file():
+            missing.append(relative)
+            continue
+        try:
+            content = path.read_text(encoding="utf-8").strip()
+        except (OSError, UnicodeError):
+            missing.append(relative)
+            continue
+        if not content or any(marker in content for marker in PLACEHOLDER_MARKERS):
+            missing.append(relative)
+    return not missing, tuple(missing)
+
+
+def can_advance(project_root: Path, current: ProjectPhase, target: ProjectPhase) -> tuple[bool, tuple[str, ...]]:
+    expected = next_phase(current)
+    if target is not expected:
+        return False, ("invalid sequential lifecycle transition",)
+    if target is ProjectPhase.PLANNING:
+        return phase_evidence(project_root, ProjectPhase.DOCUMENTATION)
+    if target is ProjectPhase.DEVELOPMENT:
+        return phase_evidence(project_root, ProjectPhase.PLANNING)
+    if target is ProjectPhase.MAINTENANCE:
+        return phase_evidence(project_root, ProjectPhase.VALIDATION)
+    return True, ()
+
+
 PROJECT_MODES = {"guided", "specification", "existing_repository"}
 
 
