@@ -149,7 +149,7 @@ def _project_view(config_path: Path, name: str, project) -> dict:
         "new_chat_selector": project.new_chat_selector,
         "ci_stage": project.ci_stage,
         "running": running,
-        "pid": process.pid if running else None,
+        "pid": process_status["pid"],
         "conversation_url": memory.get("conversation_url"),
         "commit": memory.get("last_observed_commit"),
         "branch": memory.get("last_observed_branch"),
