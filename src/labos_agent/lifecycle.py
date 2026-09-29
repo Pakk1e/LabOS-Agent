@@ -214,6 +214,8 @@ def next_phase(phase: ProjectPhase) -> ProjectPhase | None:
 
 
 def lifecycle_state_path(state_root: Path, project: str) -> Path:
+    if not project or project in {".", ".."} or "/" in project or "\\" in project:
+        raise ValueError("invalid lifecycle project name")
     return state_root / project / "project_lifecycle.json"
 
 
