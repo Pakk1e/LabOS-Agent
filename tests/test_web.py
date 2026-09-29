@@ -148,3 +148,36 @@ def test_ci_action_invokes_gh(monkeypatch):
     monkeypatch.setattr("labos_agent.web.subprocess.run", lambda *args, **kwargs: calls.append((args, kwargs)))
     _ci_action("Pakk1e/test", 123, "rerun")
     assert calls[0][0][0] == ["gh", "run", "rerun", "123", "--repo", "Pakk1e/test"]
+
+
+def test_event_snapshot_changes_when_run_event_stream_changes(tmp_path):
+    from labos_agent.web import _event_snapshot
+
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """projects:
+  weather:
+    repository: Pakk1e/VilaPro-Weather
+    project_root: /home/park-pro/VilaPro-Weather
+    continuation_message: Continue weather
+""",
+        encoding="utf-8",
+    )
+    runs = tmp_path / "state" / "weather" / "runs"
+    runs.mkdir(parents=True)
+    before = _event_snapshot(config_path)
+    event_file = runs / "000001.events.jsonl"
+    event_file.write_text('{"event":"run.start"}\n', encoding="utf-8")
+    after = _event_snapshot(config_path)
+    assert before["weather"] != after["weather"]
+
+
+def test_sse_event_uses_event_stream_format():
+    from labos_agent.web import _sse_event
+
+    payload = _sse_event("project_changed", {"projects": ["weather"]}, retry=5000).decode("utf-8")
+    assert payload == (
+        'retry: 5000\n'
+        'event: project_changed\n'
+        'data: {"projects":["weather"]}\n\n'
+    )
