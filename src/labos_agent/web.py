@@ -74,6 +74,29 @@ def _ci_runs(repository: str, limit: int = 30) -> list[dict]:
     return data if isinstance(data, list) else []
 
 
+def _latest_run_events(config_path: Path, project: str, limit: int = 20) -> list[dict]:
+    root = config_path.parent / "state" / project / "runs"
+    if not root.exists():
+        return []
+    candidates = []
+    for path in root.glob("*.events.jsonl"):
+        try:
+            candidates.append((int(path.name.removesuffix(".events.jsonl")), path))
+        except ValueError:
+            continue
+    if not candidates:
+        return []
+    _, path = max(candidates, key=lambda item: item[0])
+    events = []
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                events.append(json.loads(line))
+    except (OSError, ValueError):
+        return []
+    return events[-max(1, min(limit, 100)):]
+
+
 def _run_events(config_path: Path, project: str, run_number: int) -> list[dict]:
     path = config_path.parent / "state" / project / "runs" / f"{run_number:06d}.events.jsonl"
     if not path.exists():
@@ -171,6 +194,7 @@ def _project_view(config_path: Path, name: str, project) -> dict:
         "updated_at": memory.get("updated_at"),
         "last_response": memory.get("last_response"),
         "analysis": analysis,
+        "recent_events": _latest_run_events(config_path, name),
     }
 
 
