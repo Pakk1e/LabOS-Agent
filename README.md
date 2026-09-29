@@ -105,4 +105,8 @@ ChatGPT remains responsible for repository work. LabOS does not execute ChatGPT-
 - `(STATE FIX_CI STATE)` — tell ChatGPT to investigate and fix the CI failure.
 - `(STATE DONE STATE)` — stop.
 
-If the marker is missing or invalid, LabOS sends a reminder and waits for a corrected response. This protocol is deliberately independent of repository contents and local shell execution.
+Every response now also carries a strict `<LABOS_STATE>` block containing the reported task state, current commit, commit status, local test result, CI run/status, and next action. The legacy state marker remains as a compatibility signal.
+
+LabOS persists the latest parsed response and independently observed GitHub state under `state/<project>/supervisor_state.json`. At the start of a new supervisor run, it reads that memory and reconciles it against the current GitHub HEAD and latest Actions result before prompting ChatGPT. Reported state is evidence, not truth: repository and CI observations can produce a verified completion or a conflict.
+
+If the structured block is missing or invalid, LabOS sends a reminder and waits for a corrected response. The supervisor's reconciliation state machine distinguishes WORKING, WAITING_CI, FIXING_CI, DONE, and CONFLICT. This protocol remains independent of repository contents and local shell execution.
