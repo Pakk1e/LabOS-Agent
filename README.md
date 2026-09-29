@@ -228,3 +228,46 @@ overwrites an existing non-empty directory during this flow.
 
 If the repository already exists, leave repository creation disabled and use
 the existing repository normally.
+
+
+## Project lifecycle
+
+New projects use a documented lifecycle instead of going directly from an idea
+to implementation:
+
+```text
+IDEA
+  -> BRAINSTORM
+  -> DOCUMENTATION
+  -> PLANNING
+  -> DEVELOPMENT
+  -> VALIDATION
+  -> MAINTENANCE
+```
+
+The **guided** project mode starts in BRAINSTORM. The initial idea is captured
+in `docs/IDEA.md`, and the repository is bootstrapped with durable
+documentation files:
+
+- `docs/IDEA.md`
+- `docs/PRODUCT.md`
+- `docs/REQUIREMENTS.md`
+- `docs/ARCHITECTURE.md`
+- `docs/DECISIONS.md`
+- `docs/ROADMAP.md`
+- `AGENTS.md`
+
+During BRAINSTORM the supervisor is instructed to explore the idea and open
+questions rather than implement product features. During DOCUMENTATION it
+turns the agreed discussion into requirements, product definition,
+architecture, decisions and roadmap. PLANNING converts that documentation
+into implementation tasks and acceptance criteria.
+
+Human approval is required before DEVELOPMENT can run. The LabOS UI exposes
+the current lifecycle phase, the next phase, and the development approval
+gate. The low-level supervisor state protocol (CONTINUE, WAIT_CI, FIX_CI,
+DONE) remains separate from the project lifecycle.
+
+Projects may also use **specification** mode when the human already has a
+sufficiently complete specification; this starts at DOCUMENTATION rather than
+BRAINSTORM.
