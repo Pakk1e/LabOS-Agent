@@ -636,3 +636,50 @@ def test_lifecycle_change_is_blocked_while_supervisor_running(tmp_path, monkeypa
     handler._update_lifecycle("demo", {"phase": "DOCUMENTATION"})
     assert sent["status"] == 409
     assert "stop the supervisor" in sent["body"]["error"]
+
+
+def test_lifecycle_ui_browser_flow(tmp_path):
+    from http.server import ThreadingHTTPServer
+    from threading import Thread
+    from playwright.sync_api import sync_playwright
+    from labos_agent.lifecycle import LifecycleState, ProjectPhase, save_lifecycle_state
+    from labos_agent.web import Handler
+
+    config_path = tmp_path / "config.yaml"
+    root = tmp_path / "repo"
+    (root / "docs").mkdir(parents=True)
+    for name in ("PRODUCT.md", "REQUIREMENTS.md", "ARCHITECTURE.md", "DECISIONS.md", "ROADMAP.md", "USER_FLOWS.md"):
+        (root / "docs" / name).write_text("Approved content", encoding="utf-8")
+    (root / "AGENTS.md").write_text("Rules", encoding="utf-8")
+    (root / "PLAN.md").write_text("# Plan\n\n## Acceptance Criteria\n- AC-1 works", encoding="utf-8")
+    config_path.write_text(
+        f"""projects:
+  demo:
+    repository: example/demo
+    project_root: {root}
+    continuation_message: Continue demo
+    lifecycle:
+      mode: guided
+      phase: DEVELOPMENT
+""",
+        encoding="utf-8",
+    )
+    save_lifecycle_state(tmp_path / "state", "demo", LifecycleState(phase=ProjectPhase.DEVELOPMENT))
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server.config_path = config_path
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch()
+            page = browser.new_page()
+            page.goto(f"http://127.0.0.1:{server.server_port}/", wait_until="domcontentloaded")
+            page.get_by_text("DEVELOPMENT", exact=True).first.wait_for()
+            page.get_by_role("button", name="Approve Development").click()
+            page.get_by_text("Approved", exact=True).wait_for()
+            assert "Approved" in page.locator("#content").inner_text()
+            browser.close()
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
