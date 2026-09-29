@@ -857,7 +857,7 @@ def test_run_events_skip_corrupt_lines(tmp_path):
     root.mkdir(parents=True)
     (root / "000001.events.jsonl").write_text('{"event":"good"}\n{broken\n{"event":"also-good"}\n', encoding="utf-8")
     events = _run_events(tmp_path / "config.yaml", "demo", 1)
-    assert events == []
+    assert events == [{"event": "good"}, {"event": "also-good"}]
 
 
 def test_documentation_inventory_marks_placeholders(tmp_path):
