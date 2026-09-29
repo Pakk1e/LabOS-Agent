@@ -55,9 +55,6 @@ def _get_json(url: str) -> dict:
         with urlopen(request, timeout=30) as response:
             return json.load(response)
     except HTTPError as exc:
-        # A stale/under-scoped environment token can make a private repository
-        # look like it does not exist. Retry once with the authenticated gh
-        # account, which is the same fallback used elsewhere by LabOS.
         if exc.code not in (401, 403, 404):
             raise
         gh_token = _gh_auth_token()
@@ -68,29 +65,49 @@ def _get_json(url: str) -> dict:
             return json.load(response)
 
 
+def _gh_run_json(repository: str, ci_run_id: int | None = None) -> dict | None:
+    if ci_run_id is None:
+        command = [
+            "gh", "run", "list", "-R", repository, "--limit", "1",
+            "--json", "databaseId,status,conclusion,headSha,name,createdAt,url",
+        ]
+    else:
+        command = [
+            "gh", "run", "view", str(ci_run_id), "-R", repository,
+            "--json", "databaseId,status,conclusion,headSha,name,createdAt,url",
+        ]
+    try:
+        result = subprocess.run(
+            command,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return None
+    if ci_run_id is None:
+        runs = json.loads(result.stdout)
+        return runs[0] if runs else None
+    return json.loads(result.stdout)
+
+
 def observe_github(repository: str, *, ci_run_id: int | None = None) -> GitHubObservation:
     owner, name = repository.split("/", 1)
     repo = _get_json(f"https://api.github.com/repos/{owner}/{name}")
     branch = str(repo["default_branch"])
     ref = _get_json(f"https://api.github.com/repos/{owner}/{name}/git/ref/heads/{branch}")
     commit_sha = str(ref["object"]["sha"])
-    if ci_run_id is not None:
-        latest = _get_json(
-            f"https://api.github.com/repos/{owner}/{name}/actions/runs/{ci_run_id}"
-        )
-    else:
-        runs = _get_json(
-            f"https://api.github.com/repos/{owner}/{name}/actions/runs?branch={branch}&per_page=20"
-        ).get("workflow_runs", [])
-        latest = runs[0] if runs else {}
+
+    latest = _gh_run_json(repository, ci_run_id)
     return GitHubObservation(
         branch=branch,
         commit_sha=commit_sha,
-        ci_run_id=int(latest["id"]) if latest.get("id") is not None else None,
-        ci_status=str(latest["status"]) if latest.get("status") is not None else None,
-        ci_conclusion=str(latest["conclusion"]) if latest.get("conclusion") is not None else None,
-        ci_sha=str(latest["head_sha"]) if latest.get("head_sha") else None,
-        ci_name=str(latest["name"]) if latest.get("name") else None,
-        ci_created_at=str(latest["created_at"]) if latest.get("created_at") else None,
-        ci_url=str(latest["html_url"]) if latest.get("html_url") else None,
+        ci_run_id=int(latest["databaseId"]) if latest and latest.get("databaseId") is not None else None,
+        ci_status=str(latest["status"]) if latest and latest.get("status") is not None else None,
+        ci_conclusion=str(latest["conclusion"]) if latest and latest.get("conclusion") is not None else None,
+        ci_sha=str(latest["headSha"]) if latest and latest.get("headSha") else None,
+        ci_name=str(latest["name"]) if latest and latest.get("name") else None,
+        ci_created_at=str(latest["createdAt"]) if latest and latest.get("createdAt") else None,
+        ci_url=str(latest["url"]) if latest and latest.get("url") else None,
     )
