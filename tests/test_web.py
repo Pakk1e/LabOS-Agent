@@ -734,14 +734,14 @@ def test_full_lifecycle_browser_api_flow(tmp_path):
             page.get_by_role("button", name="Save notes").click()
             page.locator("#brainstormNotes").fill("Goals, users, constraints and alternatives")
             page.get_by_role("button", name="Save notes").click()
-            assert page.evaluate("""async () => (await fetch('/api/projects/demo/lifecycle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phase:'DOCUMENTATION'})})).status""") == 200
-            page.evaluate("refresh()")
-            page.wait_for_function("document.body.innerText.includes('DOCUMENTATION')", timeout=10000)
             docs = root / "docs"
             docs.mkdir()
             for name in ("PRODUCT.md", "REQUIREMENTS.md", "ARCHITECTURE.md", "DECISIONS.md", "ROADMAP.md", "USER_FLOWS.md"):
                 (docs / name).write_text("Approved content", encoding="utf-8")
             (root / "AGENTS.md").write_text("Rules", encoding="utf-8")
+            assert page.evaluate("""async () => (await fetch('/api/projects/demo/lifecycle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phase:'DOCUMENTATION'})})).status""") == 200
+            page.evaluate("refresh()")
+            page.wait_for_function("document.body.innerText.includes('DOCUMENTATION')", timeout=10000)
             page.evaluate("fetch('/api/projects/demo/lifecycle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phase:'PLANNING'})})")
             (root / "PLAN.md").write_text("# Plan\n\n## Acceptance Criteria\n- AC-1 works", encoding="utf-8")
             page.evaluate("fetch('/api/projects/demo/lifecycle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phase:'DEVELOPMENT'})})")
