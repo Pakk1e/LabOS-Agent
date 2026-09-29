@@ -1,5 +1,7 @@
 import pytest
 
+from labos_agent.config import AppConfig, ProjectConfig
+from labos_agent.supervisor import ConversationSupervisor, SupervisorError
 from labos_agent.lifecycle import (
     LifecycleState,
     ProjectPhase,
@@ -86,3 +88,17 @@ def test_lifecycle_state_falls_back_for_existing_projects(tmp_path):
     )
     assert loaded.phase is ProjectPhase.PLANNING
     assert not loaded.approved
+
+
+def test_supervisor_refuses_unapproved_development(tmp_path):
+    project = ProjectConfig(
+        name="demo",
+        repository="example/demo",
+        project_root=tmp_path,
+        continuation_message="Continue demo",
+        lifecycle_phase=ProjectPhase.DEVELOPMENT,
+        lifecycle_approved=False,
+    )
+    supervisor = ConversationSupervisor(AppConfig(projects={"demo": project}), "demo")
+    with pytest.raises(SupervisorError, match="human approval"):
+        supervisor.run()
