@@ -19,6 +19,8 @@ from .lifecycle import (LifecycleState, ProjectPhase, can_advance, can_start_sup
 
 _PROJECT_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$")
 _REPO_RE = re.compile(r"^[^/\s]+/[^/\s]+$")
+_URL_RE = re.compile(r"^https?://[^\s]+$")
+_MAX_BODY_BYTES = 1024 * 1024
 _processes: dict[str, subprocess.Popen] = {}
 _process_lock = Lock()
 _lifecycle_lock = Lock()
@@ -550,7 +552,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def _json(self):
         try:
+            content_type = self.headers.get("Content-Type", "")
+            if content_type and not content_type.lower().startswith("application/json"):
+                raise ValueError("Content-Type must be application/json")
             length = int(self.headers.get("Content-Length", "0"))
+            if length > _MAX_BODY_BYTES:
+                raise ValueError("request body too large")
             return json.loads(self.rfile.read(length) or b"{}")
         except (ValueError, json.JSONDecodeError) as exc:
             raise ValueError("invalid JSON body") from exc
@@ -760,6 +767,10 @@ class Handler(BaseHTTPRequestHandler):
     def _apply_optional(project: dict, body: dict) -> None:
         for key in ("project_name", "project_url", "new_chat_selector", "ci_stage"):
             value = str(body.get(key, "")).strip()
+            if key == "project_url" and value and not _URL_RE.fullmatch(value):
+                raise ValueError("project_url must be an http(s) URL")
+            if key == "new_chat_selector" and len(value) > 500:
+                raise ValueError("new_chat_selector is too long")
             if value:
                 project[key] = value
             elif key in project and key in body:
