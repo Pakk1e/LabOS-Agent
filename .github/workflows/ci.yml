@@ -64,3 +64,5 @@ jobs:
         run: python -m playwright install --with-deps chromium
       - name: Browser integration tests
         run: python -m pytest -vv tests/test_web.py -k 'lifecycle_ui_browser_flow or full_lifecycle_browser_api_flow'
+
+# CI diagnostic branch: isolate the previously wedged test process.
