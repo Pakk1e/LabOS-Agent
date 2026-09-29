@@ -24,7 +24,7 @@ main{padding:30px 34px;max-width:1500px;width:100%;margin:auto}.top{display:flex
 <main>
   <div class="top">
     <div><div class="eyebrow">Workspace</div><div class="title" id="pageTitle">Lab OS</div><div class="repo" id="pageRepo">Select a project</div></div>
-    <div class="actions"><button onclick="refresh()">↻ Refresh</button><button id="startBtn" class="primary" onclick="startSupervisor()" disabled>▶ Start Supervisor</button></div>
+    <div class="actions"><button onclick="refresh()">↻ Refresh</button><button id="startBtn" class="primary" onclick="toggleSupervisor()" disabled>▶ Start Supervisor</button></div>
   </div>
   <div id="content"><div class="empty">Loading projects…</div></div>
 </main>
@@ -48,7 +48,7 @@ let projects=[],selected=null;
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function statusClass(p){if(p.ci_conclusion==='failure'||p.ci_status==='FAILED')return'bad';if(p.running||p.ci_status==='IN_PROGRESS'||p.ci_status==='QUEUED')return'warn';if(p.ci_conclusion==='success'||p.ci_status==='PASSED')return'good';return''}
 function renderList(){document.getElementById('projectList').innerHTML=projects.length?projects.map(p=>`<div class="project ${selected===p.name?'active':''}" onclick="selectProject('${esc(p.name)}')"><div class="project-name"><span class="dot ${statusClass(p)}"></span>${esc(p.name)}</div><div class="project-meta">${esc(p.repository)}</div><div class="project-meta">${esc(p.state||'IDLE')}</div></div>`).join(''):'<div class="empty">No projects yet.</div>'}
-function render(){renderList();const p=projects.find(x=>x.name===selected);document.getElementById('startBtn').disabled=!p||p.running;if(!p){document.getElementById('pageTitle').textContent='Lab OS';document.getElementById('pageRepo').textContent='Create or select a project';document.getElementById('content').innerHTML='<div class="empty">Create your first project to get started.</div>';return}
+function render(){renderList();const p=projects.find(x=>x.name===selected);document.getElementById('startBtn').disabled=!p;document.getElementById('startBtn').textContent=p&&p.running?'■ Stop Supervisor':'▶ Start Supervisor';if(!p){document.getElementById('pageTitle').textContent='Lab OS';document.getElementById('pageRepo').textContent='Create or select a project';document.getElementById('content').innerHTML='<div class="empty">Create your first project to get started.</div>';return}
 document.getElementById('pageTitle').textContent=p.name;document.getElementById('pageRepo').textContent=p.repository+' · '+p.project_root;
 const sc=statusClass(p), state=p.running?'RUNNING':p.state||'IDLE';
 document.getElementById('content').innerHTML=`
@@ -73,7 +73,7 @@ function selectProject(n){selected=n;render()}
 function openCreate(){document.getElementById('modal').classList.add('open')}
 function closeCreate(){document.getElementById('modal').classList.remove('open')}
 async function createProject(e){e.preventDefault();const data=Object.fromEntries(new FormData(e.target));try{const r=await fetch('/api/projects',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});const out=await r.json();if(!r.ok)throw Error(out.error||'Create failed');closeCreate();e.target.reset();selected=out.name;await refresh()}catch(err){alert(err.message)}}
-async function startSupervisor(){const p=projects.find(x=>x.name===selected);if(!p)return;try{const r=await fetch('/api/projects/'+encodeURIComponent(p.name)+'/supervise',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({max_turns:0})});const out=await r.json();if(!r.ok)throw Error(out.error||'Start failed');await refresh()}catch(e){alert(e.message)}}
+async function toggleSupervisor(){const p=projects.find(x=>x.name===selected);if(!p)return;const action=p.running?'stop':'supervise';try{const r=await fetch('/api/projects/'+encodeURIComponent(p.name)+'/'+action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({max_turns:0})});const out=await r.json();if(!r.ok)throw Error(out.error||'Supervisor action failed');await refresh()}catch(e){alert(e.message)}}
 refresh();setInterval(refresh,4000);
 </script>
 </body>
