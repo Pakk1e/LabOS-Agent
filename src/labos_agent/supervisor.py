@@ -20,6 +20,17 @@ from .browser.chatgpt import ChatGPTPage
 from .browser.session import BrowserSession
 from .config import AppConfig, ProjectConfig
 from .state_protocol import ChatState, STATE_INSTRUCTION, parse_state
+from .run_summary import RunTracker
+from .trace import trace, trace_summary
+
+
+_RUN_NUMBER = 0
+
+
+def _next_run_number() -> int:
+    global _RUN_NUMBER
+    _RUN_NUMBER += 1
+    return _RUN_NUMBER
 
 
 REMIND_MESSAGE = (
