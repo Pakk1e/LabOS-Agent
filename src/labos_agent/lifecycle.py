@@ -58,6 +58,7 @@ PHASE_EVIDENCE_FILES = {
 }
 
 PHASE_EVIDENCE_MARKERS = {
+    ProjectPhase.BRAINSTORM: ("LabOS brainstorming notes",),
     ProjectPhase.PLANNING: ("Acceptance Criteria",),
     ProjectPhase.VALIDATION: ("Validation Results", "Acceptance Criteria"),
 }
