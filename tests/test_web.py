@@ -683,3 +683,13 @@ def test_lifecycle_ui_browser_flow(tmp_path):
     finally:
         server.shutdown()
         thread.join(timeout=2)
+
+
+def test_ui_has_accessible_shell_controls():
+    from pathlib import Path
+    html = Path(__file__).resolve().parents[1] / "src" / "labos_agent" / "web" / "index.html"
+    text = html.read_text(encoding="utf-8")
+    assert 'aria-label="Refresh project"' in text
+    assert 'aria-label="Project views"' in text
+    assert 'aria-label="Create new project"' in text
+    assert "updateCreateMode()" in text
