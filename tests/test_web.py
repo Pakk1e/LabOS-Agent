@@ -220,13 +220,11 @@ def test_existing_repository_creation_does_not_bootstrap_files(tmp_path):
     from labos_agent.web import Handler
 
     config_path = tmp_path / "config.yaml"
-    config_path.write_text("projects: {}
-", encoding="utf-8")
+    config_path.write_text("projects: {}\\n", encoding="utf-8")
     root = tmp_path / "existing"
     root.mkdir()
     marker = root / "README.md"
-    marker.write_text("# Existing repository
-", encoding="utf-8")
+    marker.write_text("# Existing repository\\n", encoding="utf-8")
 
     handler = object.__new__(Handler)
     handler.config_path = config_path
@@ -246,8 +244,7 @@ def test_existing_repository_creation_does_not_bootstrap_files(tmp_path):
 
     assert sent["status"] == 201
     assert result is None
-    assert marker.read_text(encoding="utf-8") == "# Existing repository
-"
+    assert marker.read_text(encoding="utf-8") == "# Existing repository\\n"
     assert not (root / "docs").exists()
     assert not (root / "AGENTS.md").exists()
 
