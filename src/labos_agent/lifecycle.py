@@ -91,10 +91,16 @@ def load_lifecycle_state(
         )
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict) or "phase" not in raw:
+            raise ValueError("lifecycle state must contain a phase")
         phase = normalize_phase(raw.get("phase"))
-        approved = bool(raw.get("approved", False))
+        approved_raw = raw.get("approved", False)
+        if not isinstance(approved_raw, bool):
+            raise ValueError("lifecycle state approved must be a boolean")
         approved_at = raw.get("approved_at")
-        return LifecycleState(phase=phase, approved=approved, approved_at=approved_at)
+        if approved_at is not None and not isinstance(approved_at, str):
+            raise ValueError("lifecycle state approved_at must be a string or null")
+        return LifecycleState(phase=phase, approved=approved_raw, approved_at=approved_at)
     except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
         raise ValueError(f"invalid lifecycle state for project {project}") from exc
 
