@@ -68,6 +68,30 @@ def _gh_json(args: list[str]):
     return json.loads(result.stdout or "null")
 
 
+def _create_github_repository(repository: str, visibility: str) -> None:
+    if visibility not in {"private", "public"}:
+        raise ValueError("repository visibility must be private or public")
+    subprocess.run(
+        ["gh", "repo", "create", repository, f"--{visibility}"],
+        cwd=Path.cwd(), check=True, capture_output=True, text=True, timeout=30,
+    )
+
+
+def _clone_github_repository(repository: str, root: str) -> None:
+    target = Path(root).expanduser()
+    if target.exists():
+        if not target.is_dir():
+            raise ValueError("project_root exists but is not a directory")
+        if any(target.iterdir()):
+            raise ValueError("project_root must be empty when creating a new repository")
+    else:
+        target.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["gh", "repo", "clone", repository, str(target)],
+        cwd=Path.cwd(), check=True, capture_output=True, text=True, timeout=120,
+    )
+
+
 def _ci_runs(repository: str, limit: int = 30) -> list[dict]:
     data = _gh_json([
         "run", "list", "--repo", repository, "--limit", str(min(max(limit, 1), 100)),
@@ -480,6 +504,21 @@ class Handler(BaseHTTPRequestHandler):
         projects = payload.setdefault("projects", {})
         if name in projects:
             return self._send(409, {"error": "project already exists"})
+        create_repository = bool(body.get("create_repository", False))
+        visibility = str(body.get("repository_visibility", "private")).strip().lower()
+        if create_repository:
+            target = Path(root).expanduser()
+            if target.exists():
+                if not target.is_dir():
+                    return self._send(400, {"error": "project_root exists but is not a directory"})
+                if any(target.iterdir()):
+                    return self._send(409, {"error": "project_root must be empty when creating a new repository"})
+            try:
+                _create_github_repository(repository, visibility)
+                _clone_github_repository(repository, root)
+            except subprocess.CalledProcessError as exc:
+                detail = (exc.stderr or exc.stdout or "").strip()
+                return self._send(502, {"error": detail or "GitHub repository creation or clone failed"})
         projects[name] = {
             "repository": repository,
             "project_root": root,
