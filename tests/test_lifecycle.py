@@ -131,3 +131,32 @@ def test_config_reads_runtime_lifecycle_state(tmp_path):
     project = load_config(config_path).projects["demo"]
     assert project.lifecycle_phase is ProjectPhase.PLANNING
     assert project.project_mode == "guided"
+
+
+def test_lifecycle_state_rejects_approval_outside_development():
+    with pytest.raises(ValueError, match="only valid in the DEVELOPMENT"):
+        LifecycleState(
+            phase=ProjectPhase.PLANNING,
+            approved=True,
+            approved_at="2026-09-29T13:00:00+00:00",
+        )
+
+
+def test_lifecycle_state_rejects_approval_without_timestamp():
+    with pytest.raises(ValueError, match="requires approved_at"):
+        LifecycleState(
+            phase=ProjectPhase.DEVELOPMENT,
+            approved=True,
+        )
+
+
+def test_lifecycle_state_rejects_corrupt_approved_file(tmp_path):
+    state_root = tmp_path / "state"
+    path = state_root / "demo"
+    path.mkdir(parents=True)
+    (path / "project_lifecycle.json").write_text(
+        '{"phase":"PLANNING","approved":true,"approved_at":"2026-09-29T13:00:00+00:00"}',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="invalid lifecycle state"):
+        load_lifecycle_state(state_root, "demo")
