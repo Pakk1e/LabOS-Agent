@@ -169,6 +169,8 @@ def can_advance(project_root: Path, current: ProjectPhase, target: ProjectPhase)
     expected = next_phase(current)
     if target is not expected:
         return False, ("invalid sequential lifecycle transition",)
+    if target is ProjectPhase.DOCUMENTATION and current is ProjectPhase.BRAINSTORM:
+        return phase_evidence(project_root, ProjectPhase.BRAINSTORM)
     if target is ProjectPhase.PLANNING:
         return phase_evidence(project_root, ProjectPhase.DOCUMENTATION)
     if target is ProjectPhase.DEVELOPMENT:
