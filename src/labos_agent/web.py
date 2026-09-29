@@ -21,6 +21,7 @@ _PROJECT_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$")
 _REPO_RE = re.compile(r"^[^/\s]+/[^/\s]+$")
 _processes: dict[str, subprocess.Popen] = {}
 _process_lock = Lock()
+_lifecycle_lock = Lock()
 
 
 def _config_payload(path: Path) -> dict:
@@ -727,6 +728,10 @@ class Handler(BaseHTTPRequestHandler):
 
 
     def _update_lifecycle(self, name: str, body: dict):
+        with _lifecycle_lock:
+            return self._update_lifecycle_unlocked(name, body)
+
+    def _update_lifecycle_unlocked(self, name: str, body: dict):
         config = load_config(self.config_path)
         project_config = config.projects.get(name)
         if project_config is None:
