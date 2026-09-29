@@ -94,44 +94,30 @@ class SupervisorError(RuntimeError):
 
 
 def _github_get(repository: str, *, per_page: int = 30) -> list[CIRun]:
-    owner, name = repository.split("/", 1)
-    url = (
-        f"https://api.github.com/repos/{owner}/{name}/actions/runs"
-        f"?per_page={per_page}"
+    """Read Actions runs using the authenticated gh CLI."""
+    result = subprocess.run(
+        [
+            "gh", "run", "list", "-R", repository,
+            "--limit", str(per_page),
+            "--json", "databaseId,status,conclusion,headSha,name,createdAt,url",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
     )
-    headers = {
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2026-03-10",
-        "User-Agent": "LabOS-Agent",
-    }
-    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-    if not token:
-        try:
-            token = subprocess.run(
-                ["gh", "auth", "token"],
-                check=True,
-                capture_output=True,
-                text=True,
-                timeout=5,
-            ).stdout.strip()
-        except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
-            token = ""
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    request = Request(url, headers=headers, method="GET")
-    with urlopen(request, timeout=30) as response:
-        payload = json.load(response)
+    runs = json.loads(result.stdout)
     return tuple(
         CIRun(
-            id=int(run["id"]),
-            sha=str(run.get("head_sha", "")),
+            id=int(run["databaseId"]),
+            sha=str(run.get("headSha", "")),
             status=str(run.get("status", "")),
             conclusion=run.get("conclusion"),
-            created_at=str(run.get("created_at", "")),
-            url=str(run.get("html_url", "")),
+            created_at=str(run.get("createdAt", "")),
+            url=str(run.get("url", "")),
             name=str(run.get("name", "workflow")),
         )
-        for run in payload.get("workflow_runs", [])
+        for run in runs
     )
 
 
@@ -159,6 +145,7 @@ def wait_for_ci(
     baseline_run_ids: set[int] | None = None,
     timeout_seconds: float,
     poll_seconds: float,
+    target_sha: str | None = None,
     request_fn=_github_get,
     sleep_fn=time.sleep,
 ) -> tuple[bool, str]:
@@ -173,11 +160,12 @@ def wait_for_ci(
             runs = [
                 run for run in _runs_relevant_to_wait(all_runs, started_at)
                 if run.id not in baseline
+                and (target_sha is None or run.sha == target_sha)
             ]
             # ChatGPT may request WAIT_CI before pushing a new commit. Report
             # the latest existing run rather than waiting for a nonexistent
             # turn-specific run.
-            if not runs and baseline:
+            if not runs and baseline and target_sha is None:
                 existing = sorted(
                     all_runs,
                     key=lambda run: _parse_time(run.created_at)
@@ -186,7 +174,7 @@ def wait_for_ci(
                 )
                 if existing:
                     runs = [existing[0]]
-        except (HTTPError, URLError, TimeoutError, ValueError) as exc:
+        except (HTTPError, URLError, TimeoutError, ValueError, subprocess.CalledProcessError, OSError) as exc:
             last = f"GitHub Actions query failed: {type(exc).__name__}: {exc}"
             runs = []
 
@@ -323,7 +311,7 @@ Start now by inspecting the current repository state and continue the task.
 """
 
     def _prompt(self, message: str) -> str:
-        return message.rstrip() + "\n\n" + STATE_INSTRUCTION
+        return message.rstrip() + "\n\n" + STATE_BLOCK_INSTRUCTION
 
     def run(self) -> str:
         run_started_at = datetime.now(timezone.utc)
