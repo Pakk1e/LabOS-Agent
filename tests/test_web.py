@@ -696,6 +696,69 @@ def test_lifecycle_ui_browser_flow(tmp_path):
         thread.join(timeout=2)
 
 
+def test_full_lifecycle_browser_api_flow(tmp_path):
+    from http.server import ThreadingHTTPServer
+    from threading import Thread
+    from playwright.sync_api import sync_playwright
+    from labos_agent.web import Handler, EventHub
+
+    config_path = tmp_path / "config.yaml"
+    root = tmp_path / "repo"
+    config_path.write_text(
+        f"""projects:
+  demo:
+    repository: example/demo
+    project_root: {root}
+    continuation_message: Continue demo
+    initial_idea: Build demo
+    lifecycle:
+      mode: guided
+      phase: BRAINSTORM
+""",
+        encoding="utf-8",
+    )
+    root.mkdir()
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server.config_path = config_path
+    server.event_hub = EventHub(config_path, interval=0.02)
+    server.event_hub.start()
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch()
+            page = browser.new_page()
+            page.goto(f"http://127.0.0.1:{server.server_port}/", wait_until="domcontentloaded")
+            page.wait_for_function("document.querySelector('#projectList')?.innerText.includes('demo')")
+            page.locator("#projectList .project", has_text="demo").click()
+            page.get_by_role("button", name="Save notes").click()
+            page.locator("#brainstormNotes").fill("Goals, users, constraints and alternatives")
+            page.get_by_role("button", name="Save notes").click()
+            page.get_by_role("button", name="Advance").click()
+            page.wait_for_function("document.body.innerText.includes('DOCUMENTATION')")
+            docs = root / "docs"
+            docs.mkdir()
+            for name in ("PRODUCT.md", "REQUIREMENTS.md", "ARCHITECTURE.md", "DECISIONS.md", "ROADMAP.md", "USER_FLOWS.md"):
+                (docs / name).write_text("Approved content", encoding="utf-8")
+            (root / "AGENTS.md").write_text("Rules", encoding="utf-8")
+            page.evaluate("fetch('/api/projects/demo/lifecycle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phase:'PLANNING'})})")
+            (root / "PLAN.md").write_text("# Plan\n\n## Acceptance Criteria\n- AC-1 works", encoding="utf-8")
+            page.evaluate("fetch('/api/projects/demo/lifecycle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phase:'DEVELOPMENT'})})")
+            page.evaluate("fetch('/api/projects/demo/lifecycle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({approved:true})})")
+            page.evaluate("fetch('/api/projects/demo/lifecycle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phase:'VALIDATION'})})")
+            (root / "VALIDATION.md").write_text("# Validation Results\n\n## Acceptance Criteria\nAC-1 PASS", encoding="utf-8")
+            page.evaluate("fetch('/api/projects/demo/lifecycle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phase:'MAINTENANCE'})})")
+            page.evaluate("refresh()")
+            page.get_by_text("MAINTENANCE", exact=True).first.wait_for()
+            page.get_by_role("button", name="Lifecycle").click()
+            page.get_by_text("phase_transition", exact=True).first.wait_for()
+            browser.close()
+    finally:
+        server.shutdown()
+        server.event_hub.stop()
+        thread.join(timeout=2)
+
+
 def test_ui_has_accessible_shell_controls():
     from pathlib import Path
     html = Path(__file__).resolve().parents[1] / "src" / "labos_agent" / "web" / "index.html"
