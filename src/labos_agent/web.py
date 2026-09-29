@@ -107,6 +107,14 @@ def _clear_process_record(config_path: Path, name: str) -> None:
         pass
 
 
+def _terminate_process(name: str, pid: int) -> None:
+    process = _processes.get(name)
+    if process is not None and process.poll() is None:
+        process.terminate()
+    else:
+        os.kill(pid, 15)
+
+
 def _process_status(config_path: Path, name: str) -> dict:
     with _process_lock:
         process = _processes.get(name)
@@ -344,11 +352,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(409, {"error": "supervisor is not running"})
         pid = status["pid"]
         with _process_lock:
-            process = _processes.get(name)
-            if process is not None and process.poll() is None:
-                process.terminate()
-            else:
-                os.kill(pid, 15)
+            _terminate_process(name, pid)
             _processes.pop(name, None)
             _clear_process_record(self.config_path, name)
         return self._send(202, {"stopped": True, "project": name, "pid": pid})
