@@ -110,3 +110,29 @@ Every response now also carries a strict `<LABOS_STATE>` block containing the re
 LabOS persists the latest parsed response and independently observed GitHub state under `state/<project>/supervisor_state.json`. At the start of a new supervisor run, it reads that memory and reconciles it against the current GitHub HEAD and latest Actions result before prompting ChatGPT. Reported state is evidence, not truth: repository and CI observations can produce a verified completion or a conflict.
 
 If the structured block is missing or invalid, LabOS sends a reminder and waits for a corrected response. The supervisor's reconciliation state machine distinguishes WORKING, WAITING_CI, FIXING_CI, DONE, and CONFLICT. This protocol remains independent of repository contents and local shell execution.
+
+## Lab OS control UI
+
+A lightweight local web control plane is available without adding a frontend
+build system:
+
+```bash
+lab-agent web --config config.yaml --host 127.0.0.1 --port 8080
+```
+
+Open `http://127.0.0.1:8080`. The dashboard provides:
+
+- project list and live supervisor/CI state;
+- repository, branch, commit and ChatGPT Project context;
+- supervisor start control;
+- project creation, persisted into the configured `config.yaml`;
+- automatic polling of supervisor memory.
+
+The web service is intended for the trusted Lab OS server and binds to
+localhost by default. Put an authenticated reverse proxy in front of it before
+exposing it beyond the server.
+
+The UI deliberately uses the existing Python runtime and browser/GitHub
+supervisor state. It is a control surface, not a second implementation of the
+supervisor state machine.
+
