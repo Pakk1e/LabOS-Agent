@@ -374,7 +374,7 @@ class Handler(BaseHTTPRequestHandler):
                 try:
                     payload = client.get(timeout=15)
                 except Empty:
-                    self.wfile.write(b": keep-alive\\n\\n")
+                    self.wfile.write(b": keep-alive\n\n")
                     self.wfile.flush()
                     continue
                 if payload.get("type") == "shutdown":
