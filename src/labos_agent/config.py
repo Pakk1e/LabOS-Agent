@@ -75,12 +75,18 @@ def load_config(path: Path) -> AppConfig:
         allowed = tuple(Path(p).expanduser() for p in value.get("execution", {}).get("allowed_roots", [str(root)]))
         lifecycle = value.get("lifecycle", {})
         legacy_phase = normalize_phase(lifecycle.get("phase"))
+        legacy_approved = lifecycle.get("approved", False)
+        if not isinstance(legacy_approved, bool):
+            raise ValueError(f"lifecycle.approved for project {key} must be a boolean")
+        legacy_approved_at = lifecycle.get("approved_at")
+        if legacy_approved_at is not None and not isinstance(legacy_approved_at, str):
+            raise ValueError(f"lifecycle.approved_at for project {key} must be a string or null")
         lifecycle_state = load_lifecycle_state(
             path.parent / "state",
             key,
             fallback_phase=legacy_phase,
-            fallback_approved=bool(lifecycle.get("approved", False)),
-            fallback_approved_at=lifecycle.get("approved_at"),
+            fallback_approved=legacy_approved,
+            fallback_approved_at=legacy_approved_at,
         )
         projects[key] = ProjectConfig(
             name=key, repository=value["repository"], project_root=root,
