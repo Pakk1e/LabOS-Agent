@@ -19,7 +19,7 @@ from urllib.request import Request, urlopen
 from .browser.chatgpt import ChatGPTPage
 from .browser.session import BrowserSession
 from .config import AppConfig, ProjectConfig
-from .state_protocol import ChatState, STATE_INSTRUCTION, parse_state
+from .state_protocol import ChatState
 from .response_protocol import LabOSResponse, STATE_BLOCK_INSTRUCTION, parse_labos_response
 from .run_summary import RunTracker
 from .github_observer import GitHubObservation, observe_github
@@ -71,6 +71,11 @@ CI_FAILED_MESSAGE = (
     "response with (STATE <state> STATE)."
 )
 
+
+REMIND_MESSAGE += "\n\n" + STATE_BLOCK_INSTRUCTION
+CONTINUE_MESSAGE += "\n\n" + STATE_BLOCK_INSTRUCTION
+CI_PASSED_MESSAGE += "\n\n" + STATE_BLOCK_INSTRUCTION
+CI_FAILED_MESSAGE += "\n\n" + STATE_BLOCK_INSTRUCTION
 
 @dataclass(frozen=True)
 class CIRun:
@@ -466,7 +471,7 @@ Start now by inspecting the current repository state and continue the task.
                     tracker.start_iteration(datetime.now(timezone.utc))
                 elif state == ChatState.FIX_CI:
                     tracker.finish_iteration("FIX_CI", datetime.now(timezone.utc))
-                    trace("iteration.complete", project=self.project_name, iteration=iteration.number, success=false, state="FIX_CI")
+                    trace("iteration.complete", project=self.project_name, iteration=iteration.number, success=False, state="FIX_CI")
                     response = chat.send_and_wait_for_response(
                         CI_FAILED_MESSAGE,
                         timeout_seconds=self.config.browser.response_timeout_seconds,
