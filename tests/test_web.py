@@ -404,3 +404,10 @@ def test_project_view_exposes_lifecycle_gate(tmp_path):
     view = _project_view(config_path, "demo", project)
     assert view["lifecycle_gate"]["target"] == "DEVELOPMENT"
     assert view["lifecycle_gate"]["satisfied"] is True
+
+
+def test_lifecycle_rejects_non_boolean_approval_payload(tmp_path):
+    handler, config_path, sent = _make_lifecycle_handler(tmp_path)
+    handler._update_lifecycle("demo", {"approved": "false"})
+    assert sent["status"] == 400
+    assert "boolean" in sent["body"]["error"]
