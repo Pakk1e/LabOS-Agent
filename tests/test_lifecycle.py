@@ -300,3 +300,78 @@ def test_maintenance_gate_validates_each_acceptance_criterion(tmp_path):
     ok, missing = can_advance(root, ProjectPhase.VALIDATION, ProjectPhase.MAINTENANCE)
     assert ok
     assert not missing
+
+
+def test_lifecycle_state_path_rejects_traversal(tmp_path):
+    from labos_agent.lifecycle import lifecycle_state_path
+    with pytest.raises(ValueError, match="invalid lifecycle project name"):
+        lifecycle_state_path(tmp_path, "../escape")
+    with pytest.raises(ValueError, match="invalid lifecycle project name"):
+        lifecycle_state_path(tmp_path, "a/b")
+
+
+def test_legacy_approved_development_without_timestamp_still_loads(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """projects:
+  demo:
+    repository: example/demo
+    project_root: /tmp/demo
+    continuation_message: Continue demo
+    lifecycle:
+      phase: DEVELOPMENT
+      approved: true
+""",
+        encoding="utf-8",
+    )
+    from labos_agent.config import load_config
+    project = load_config(config_path).projects["demo"]
+    assert project.lifecycle_phase is ProjectPhase.DEVELOPMENT
+    assert project.lifecycle_approved is True
+    assert project.lifecycle_approved_at is None
+
+
+def test_runtime_lifecycle_state_survives_legacy_config_change(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """projects:
+  demo:
+    repository: example/demo
+    project_root: /tmp/demo
+    continuation_message: Continue demo
+    lifecycle:
+      phase: BRAINSTORM
+""",
+        encoding="utf-8",
+    )
+    from labos_agent.config import load_config
+    save_lifecycle_state(
+        tmp_path / "state",
+        "demo",
+        LifecycleState(phase=ProjectPhase.DOCUMENTATION),
+    )
+    assert load_config(config_path).projects["demo"].lifecycle_phase is ProjectPhase.DOCUMENTATION
+
+
+def test_corrupt_runtime_lifecycle_state_fails_closed(tmp_path):
+    state = tmp_path / "state" / "demo"
+    state.mkdir(parents=True)
+    (state / "project_lifecycle.json").write_text("{not-json", encoding="utf-8")
+    with pytest.raises(ValueError, match="invalid lifecycle state"):
+        load_lifecycle_state(tmp_path / "state", "demo")
+
+
+def test_lifecycle_state_ignores_interrupted_temp_file(tmp_path):
+    state = tmp_path / "state" / "demo"
+    state.mkdir(parents=True)
+    (state / "project_lifecycle.json.tmp").write_text(
+        '{"phase":"DEVELOPMENT","approved":true}',
+        encoding="utf-8",
+    )
+    loaded = load_lifecycle_state(
+        tmp_path / "state",
+        "demo",
+        fallback_phase=ProjectPhase.PLANNING,
+    )
+    assert loaded.phase is ProjectPhase.PLANNING
+    assert not loaded.approved
