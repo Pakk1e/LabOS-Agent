@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from labos_agent.config import ProjectConfig
-from labos_agent.rollover import handoff_prompt, persist_handoff, resume_prompt, rollover
+from labos_agent.rollover import handoff_prompt, persist_handoff, persistent_resume_context, resume_prompt, rollover
 
 
 class FakePage:
@@ -37,6 +37,14 @@ def test_rollover_persists_and_resumes(tmp_path):
         project_url="https://chatgpt.com/g/g-p-weather/project",
     )
     chat = FakeChat()
+    (tmp_path / "state" / "supervisor_state.json").parent.mkdir(parents=True)
+    (tmp_path / "state" / "supervisor_state.json").write_text(
+        '{"last_analysis":{"state":"WAIT_CI","current_commit":"abc123","ci_run":42,"ci_status":"QUEUED"},'
+        '"last_observed_branch":"main","last_observed_commit":"abc123",'
+        '"last_observed_ci_run":42,"last_observed_ci_status":"completed",'
+        '"last_observed_ci_conclusion":"success"}',
+        encoding="utf-8",
+    )
     continuation, path, response = rollover(
         chat,
         project,
@@ -49,7 +57,10 @@ def test_rollover_persists_and_resumes(tmp_path):
     assert chat.page.url.endswith("/new")
     assert path.read_text(encoding="utf-8") == "HANDOFF CONTENT\n"
     assert handoff_prompt(project) in chat.messages
-    assert continuation == resume_prompt(project, "HANDOFF CONTENT")
+    assert continuation == resume_prompt(project, "HANDOFF CONTENT", persistent_resume_context(tmp_path / "state"))
+    assert "last reported state: WAIT_CI" in continuation
+    assert "observed GitHub HEAD: abc123" in continuation
+    assert "AUTHORITATIVE HANDOFF:" in continuation
     assert continuation in chat.messages
     assert response == "RESUME RESPONSE"
 
@@ -75,3 +86,8 @@ def test_handoff_is_project_scoped():
 def test_persist_handoff_is_newline_terminated(tmp_path):
     path = persist_handoff(tmp_path, "handoff")
     assert path.read_text(encoding="utf-8") == "handoff\n"
+
+
+def test_persistent_resume_context_handles_missing_state(tmp_path):
+    context = persistent_resume_context(tmp_path / "state")
+    assert "unavailable" in context.lower()
