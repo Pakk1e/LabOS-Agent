@@ -73,6 +73,29 @@ def _ci_runs(repository: str, limit: int = 30) -> list[dict]:
     return data if isinstance(data, list) else []
 
 
+def _run_events(config_path: Path, project: str, run_number: int) -> list[dict]:
+    path = config_path.parent / "state" / project / "runs" / f"{run_number:06d}.events.jsonl"
+    if not path.exists():
+        return []
+    events = []
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                events.append(json.loads(line))
+    except (OSError, ValueError):
+        return []
+    return events[-500:]
+
+
+def _process_status(name: str) -> dict:
+    with _process_lock:
+        process = _processes.get(name)
+        if process is None:
+            return {"running": False, "pid": None}
+        running = process.poll() is None
+        return {"running": running, "pid": process.pid if running else None, "returncode": None if running else process.returncode}
+
+
 def _ci_jobs(repository: str, run_id: int) -> list[dict]:
     data = _gh_json(["run", "view", str(run_id), "--repo", repository, "--json", "jobs"])
     return data.get("jobs", []) if isinstance(data, dict) else []
