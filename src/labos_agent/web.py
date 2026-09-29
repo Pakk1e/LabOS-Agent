@@ -91,6 +91,7 @@ def _project_view(config_path: Path, name: str, project) -> dict:
         "repository": project.repository,
         "project_root": str(project.project_root),
         "project_name": project.project_name or name,
+        "continuation_message": project.continuation_message,
         "project_url": project.project_url,
         "new_chat_selector": project.new_chat_selector,
         "ci_stage": project.ci_stage,
