@@ -5,35 +5,68 @@ from urllib.error import HTTPError
 import labos_agent.github_observer as observer
 
 
-def test_observe_github_can_verify_exact_ci_run(monkeypatch):
-    calls = []
-
+def test_observe_github_uses_gh_for_latest_ci_run(monkeypatch):
     def fake_get(url):
-        calls.append(url)
         if url.endswith("/repos/owner/repo"):
             return {"default_branch": "main"}
         if url.endswith("/git/ref/heads/main"):
             return {"object": {"sha": "abc1234"}}
-        if url.endswith("/actions/runs/166"):
-            return {
-                "id": 166,
-                "status": "completed",
-                "conclusion": "success",
-                "head_sha": "abc1234",
-                "name": "Weather CI",
-                "created_at": "2026-09-29T08:00:00Z",
-                "html_url": "https://example.test/166",
-            }
         raise AssertionError(url)
 
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        return _Completed(
+            json.dumps([{
+                "databaseId": 166,
+                "status": "completed",
+                "conclusion": "success",
+                "headSha": "abc1234",
+                "name": "Weather CI",
+                "createdAt": "2026-09-29T08:00:00Z",
+                "url": "https://example.test/166",
+            }])
+        )
+
     monkeypatch.setattr(observer, "_get_json", fake_get)
-    result = observer.observe_github("owner/repo", ci_run_id=166)
+    monkeypatch.setattr(observer.subprocess, "run", fake_run)
+
+    result = observer.observe_github("owner/repo")
 
     assert result.commit_sha == "abc1234"
     assert result.ci_run_id == 166
     assert result.ci_sha == "abc1234"
     assert result.ci_conclusion == "success"
-    assert not any("/actions/runs?branch=" in url for url in calls)
+    assert calls[0][:5] == ["gh", "run", "list", "-R", "owner/repo"]
+
+
+def test_observe_github_uses_gh_for_exact_ci_run(monkeypatch):
+    def fake_get(url):
+        if url.endswith("/repos/owner/repo"):
+            return {"default_branch": "main"}
+        if url.endswith("/git/ref/heads/main"):
+            return {"object": {"sha": "abc1234"}}
+        raise AssertionError(url)
+
+    def fake_run(command, **kwargs):
+        return _Completed(json.dumps({
+            "databaseId": 166,
+            "status": "completed",
+            "conclusion": "success",
+            "headSha": "abc1234",
+            "name": "Weather CI",
+            "createdAt": "2026-09-29T08:00:00Z",
+            "url": "https://example.test/166",
+        }))
+
+    monkeypatch.setattr(observer, "_get_json", fake_get)
+    monkeypatch.setattr(observer.subprocess, "run", fake_run)
+
+    result = observer.observe_github("owner/repo", ci_run_id=166)
+
+    assert result.ci_run_id == 166
+    assert result.ci_sha == "abc1234"
 
 
 def test_get_json_retries_with_gh_auth_after_environment_token_404(monkeypatch):
@@ -54,6 +87,11 @@ def test_get_json_retries_with_gh_auth_after_environment_token_404(monkeypatch):
         ("https://api.github.com/repos/owner/repo", "Bearer stale-token"),
         ("https://api.github.com/repos/owner/repo", "Bearer gh-token"),
     ]
+
+
+class _Completed:
+    def __init__(self, stdout):
+        self.stdout = stdout
 
 
 class _JsonResponse:
