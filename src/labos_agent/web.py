@@ -13,7 +13,7 @@ from urllib.parse import unquote, urlparse
 from .config import load_config
 
 _PROJECT_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$")
-_REPO_RE = re.compile(r"^[^/\\s]+/[^/\\s]+$")
+_REPO_RE = re.compile(r"^[^/\s]+/[^/\s]+$")
 _processes: dict[str, subprocess.Popen] = {}
 _process_lock = Lock()
 
@@ -182,7 +182,10 @@ class Handler(BaseHTTPRequestHandler):
             if project is None:
                 return self._send(404, {"error": "project not found"})
             if len(parts) == 2 and parts[1] == "runs":
-                return self._send(200, {"runs": _run_history(self.config_path, name)})
+                return self._send(200, {
+                    "runs": _run_history(self.config_path, name),
+                    "process": _process_status(name),
+                })
             if len(parts) == 2 and parts[1] == "ci":
                 try:
                     return self._send(200, {"runs": _ci_runs(project.repository)})
