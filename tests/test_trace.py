@@ -18,7 +18,9 @@ def test_trace_is_human_friendly(capsys, monkeypatch):
     assert "Local CI finished" in output
     assert "stage=test" in output
     assert "large internal output" not in output
-    assert output.startswith("20")
+    assert output[:8].count(":") == 2
+    assert all(part.isdigit() for part in output[:8].split(":"))
+
 
 def test_trace_shows_actionable_reason(capsys, monkeypatch):
     monkeypatch.setenv("LABOS_TRACE", "1")
