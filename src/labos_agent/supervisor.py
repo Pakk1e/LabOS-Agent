@@ -20,7 +20,10 @@ from .browser.chatgpt import ChatGPTPage
 from .browser.session import BrowserSession
 from .config import AppConfig, ProjectConfig
 from .state_protocol import ChatState, STATE_INSTRUCTION, parse_state
+from .response_protocol import LabOSResponse, STATE_BLOCK_INSTRUCTION, parse_labos_response
 from .run_summary import RunTracker
+from .github_observer import GitHubObservation, observe_github
+from .supervisor_memory import SupervisorMemory, load_memory, memory_path, save_memory
 from .trace import trace, trace_summary
 
 
@@ -233,7 +236,33 @@ class ConversationSupervisor:
         )
         self.turns = 0
 
-    def _bootstrap_prompt(self) -> str:
+    def _recovery_context(self, memory: SupervisorMemory, observation: GitHubObservation) -> str:
+        if not memory.last_analysis:
+            return (
+                "No previous structured supervisor state exists. Treat this as a fresh run "
+                "and inspect the repository before making changes."
+            )
+        previous = memory.last_analysis
+        lines = [
+            "RECOVERED SUPERVISOR STATE:",
+            f"- Previous reported state: {previous.get('state', 'UNKNOWN')}",
+            f"- Previous reported commit: {previous.get('current_commit', 'UNKNOWN')}",
+            f"- Previous reported CI: {previous.get('ci_run', 'NONE')} / {previous.get('ci_status', 'NONE')}",
+            f"- GitHub observed branch: {observation.branch}",
+            f"- GitHub observed HEAD: {observation.commit_sha}",
+            f"- Latest GitHub CI: {observation.ci_run_id or 'NONE'} / {observation.ci_status or 'NONE'} / {observation.ci_conclusion or 'NONE'}",
+        ]
+        if previous.get("current_commit") and previous.get("current_commit") != observation.commit_sha:
+            lines.append("RECONCILIATION: the reported commit does not match the current GitHub HEAD; inspect before assuming completion.")
+        elif previous.get("current_commit"):
+            lines.append("RECONCILIATION: the reported commit matches the current GitHub HEAD.")
+        if previous.get("state") == "WAIT_CI" and observation.ci_conclusion == "success" and observation.ci_sha == observation.commit_sha:
+            lines.append("RECOVERY ACTION: the previously awaited CI is now successful; continue the engineering task without repeating the completed CI wait.")
+        elif previous.get("state") == "WAIT_CI":
+            lines.append("RECOVERY ACTION: verify the awaited commit and CI before deciding the next action.")
+        return "\n".join(lines)
+
+    def _bootstrap_prompt(self, recovery_context: str = "") -> str:
         project_name = self.project.project_name or self.project_name
         repository = self.project.repository
         project_root = str(self.project.project_root)
@@ -281,8 +310,10 @@ IMPLEMENTATION AND CI WORKFLOW:
 CURRENT TASK:
 {task}
 
+{recovery_context}
+
 Start now by inspecting the current repository state and continue the task.
-{STATE_INSTRUCTION}
+{STATE_BLOCK_INSTRUCTION}
 """
 
     def _prompt(self, message: str) -> str:
@@ -319,8 +350,16 @@ Start now by inspecting the current repository state and continue the task.
                     "cannot access GitHub Actions for the configured repository; "
                     "set GITHUB_TOKEN/GH_TOKEN or authenticate GitHub CLI with 'gh auth login'"
                 ) from exc
+            memory_file = memory_path(self.project_name)
+            memory = load_memory(memory_file, self.project_name)
+            try:
+                observation = observe_github(self.project.repository)
+            except Exception as exc:
+                raise SupervisorError(f"cannot observe GitHub repository state: {exc}") from exc
+
+            recovery_context = self._recovery_context(memory, observation)
             response = chat.send_and_wait_for_response(
-                self._bootstrap_prompt(),
+                self._bootstrap_prompt(recovery_context),
                 timeout_seconds=self.config.browser.response_timeout_seconds,
                 quiet_seconds=self.config.browser.quiet_seconds,
             )
@@ -332,10 +371,34 @@ Start now by inspecting the current repository state and continue the task.
                 tracker.record(chatgpt_work=True)
                 trace("iteration.start", project=self.project_name, iteration=iteration.number)
                 trace("chat.response", project=self.project_name, iteration=iteration.number, response_chars=len(response))
-                state = parse_state(response)
+                analysis = parse_labos_response(response)
+                state = analysis.state
                 tracker.record(state=state.value if state else "INVALID")
+                try:
+                    observed = observe_github(self.project.repository)
+                    memory.last_response = response
+                    memory.last_analysis = analysis.to_dict()
+                    memory.last_observed_commit = observed.commit_sha
+                    memory.last_observed_branch = observed.branch
+                    memory.last_observed_ci_run = observed.ci_run_id
+                    memory.last_observed_ci_status = observed.ci_status
+                    memory.last_observed_ci_conclusion = observed.ci_conclusion
+                    memory.conversation_url = page.url
+                    memory.updated_at = datetime.now(timezone.utc).isoformat()
+                    save_memory(memory_file, memory)
+                except Exception as exc:
+                    trace("run.error", project=self.project_name, error=f"GitHub observation failed after response: {exc}")
 
-                if state is None:
+                if analysis.structured and not analysis.valid:
+                    tracker.finish_iteration("INVALID", datetime.now(timezone.utc), "invalid LABOS_STATE: " + "; ".join(analysis.errors))
+                    trace("iteration.complete", project=self.project_name, iteration=iteration.number, success=False, state="INVALID")
+                    response = chat.send_and_wait_for_response(
+                        REMIND_MESSAGE + "\n\nYour LABOS_STATE block was invalid:\n- " + "\n- ".join(analysis.errors),
+                        timeout_seconds=self.config.browser.response_timeout_seconds,
+                        quiet_seconds=self.config.browser.quiet_seconds,
+                    )
+                    tracker.start_iteration(datetime.now(timezone.utc))
+                elif state is None:
                     tracker.finish_iteration("INVALID", datetime.now(timezone.utc), "missing or invalid state marker")
                     trace("iteration.complete", project=self.project_name, iteration=iteration.number, success=False, state="INVALID")
                     response = chat.send_and_wait_for_response(
@@ -345,11 +408,30 @@ Start now by inspecting the current repository state and continue the task.
                     )
                     tracker.start_iteration(datetime.now(timezone.utc))
                 elif state == ChatState.DONE:
-                    tracker.finish_iteration("DONE", datetime.now(timezone.utc))
-                    tracker.finish_run("DONE", datetime.now(timezone.utc))
-                    trace("iteration.complete", project=self.project_name, iteration=iteration.number, success=True, state="DONE")
-                    trace_summary(tracker.box(), project=self.project_name, success=True)
-                    trace("run.complete", project=self.project_name, run=tracker.summary.run_number, success=True)
+                    verified = False
+                    if analysis.structured and analysis.current_commit:
+                        try:
+                            observed = observe_github(self.project.repository)
+                            verified = (
+                                observed.commit_sha == analysis.current_commit
+                                and (
+                                    analysis.ci_status != "PASSED"
+                                    or (
+                                        observed.ci_sha == analysis.current_commit
+                                        and observed.ci_conclusion == "success"
+                                    )
+                                )
+                            )
+                        except Exception:
+                            verified = False
+                    else:
+                        verified = True
+                    result = "DONE_VERIFIED" if verified else "DONE_UNVERIFIED"
+                    tracker.finish_iteration("DONE", datetime.now(timezone.utc), None if verified else "completion claims require GitHub reconciliation")
+                    tracker.finish_run(result, datetime.now(timezone.utc), None if verified else "completion claims require GitHub reconciliation")
+                    trace("iteration.complete", project=self.project_name, iteration=iteration.number, success=verified, state=result)
+                    trace_summary(tracker.box(), project=self.project_name, success=verified)
+                    trace("run.complete", project=self.project_name, run=tracker.summary.run_number, success=verified)
                     return response
                 elif state == ChatState.WAIT_CI:
                     trace("remote_ci.start", project=self.project_name, iteration=iteration.number)
