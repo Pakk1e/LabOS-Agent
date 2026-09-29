@@ -59,3 +59,16 @@ def test_web_command_parser():
     assert args.host == "127.0.0.1"
     assert args.port == 9090
 
+
+
+def test_module_entrypoint_invokes_main():
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "-m", "labos_agent.cli", "--help"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert "usage:" in result.stdout
