@@ -54,9 +54,18 @@ def _save_run_event(project: str, tracker: RunTracker, event: str, **fields: obj
 _RUN_NUMBER = 0
 
 
-def _next_run_number() -> int:
+def _next_run_number(project: str) -> int:
+    """Return a run number that survives supervisor process restarts."""
     global _RUN_NUMBER
-    _RUN_NUMBER += 1
+    root = Path("state") / project / "runs"
+    existing = []
+    if root.exists():
+        for path in root.glob("*.json"):
+            try:
+                existing.append(int(path.stem))
+            except ValueError:
+                continue
+    _RUN_NUMBER = max(_RUN_NUMBER, max(existing, default=0)) + 1
     return _RUN_NUMBER
 
 
@@ -347,7 +356,7 @@ Start now by inspecting the current repository state and continue the task.
 
     def run(self) -> str:
         run_started_at = datetime.now(timezone.utc)
-        tracker = RunTracker(self.project_name, _next_run_number(), run_started_at)
+        tracker = RunTracker(self.project_name, _next_run_number(self.project_name), run_started_at)
         trace("run.start", project=self.project_name, run=tracker.summary.run_number)
         _save_run_event(self.project_name, tracker, "run.start")
         with BrowserSession(
