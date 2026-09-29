@@ -933,7 +933,13 @@ class Handler(BaseHTTPRequestHandler):
         return self._send(202, {"started": True, "pid": process.pid, "project": name, "max_turns": max_turns})
 
 
+def _is_loopback_host(host: str) -> bool:
+    return host in {"127.0.0.1", "::1", "localhost"}
+
+
 def serve(config_path: Path, host: str = "127.0.0.1", port: int = 8080) -> None:
+    if not _is_loopback_host(host) and os.environ.get("LABOS_ALLOW_REMOTE") != "1":
+        raise RuntimeError("Lab OS web server is local-only by default; set LABOS_ALLOW_REMOTE=1 to bind a non-loopback host")
     config_path = config_path.expanduser().resolve()
     load_config(config_path)
     server = ThreadingHTTPServer((host, port), Handler)
