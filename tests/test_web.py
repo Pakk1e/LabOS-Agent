@@ -124,14 +124,11 @@ def test_latest_run_events_reads_newest_event_stream(tmp_path):
     root = tmp_path / "state" / "weather" / "runs"
     root.mkdir(parents=True)
     (root / "000002.events.jsonl").write_text(
-        '{"event":"old"}
-',
+        '{"event":"old"}\n',
         encoding="utf-8",
     )
     (root / "000003.events.jsonl").write_text(
-        '{"event":"new1"}
-{"event":"new2"}
-',
+        '{"event":"new1"}\n{"event":"new2"}\n',
         encoding="utf-8",
     )
     events = _latest_run_events(tmp_path / "config.yaml", "weather")
