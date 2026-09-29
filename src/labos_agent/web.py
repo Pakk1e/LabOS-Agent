@@ -14,6 +14,7 @@ from threading import Lock, Thread
 from urllib.parse import unquote, urlparse
 
 from .config import load_config
+from .lifecycle import ProjectPhase, normalize_phase, next_phase
 
 _PROJECT_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$")
 _REPO_RE = re.compile(r"^[^/\s]+/[^/\s]+$")
@@ -75,6 +76,27 @@ def _create_github_repository(repository: str, visibility: str) -> None:
         ["gh", "repo", "create", repository, f"--{visibility}"],
         cwd=Path.cwd(), check=True, capture_output=True, text=True, timeout=30,
     )
+
+
+def _bootstrap_project_documents(root: str, name: str, idea: str) -> None:
+    target = Path(root).expanduser()
+    docs = target / "docs"
+    docs.mkdir(parents=True, exist_ok=True)
+    templates = {
+        "IDEA.md": "# Project Idea\n\n## Initial idea\n\n" + (idea.strip() or "Capture the initial project idea here.") + "\n\n## Open questions\n\n- What problem are we solving?\n- Who is the intended user?\n- What is explicitly out of scope?\n",
+        "PRODUCT.md": "# Product Definition\n\n_To be completed during documentation._\n",
+        "REQUIREMENTS.md": "# Requirements\n\n_To be completed during documentation._\n",
+        "ARCHITECTURE.md": "# Architecture\n\n_To be completed during documentation._\n",
+        "DECISIONS.md": "# Architecture Decisions\n\nRecord important decisions and their rationale here.\n",
+        "ROADMAP.md": "# Roadmap\n\n_To be created after requirements and architecture are agreed._\n",
+    }
+    for filename, content in templates.items():
+        path = docs / filename
+        if not path.exists():
+            path.write_text(content, encoding="utf-8")
+    agents = target / "AGENTS.md"
+    if not agents.exists():
+        agents.write_text("# " + name + "\n\nThis repository is managed through LabOS. Follow the project lifecycle. During brainstorming and documentation, do not implement product features. Keep requirements, architecture, decisions, and roadmap synchronized with the agreed project.\n", encoding="utf-8")
 
 
 def _clone_github_repository(repository: str, root: str) -> None:
@@ -519,12 +541,7 @@ class Handler(BaseHTTPRequestHandler):
             except subprocess.CalledProcessError as exc:
                 detail = (exc.stderr or exc.stdout or "").strip()
                 return self._send(502, {"error": detail or "GitHub repository creation or clone failed"})
-        projects[name] = {
-            "repository": repository,
-            "project_root": root,
-            "continuation_message": body.get("continuation_message") or f"Continue {name.title()}",
-        }
-        self._apply_optional(projects[name], body)
+        if create_repository:\n            _bootstrap_project_documents(root, name, str(body.get("initial_idea", "")))\n        projects[name] = {\n            "repository": repository,\n            "project_root": root,\n            "continuation_message": body.get("continuation_message") or f"Continue {name.title()}",\n            "initial_idea": str(body.get("initial_idea", "")),\n            "lifecycle": {\n                "mode": str(body.get("project_mode", "guided")).strip().lower() or "guided",\n                "phase": "BRAINSTORM" if str(body.get("project_mode", "guided")).strip().lower() == "guided" else "DOCUMENTATION",\n                "approved": False,\n            },\n        }\n        self._apply_optional(projects[name], body)
         _write_config(self.config_path, payload)
         config = load_config(self.config_path)
         return self._send(201, _project_view(self.config_path, name, config.projects[name]))
