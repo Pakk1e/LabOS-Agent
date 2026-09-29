@@ -13,7 +13,7 @@ def test_relevant_runs_allow_small_timestamp_race():
 
 
 def test_wait_for_ci_passes_completed_run():
-    started = datetime.now(timezone.utc)
+    started = datetime(2026, 9, 28, 19, 59, tzinfo=timezone.utc)
     runs = [
         CIRun(1, "abc", "completed", "success", "2026-09-28T20:00:00Z", "", "CI"),
     ]
@@ -29,7 +29,7 @@ def test_wait_for_ci_passes_completed_run():
 
 
 def test_wait_for_ci_reports_failure():
-    started = datetime.now(timezone.utc)
+    started = datetime(2026, 9, 28, 19, 59, tzinfo=timezone.utc)
     runs = [
         CIRun(1, "abc", "completed", "failure", "2026-09-28T20:00:00Z", "", "CI"),
     ]
@@ -46,7 +46,7 @@ def test_wait_for_ci_reports_failure():
 
 
 def test_wait_for_ci_waits_for_running_run():
-    started = datetime.now(timezone.utc)
+    started = datetime(2026, 9, 28, 19, 59, tzinfo=timezone.utc)
     responses = iter([
         [CIRun(1, "abc", "in_progress", None, "2026-09-28T20:00:00Z", "", "CI")],
         [CIRun(1, "abc", "completed", "success", "2026-09-28T20:00:00Z", "", "CI")],
