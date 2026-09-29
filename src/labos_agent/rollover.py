@@ -1,6 +1,7 @@
 """Conversation rollover and handoff handling."""
 from __future__ import annotations
 from pathlib import Path
+import json
 from .browser.chatgpt import ChatGPTPage
 from .config import ProjectConfig
 
@@ -27,8 +28,36 @@ def persist_handoff(state_dir: Path, handoff: str) -> Path:
     return path
 
 
-def resume_prompt(project: ProjectConfig, handoff: str) -> str:
+def persistent_resume_context(state_dir: Path) -> str:
+    """Return a compact, machine-readable snapshot of persistent supervisor state."""
+    memory_path = state_dir / "supervisor_state.json"
+    if not memory_path.exists():
+        return "PERSISTENT SUPERVISOR STATE: unavailable; inspect repository state directly."
+    try:
+        memory = json.loads(memory_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return "PERSISTENT SUPERVISOR STATE: unreadable; inspect repository state directly."
+
+    fields = (
+        ("last reported state", memory.get("last_analysis", {}).get("state")),
+        ("last reported commit", memory.get("last_analysis", {}).get("current_commit")),
+        ("last reported CI run", memory.get("last_analysis", {}).get("ci_run")),
+        ("last reported CI status", memory.get("last_analysis", {}).get("ci_status")),
+        ("observed GitHub branch", memory.get("last_observed_branch")),
+        ("observed GitHub HEAD", memory.get("last_observed_commit")),
+        ("observed GitHub CI run", memory.get("last_observed_ci_run")),
+        ("observed GitHub CI status", memory.get("last_observed_ci_status")),
+        ("observed GitHub CI conclusion", memory.get("last_observed_ci_conclusion")),
+    )
+    lines = ["PERSISTENT SUPERVISOR STATE (LabOS-generated; verify against the repository/GitHub):"]
+    for label, value in fields:
+        lines.append(f"- {label}: {value if value not in (None, '') else 'NONE'}")
+    return "\n".join(lines)
+
+
+def resume_prompt(project: ProjectConfig, handoff: str, persistent_context: str = "") -> str:
     project_name = project.project_name or project.name
+    context = persistent_context.strip() or "PERSISTENT SUPERVISOR STATE: unavailable."
     return (
         f"Continue the {project.name} project from this handoff. You are in the ChatGPT Project "
         f"{project_name}. This is a {project.name}-only continuation. Ignore unrelated "
@@ -36,6 +65,8 @@ def resume_prompt(project: ProjectConfig, handoff: str) -> str:
         "repository unless explicitly required by this project. Treat the repository and "
         "persistent project state as authoritative, verify them before making changes, and "
         "continue with the smallest useful next action.\n\n"
+        + context
+        + "\n\nAUTHORITATIVE HANDOFF:\n"
         + handoff
     )
 
@@ -54,7 +85,7 @@ def rollover(chat: ChatGPTPage, project: ProjectConfig, state_dir: Path, *,
         project_url=project.project_url,
         selector=project.new_chat_selector,
     )
-    continuation=resume_prompt(project,handoff)
+    continuation=resume_prompt(project,handoff,persistent_resume_context(state_dir))
     response=chat.send_project_message_and_wait_for_response(
         project.project_name or "",
         continuation,
@@ -91,7 +122,7 @@ def rollover_from_max_length(
         project_url=project.project_url,
         selector=project.new_chat_selector,
     )
-    continuation = resume_prompt(project, handoff)
+    continuation = resume_prompt(project, handoff, persistent_resume_context(state_dir))
     response = chat.send_project_message_and_wait_for_response(
         project_name,
         continuation,
