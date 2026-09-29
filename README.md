@@ -209,3 +209,22 @@ The per-project lock is a process-level safety boundary: if a second supervisor
 for the same project is started, it exits with a clear "supervisor already
 running" error instead of competing for the same ChatGPT conversation, state,
 or CI result.
+
+
+### New project repository creation
+
+The New Project wizard can create a GitHub repository as part of project setup.
+Enable **Create GitHub repository and clone it**, choose Private or Public, and
+provide the repository name plus the desired local path.
+
+The server uses the authenticated `gh` CLI to:
+
+1. create the GitHub repository;
+2. clone it into the requested local path;
+3. only after both operations succeed, add the project to `config.yaml`.
+
+For safety, the local target must either not exist or be empty. LabOS never
+overwrites an existing non-empty directory during this flow.
+
+If the repository already exists, leave repository creation disabled and use
+the existing repository normally.
