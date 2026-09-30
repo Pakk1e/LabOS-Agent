@@ -39,7 +39,7 @@ from .lifecycle import (
 )
 
 def _save_run_summary(state_root: Path, project: str, tracker: RunTracker) -> None:
-    path = state_root / project / "runs" / f"{tracker.summary.run_number:06d}.json"
+    path = ConversationSupervisor._state_path(project, "runs", f"{tracker.summary.run_number:06d}.json")
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
     tmp.write_text(
@@ -49,7 +49,7 @@ def _save_run_summary(state_root: Path, project: str, tracker: RunTracker) -> No
     tmp.replace(path)
 
 def _save_run_event(state_root: Path, project: str, tracker: RunTracker, event: str, **fields: object) -> None:
-    path = Path("state") / project / "runs" / f"{tracker.summary.run_number:06d}.events.jsonl"
+    path = ConversationSupervisor._state_path(project, "runs", f"{tracker.summary.run_number:06d}.events.jsonl")
     path.parent.mkdir(parents=True, exist_ok=True)
     record = {
         "ts": datetime.now(timezone.utc).isoformat(),
@@ -68,7 +68,7 @@ _RUN_NUMBER = 0
 def _next_run_number(project: str) -> int:
     """Return a run number that survives supervisor process restarts."""
     global _RUN_NUMBER
-    root = Path("state") / project / "runs"
+    root = ConversationSupervisor._state_path(project, "runs")
     existing = []
     if root.exists():
         for path in root.iterdir():
@@ -145,7 +145,7 @@ class SupervisorError(RuntimeError):
 @contextmanager
 def _project_execution_lock(project: str):
     """Allow one supervisor process per project while permitting other projects to run."""
-    path = Path("state") / project / "supervisor.lock"
+    path = ConversationSupervisor._state_path(project, "supervisor.lock")
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
         try:
@@ -284,6 +284,12 @@ def _start_fresh_chat(chat: ChatGPTPage, project: ProjectConfig) -> None:
 
 
 class ConversationSupervisor:
+    _state_root: Path = Path("state")
+
+    @classmethod
+    def _state_path(cls, project: str, *parts: str) -> Path:
+        return cls._state_root / project / Path(*parts)
+
     def __init__(
         self,
         config: AppConfig,
@@ -447,6 +453,7 @@ Start now by inspecting the current repository state and continue the task.
         return response
 
     def run(self) -> str:
+        ConversationSupervisor._state_root = self.config.state_root
         with _project_execution_lock(self.project_name):
             return self._run_locked()
 
