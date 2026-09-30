@@ -67,8 +67,11 @@ def _get_json(url: str) -> dict:
 
 def _gh_api_json(repository: str, path: str) -> dict:
     """Read repository metadata through the authenticated gh CLI."""
+    endpoint = f"repos/{repository}"
+    if path:
+        endpoint += f"/{path}"
     result = subprocess.run(
-        ["gh", "api", f"repos/{repository}/{path}"],
+        ["gh", "api", endpoint],
         check=True,
         capture_output=True,
         text=True,
