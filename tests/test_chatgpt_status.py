@@ -108,6 +108,44 @@ class _FakeContext:
         self.pages = list(pages)
 
 
+class _ProjectButton:
+    def __init__(self, visible=True):
+        self.visible = visible
+        self.clicked = 0
+
+    def count(self):
+        return 1
+
+    def is_visible(self):
+        return self.visible
+
+    def click(self):
+        self.clicked += 1
+
+
+class _ProjectButtonPage:
+    def __init__(self):
+        self.direct = _ProjectButton()
+        self.calls = []
+
+    def locator(self, selector):
+        self.calls.append(selector)
+        if selector == 'button[aria-label="New chat in Vadovsky Tech — Lab OS"]':
+            return type("_First", (), {
+                "count": lambda _self: 1,
+                "is_visible": lambda _self: self.direct.visible,
+            })()
+        raise AssertionError(f"unexpected selector: {selector}")
+
+
+def test_project_home_button_prefers_current_direct_new_chat_control():
+    page = _ProjectButtonPage()
+    chat = ChatGPTPage(page)
+    button = chat._project_home_button("Vadovsky Tech — Lab OS")
+    assert button is not None
+    assert page.calls[0] == 'button[aria-label="New chat in Vadovsky Tech — Lab OS"]'
+
+
 def test_select_page_prefers_exact_project_url():
     wrong = _FakeTab("https://chatgpt.com/c/wrong")
     project = _FakeTab("https://chatgpt.com/g/g-p-weather/project")

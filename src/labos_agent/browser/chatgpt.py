@@ -536,6 +536,21 @@ class ChatGPTPage:
     def _project_home_button(self, project_name: str):
         if not project_name:
             return None
+
+        # Current ChatGPT exposes a direct Project-scoped "New chat" button
+        # in the sidebar. Prefer it over the older Project-options -> Home
+        # navigation because the options/home control is not always rendered.
+        direct=self.page.locator(
+            f'button[aria-label="New chat in {project_name}"]'
+        ).first
+        try:
+            if direct.count() > 0 and direct.is_visible():
+                return direct
+        except Exception:
+            pass
+
+        # Older Project UI: open the Project options and then click its
+        # Project-home button.
         option=self.page.locator(
             f'button[aria-label="Open project options for {project_name}"]'
         ).first
