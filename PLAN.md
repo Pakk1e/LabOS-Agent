@@ -12,7 +12,7 @@
 - [x] Implement deadline handling.
 - [x] Implement iteration and rollover limits.
 - [x] Implement persistent state.
-- [ ] Add structured logs beyond persistent state.
+- [x] Add structured logs beyond persistent state.
 
 ## Phase 2 — Browser
 - [x] Add Playwright.
@@ -48,9 +48,9 @@
 - [x] Produce a structured morning report.
 
 ## Phase 6 — Generalization
-- [ ] Support additional Lab OS projects.
+- [x] Support additional Lab OS projects.
 - [x] Keep project-specific rules/configuration isolated.
-- [ ] Add project adapters only where required.
+- [x] Add project adapters only where required.
 - [x] Add provider-independent local CI contract and LocalCI executor.
 - [x] Connect LocalCI results to autonomous project-loop state transitions.
-- [ ] Add GitHub Actions as an optional CI provider/fallback.
+- [x] Add GitHub Actions as an optional CI provider/fallback.
