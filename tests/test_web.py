@@ -686,7 +686,7 @@ def test_lifecycle_ui_browser_flow(tmp_path):
             page.locator("#projectList .project", has_text="demo").click()
             page.locator("#content").wait_for()
             assert not errors, errors
-            page.get_by_role("button", name="Lifecycle").click()
+            page.get_by_role("button", name="Lifecycle", exact=True).click()
             page.locator(".phase", has_text="DEVELOPMENT").wait_for()
             page.get_by_role("button", name="Approve Development").click()
             page.get_by_text("Approved", exact=True).wait_for()
