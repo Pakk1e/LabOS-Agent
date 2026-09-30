@@ -441,10 +441,9 @@ Start now by inspecting the current repository state and continue the task.
                 raise SupervisorError("ChatGPT verification challenge is active")
             if not status.is_chatgpt:
                 raise SupervisorError("attached page is not ChatGPT")
-            if self.project.project_name and not chat.project_context_present(self.project.project_name):
-                raise SupervisorError(
-                    f"required ChatGPT Project context not detected: {self.project.project_name}"
-                )
+            # _start_fresh_chat may need to navigate from an unrelated
+            # ChatGPT conversation into the configured Project before creating
+            # the fresh conversation.
             _start_fresh_chat(chat, self.project)
 
             try:
