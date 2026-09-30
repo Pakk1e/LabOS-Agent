@@ -17,7 +17,7 @@ def test_observe_github_uses_gh_for_latest_ci_run(monkeypatch):
 
     def fake_run(command, **kwargs):
         calls.append(command)
-        if command[:3] == ["gh", "api", "repos/owner/repo/"]:
+        if command[:3] == ["gh", "api", "repos/owner/repo"]:
             return _Completed(json.dumps({"default_branch": "main"}))
         if command[:3] == ["gh", "api", "repos/owner/repo/branches/main"]:
             return _Completed(json.dumps({"commit": {"sha": "abc1234"}}))
@@ -44,7 +44,7 @@ def test_observe_github_uses_gh_for_latest_ci_run(monkeypatch):
     assert result.ci_sha == "abc1234"
     assert result.ci_conclusion == "success"
     assert calls[:2] == [
-        ["gh", "api", "repos/owner/repo/"],
+        ["gh", "api", "repos/owner/repo"],
         ["gh", "api", "repos/owner/repo/branches/main"],
     ]
 
@@ -58,7 +58,7 @@ def test_observe_github_resolves_workflow_run_number(monkeypatch):
         raise AssertionError(url)
 
     def fake_run(command, **kwargs):
-        if command[:3] == ["gh", "api", "repos/owner/repo/"]:
+        if command[:3] == ["gh", "api", "repos/owner/repo"]:
             return _Completed(json.dumps({"default_branch": "main"}))
         if command[:3] == ["gh", "api", "repos/owner/repo/branches/main"]:
             return _Completed(json.dumps({"commit": {"sha": "abc1234"}}))
@@ -99,7 +99,7 @@ def test_observe_github_uses_gh_api_for_repository_state(monkeypatch):
 
     def fake_run(command, **kwargs):
         calls.append(command)
-        if command == ["gh", "api", "repos/owner/repo/"]:
+        if command == ["gh", "api", "repos/owner/repo"]:
             return _Completed(json.dumps({"default_branch": "main"}))
         if command == ["gh", "api", "repos/owner/repo/branches/main"]:
             return _Completed(json.dumps({"commit": {"sha": "deadbeef"}}))
@@ -112,7 +112,7 @@ def test_observe_github_uses_gh_api_for_repository_state(monkeypatch):
     assert result.branch == "main"
     assert result.commit_sha == "deadbeef"
     assert calls[:2] == [
-        ["gh", "api", "repos/owner/repo/"],
+        ["gh", "api", "repos/owner/repo"],
         ["gh", "api", "repos/owner/repo/branches/main"],
     ]
 
