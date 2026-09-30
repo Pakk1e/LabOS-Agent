@@ -258,6 +258,23 @@ def wait_for_ci(
         sleep_fn(min(poll_seconds, max(0.1, deadline - time.monotonic())))
 
 
+def _start_fresh_chat(chat: ChatGPTPage, project: ProjectConfig) -> None:
+    """Start a fresh ChatGPT conversation for a new supervisor run."""
+    if project.project_name:
+        chat.start_new_project_chat(
+            project_name=project.project_name,
+            project_url=project.project_url,
+            selector=project.new_chat_selector,
+        )
+        if not chat.project_context_present(project.project_name):
+            raise SupervisorError(
+                f"required ChatGPT Project context not detected after new chat: {project.project_name}"
+            )
+        chat.assert_ready()
+    else:
+        chat.assert_ready()
+
+
 class ConversationSupervisor:
     def __init__(
         self,
@@ -422,12 +439,13 @@ Start now by inspecting the current repository state and continue the task.
             status = chat.status()
             if status.is_challenge:
                 raise SupervisorError("ChatGPT verification challenge is active")
-            if not status.is_chatgpt or not status.has_input:
-                raise SupervisorError("an active ChatGPT conversation with an input is required")
+            if not status.is_chatgpt:
+                raise SupervisorError("attached page is not ChatGPT")
             if self.project.project_name and not chat.project_context_present(self.project.project_name):
                 raise SupervisorError(
                     f"required ChatGPT Project context not detected: {self.project.project_name}"
                 )
+            _start_fresh_chat(chat, self.project)
 
             try:
                 ci_baseline = set(run.id for run in _github_get(self.project.repository))
@@ -444,11 +462,20 @@ Start now by inspecting the current repository state and continue the task.
                 raise SupervisorError(f"cannot observe GitHub repository state: {exc}") from exc
 
             recovery_context = self._recovery_context(memory, observation)
-            response = chat.send_and_wait_for_response(
-                self._bootstrap_prompt(recovery_context),
-                timeout_seconds=self.config.browser.response_timeout_seconds,
-                quiet_seconds=self.config.browser.quiet_seconds,
-            )
+            bootstrap_prompt = self._bootstrap_prompt(recovery_context)
+            if self.project.project_name:
+                response = chat.send_project_message_and_wait_for_response(
+                    self.project.project_name,
+                    bootstrap_prompt,
+                    timeout_seconds=self.config.browser.response_timeout_seconds,
+                    quiet_seconds=self.config.browser.quiet_seconds,
+                )
+            else:
+                response = chat.send_and_wait_for_response(
+                    bootstrap_prompt,
+                    timeout_seconds=self.config.browser.response_timeout_seconds,
+                    quiet_seconds=self.config.browser.quiet_seconds,
+                )
 
             tracker.start_iteration(run_started_at)
             while True:
