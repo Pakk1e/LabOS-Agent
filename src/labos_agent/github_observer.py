@@ -114,8 +114,8 @@ def _gh_run_json(
 def observe_github(repository: str, *, ci_run_id: int | None = None) -> GitHubObservation:
     repo = _gh_api_json(repository, "")
     branch = str(repo["default_branch"])
-    ref = _gh_api_json(repository, f"git/ref/heads/{branch}")
-    commit_sha = str(ref["object"]["sha"])
+    branch_info = _gh_api_json(repository, f"branches/{branch}")
+    commit_sha = str(branch_info["commit"]["sha"])
 
     latest = _gh_run_json(repository, ci_run_id, head_sha=commit_sha)
     return GitHubObservation(
