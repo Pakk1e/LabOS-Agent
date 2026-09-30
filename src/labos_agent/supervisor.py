@@ -536,6 +536,11 @@ Start now by inspecting the current repository state and continue the task.
                 analysis = parse_labos_response(response)
                 state = analysis.state
                 tracker.record(state=state.value if state else "INVALID")
+                # Preserve the commit observed before this response is reconciled.
+                # The observation below updates memory.last_observed_commit, so this
+                # snapshot must be taken before that mutation and must also exist when
+                # the GitHub observation itself fails.
+                previous_observed_commit = memory.last_observed_commit
                 try:
                     observed = observe_github(self.project.repository)
                     memory.last_response = response
