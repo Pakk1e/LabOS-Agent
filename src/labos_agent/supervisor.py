@@ -556,7 +556,7 @@ Start now by inspecting the current repository state and continue the task.
                             previous_phase = self.current_phase
                             self.current_phase = target_phase
                             save_lifecycle_state(
-                                Path("state"),
+                                self.config.state_root,
                                 self.project_name,
                                 LifecycleState(phase=target_phase, approved=False),
                             )
