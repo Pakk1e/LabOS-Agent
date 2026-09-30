@@ -17,6 +17,10 @@ def test_observe_github_uses_gh_for_latest_ci_run(monkeypatch):
 
     def fake_run(command, **kwargs):
         calls.append(command)
+        if command[:3] == ["gh", "api", "repos/owner/repo/"]:
+            return _Completed(json.dumps({"default_branch": "main"}))
+        if command[:3] == ["gh", "api", "repos/owner/repo/git/ref/heads/main"]:
+            return _Completed(json.dumps({"object": {"sha": "abc1234"}}))
         return _Completed(
             json.dumps([{
                 "databaseId": 166,
@@ -39,7 +43,10 @@ def test_observe_github_uses_gh_for_latest_ci_run(monkeypatch):
     assert result.ci_run_id == 166
     assert result.ci_sha == "abc1234"
     assert result.ci_conclusion == "success"
-    assert calls[0][:5] == ["gh", "run", "list", "-R", "owner/repo"]
+    assert calls[:2] == [
+        ["gh", "api", "repos/owner/repo/"],
+        ["gh", "api", "repos/owner/repo/git/ref/heads/main"],
+    ]
 
 
 def test_observe_github_resolves_workflow_run_number(monkeypatch):
@@ -51,6 +58,10 @@ def test_observe_github_resolves_workflow_run_number(monkeypatch):
         raise AssertionError(url)
 
     def fake_run(command, **kwargs):
+        if command[:3] == ["gh", "api", "repos/owner/repo/"]:
+            return _Completed(json.dumps({"default_branch": "main"}))
+        if command[:3] == ["gh", "api", "repos/owner/repo/git/ref/heads/main"]:
+            return _Completed(json.dumps({"object": {"sha": "abc1234"}}))
         return _Completed(json.dumps([
             {
                 "databaseId": 166,
@@ -81,6 +92,29 @@ def test_observe_github_resolves_workflow_run_number(monkeypatch):
 
     assert result.ci_run_id == 166
     assert result.ci_sha == "abc1234"
+
+
+def test_observe_github_uses_gh_api_for_repository_state(monkeypatch):
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        if command == ["gh", "api", "repos/owner/repo/"]:
+            return _Completed(json.dumps({"default_branch": "main"}))
+        if command == ["gh", "api", "repos/owner/repo/git/ref/heads/main"]:
+            return _Completed(json.dumps({"object": {"sha": "deadbeef"}}))
+        return _Completed("[]")
+
+    monkeypatch.setattr(observer.subprocess, "run", fake_run)
+
+    result = observer.observe_github("owner/repo")
+
+    assert result.branch == "main"
+    assert result.commit_sha == "deadbeef"
+    assert calls[:2] == [
+        ["gh", "api", "repos/owner/repo/"],
+        ["gh", "api", "repos/owner/repo/git/ref/heads/main"],
+    ]
 
 
 def test_get_json_retries_with_gh_auth_after_environment_token_404(monkeypatch):
