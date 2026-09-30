@@ -150,24 +150,46 @@ function compactLifecycle(p){
    </div>
  </section>`;
 }
-function overview(p){
+function operationalSummary(p){
  const state=p.running?'RUNNING':p.state||'IDLE';
- const tone=state==='FIX_CI'?'bad':(['WAIT_CI','CONTINUE'].includes(state)?'warn':state==='DONE'?'good':'');
+ const map={
+  IDLE:['Idle','The supervisor is not running.',''],
+  RUNNING:['Running','The supervisor is actively working.','warn'],
+  WAIT_CI:['Waiting for CI','Changes were pushed and the CI run is in progress. No action is required right now.','warn'],
+  CONTINUE:['Continuing','The supervisor is continuing from the current project state.','warn'],
+  FIX_CI:['CI needs attention','The latest CI result requires a fix before work can continue.','bad'],
+  DONE:['Complete','The current task has finished.','good']
+ };
+ const x=map[state]||[state,'Supervisor state: '+state+'.',''];
+ return {state,label:x[0],description:x[1],tone:x[2]};
+}
+function overview(p){
+ const op=operationalSummary(p);
  return `<div class="overview-grid">
-   ${compactLifecycle(p)}
+   <section class="card wide lifecycle-summary">
+     <div class="section-head">
+       <div><div class="eyebrow">Product lifecycle</div><h3>Where the project is in its development journey</h3></div>
+       <button onclick="setView('lifecycle')">Open lifecycle</button>
+     </div>
+     ${compactLifecycle(p).replace('<section class="card wide lifecycle-summary">','').replace('</section>','')}
+   </section>
    <section class="card overview-hero">
-     <div class="state-banner ${tone}">
-       <div><div class="state-label">Operational state</div><div class="state-value">${esc(state)}</div><div class="hint">${esc(p.task_status||'No current task status')}</div></div>
+     <div class="state-banner ${op.tone}">
+       <div>
+         <div class="state-label">Supervisor execution</div>
+         <div class="state-value">${esc(op.label)}</div>
+         <div class="hint">${esc(op.description)}</div>
+         <div class="mono muted" style="margin-top:7px">State: ${esc(op.state)}</div>
+       </div>
        <div class="row-actions">
          <span class="badge ${cls(p)}">${p.ci_conclusion?'CI '+esc(p.ci_conclusion.toUpperCase()):'No recent CI'}</span>
-         ${p.next_action?'<span class="badge">'+esc(p.next_action)+'</span>':''}
        </div>
      </div>
      <div class="metric-grid">
-       <div class="stat"><label>Supervisor</label><strong>${p.running?'Running':'Idle'}</strong></div>
-       <div class="stat"><label>CI status</label><strong>${esc(p.ci_status||'—')}</strong></div>
+       <div class="stat"><label>Task</label><strong>${esc(p.task_status||'—')}</strong></div>
+       <div class="stat"><label>CI</label><strong>${esc(p.ci_status||'—')}</strong></div>
        <div class="stat"><label>Local tests</label><strong>${esc(p.analysis?.local_tests||'—')}</strong></div>
-       <div class="stat"><label>Commit status</label><strong>${esc(p.analysis?.commit_status||'—')}</strong></div>
+       <div class="stat"><label>Repository</label><strong>${esc(p.analysis?.commit_status||'—')}</strong></div>
      </div>
    </section>
    <section class="card overview-repo">
@@ -182,7 +204,7 @@ function overview(p){
      <div class="response">${p.recent_events?.length?p.recent_events.map(e=>esc((e.ts||'')+'  '+e.event+'  '+(e.state||e.summary||'')+'  '+(e.success===undefined?'':e.success))).join('\\n'):'No supervisor events recorded yet.'}</div>
    </section>
    <section class="card wide">
-     <div class="section-head"><div><h3>Latest agent state</h3><div class="hint">What the supervisor believes should happen next</div></div><span class="badge ${p.task_status==='DONE'?'good':p.state==='FIX_CI'?'bad':'warn'}">${esc(p.task_status||'UNKNOWN')}</span></div>
+     <div class="section-head"><div><h3>Latest agent state</h3><div class="hint">The current work item and recorded continuation state</div></div><span class="badge ${p.task_status==='DONE'?'good':p.state==='FIX_CI'?'bad':'warn'}">${esc(p.task_status||'UNKNOWN')}</span></div>
      <div class="metric-grid">
        <div class="stat"><label>Next action</label><strong>${esc(p.next_action||'—')}</strong></div>
        <div class="stat"><label>CI run</label><strong>${esc(p.ci_run||'—')}</strong></div>
