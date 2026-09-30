@@ -211,6 +211,7 @@ def wait_for_ci(
     timeout_seconds: float,
     poll_seconds: float,
     target_sha: str | None = None,
+    workflow_name: str | None = None,
     request_fn=_github_get,
     sleep_fn=time.sleep,
 ) -> tuple[bool, str]:
@@ -226,6 +227,7 @@ def wait_for_ci(
                 run for run in _runs_relevant_to_wait(all_runs, started_at)
                 if run.id not in baseline
                 and (target_sha is None or run.sha == target_sha)
+                and (workflow_name is None or run.name == workflow_name)
             ]
             # ChatGPT may request WAIT_CI before pushing a new commit. Report
             # the latest existing run rather than waiting for a nonexistent
