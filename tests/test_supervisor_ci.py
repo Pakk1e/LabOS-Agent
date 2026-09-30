@@ -98,3 +98,23 @@ def test_control_messages_are_labos_labelled():
         (CI_FAILED_MESSAGE, "[LAB OS — CI FAILED]"),
     ):
         assert message.startswith(label)
+
+
+def test_wait_for_ci_filters_by_workflow_name():
+    started = datetime(2026, 9, 28, 19, 59, tzinfo=timezone.utc)
+    runs = [
+        CIRun(1, "abc", "completed", "success", "2026-09-28T20:00:00Z", "", "Other workflow"),
+        CIRun(2, "abc", "completed", "success", "2026-09-28T20:01:00Z", "", "Brainstorm validation"),
+    ]
+    result = wait_for_ci(
+        "owner/repo",
+        started,
+        timeout_seconds=1,
+        poll_seconds=0,
+        target_sha="abc",
+        workflow_name="Brainstorm validation",
+        request_fn=lambda repo: runs,
+        sleep_fn=lambda seconds: None,
+    )
+    assert result[0] is True
+    assert result[1] == "GitHub CI passed: Brainstorm validation=success"
