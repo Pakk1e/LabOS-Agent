@@ -38,7 +38,7 @@ from .lifecycle import (
     save_lifecycle_state,
 )
 
-def _save_run_summary(state_root: Path, project: str, tracker: RunTracker) -> None:
+def _save_run_summary(project: str, tracker: RunTracker) -> None:
     path = ConversationSupervisor._state_path(project, "runs", f"{tracker.summary.run_number:06d}.json")
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
@@ -48,7 +48,7 @@ def _save_run_summary(state_root: Path, project: str, tracker: RunTracker) -> No
     )
     tmp.replace(path)
 
-def _save_run_event(state_root: Path, project: str, tracker: RunTracker, event: str, **fields: object) -> None:
+def _save_run_event(project: str, tracker: RunTracker, event: str, **fields: object) -> None:
     path = ConversationSupervisor._state_path(project, "runs", f"{tracker.summary.run_number:06d}.events.jsonl")
     path.parent.mkdir(parents=True, exist_ok=True)
     record = {
