@@ -421,8 +421,6 @@ Start now by inspecting the current repository state and continue the task.
         chat: ChatGPTPage,
         previous_phase: ProjectPhase,
         target_phase: ProjectPhase,
-        tracker: RunTracker,
-        iteration: int,
     ) -> str:
         """Persist a lifecycle transition before starting the fresh Project chat."""
         self.current_phase = target_phase
@@ -598,8 +596,6 @@ Start now by inspecting the current repository state and continue the task.
                                 chat,
                                 previous_phase,
                                 target_phase,
-                                tracker,
-                                iteration.number,
                             )
                             tracker.finish_iteration(
                                 "PHASE_COMPLETE",
