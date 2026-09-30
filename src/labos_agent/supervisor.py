@@ -572,7 +572,7 @@ Start now by inspecting the current repository state and continue the task.
                     reconciliation = reconcile(
                         analysis,
                         observed,
-                        previous_commit=memory.last_observed_commit,
+                        previous_commit=previous_observed_commit,
                     )
                     verified = reconciliation.verified
                     result = "DONE_VERIFIED" if verified else "DONE_UNVERIFIED"
