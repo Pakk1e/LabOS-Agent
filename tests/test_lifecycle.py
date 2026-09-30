@@ -490,7 +490,7 @@ def test_phase_transition_journals_before_fresh_chat(tmp_path, monkeypatch):
     )
     config = AppConfig(projects={"demo": project}, state_root=state_root)
     supervisor = ConversationSupervisor(config, "demo")
-    ConversationSupervisor._state_root = state_root
+    monkeypatch.setattr(ConversationSupervisor, "_state_root", state_root)
     from datetime import datetime, timezone
     tracker = RunTracker("demo", 1, datetime.now(timezone.utc))
 
