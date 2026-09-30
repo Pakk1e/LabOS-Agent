@@ -12,7 +12,9 @@ CURRENT_COMMIT => 25124b5d3393263965c2d07adffc4f3cde6ce3b6
 COMMIT_STATUS => PUSHED
 REPOSITORY_CHANGED => YES
 LOCAL_TESTS => PASSED
-CI_RUN => 166
+CI_RUN => 42
+CI_RUN_ID => 166
+CI_WORKFLOW => CI
 CI_STATUS => IN_PROGRESS
 NEXT_ACTION => WAIT_FOR_CI
 </LABOS_STATE>
@@ -28,7 +30,9 @@ def test_parse_structured_response():
     assert result.current_commit.startswith("25124b5")
     assert result.repository_changed is True
     assert result.local_tests == "PASSED"
-    assert result.ci_run == 166
+    assert result.ci_run == 42
+    assert result.ci_run_id == 166
+    assert result.ci_workflow == "CI"
     assert result.ci_status == "IN_PROGRESS"
     assert result.next_action == "WAIT_FOR_CI"
 
@@ -50,3 +54,25 @@ def test_legacy_response_remains_supported():
     assert result.valid is True
     assert result.structured is False
     assert result.state.value == "CONTINUE"
+
+
+def test_done_rejects_inconsistent_completion_fields():
+    response = """<LABOS_STATE>
+STATE => DONE
+TASK_STATUS => BLOCKED
+CURRENT_COMMIT => 25124b5d3393263965c2d07adffc4f3cde6ce3b6
+COMMIT_STATUS => NONE
+REPOSITORY_CHANGED => YES
+LOCAL_TESTS => FAILED
+CI_RUN => 42
+CI_RUN_ID => 166
+CI_WORKFLOW => CI
+CI_STATUS => NONE
+NEXT_ACTION => FINISH
+</LABOS_STATE>
+(STATE DONE STATE)
+"""
+    result = parse_labos_response(response)
+    assert result.valid is False
+    assert any("DONE requires TASK_STATUS" in error for error in result.errors)
+    assert any("DONE requires CI_STATUS" in error for error in result.errors)
