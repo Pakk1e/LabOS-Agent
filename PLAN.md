@@ -45,7 +45,7 @@
 - [x] Add hard deadline.
 - [x] Add BLOCKED handling.
 - [x] Add overnight/run command.
-- [ ] Produce a structured morning report.
+- [x] Produce a structured morning report.
 
 ## Phase 6 — Generalization
 - [ ] Support additional Lab OS projects.
