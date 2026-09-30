@@ -26,12 +26,12 @@ class LifecycleState:
     approved_at: str | None = None
 
     def __post_init__(self) -> None:
-        if self.approved and self.phase is not ProjectPhase.DEVELOPMENT:
-            raise ValueError("lifecycle approval is only valid in the DEVELOPMENT phase")
+        # Approval is retained only for backwards-compatible persisted state.
+        # Lifecycle progression is autonomous; no phase requires a human gate.
 
     @property
     def approval_required(self) -> bool:
-        return self.phase is ProjectPhase.DEVELOPMENT
+        return False
 
 
 NEXT_PHASE = {
@@ -228,7 +228,12 @@ def normalize_project_mode(value: str | None) -> str:
 
 
 def can_start_supervisor(phase: ProjectPhase, approved: bool) -> bool:
-    return phase is not ProjectPhase.DEVELOPMENT or approved
+    """All configured lifecycle phases may run autonomously.
+
+    The approved argument is retained for compatibility with existing
+    configuration/state files, but it is no longer a supervisor gate.
+    """
+    return True
 
 
 def next_phase(phase: ProjectPhase) -> ProjectPhase | None:
@@ -315,8 +320,8 @@ def save_lifecycle_state(
 
 def phase_instruction(phase: ProjectPhase) -> str:
     instructions = {
-        ProjectPhase.IDEA: "Do not develop yet. Clarify the initial idea and identify the questions that need human discussion.",
-        ProjectPhase.BRAINSTORM: "Explore the idea with the human. Capture product goals, users, workflows, MVP, scope, out-of-scope items, open questions, alternatives, and technical considerations. Do not implement product features.",
+        ProjectPhase.IDEA: "Establish the project goal and initial context. Do not implement product features.",
+        ProjectPhase.BRAINSTORM: "Read the supplied goal and brainstorm notes, inspect the repository, refine the product definition, and capture product goals, users, workflows, MVP, scope, out-of-scope items, open questions, alternatives, and technical considerations. Do not implement product features. Continue autonomously when the repository contains enough evidence to advance.",
         ProjectPhase.DOCUMENTATION: "Turn the agreed idea into durable project documentation. Complete README.md, AGENTS.md, docs/PRODUCT.md, docs/REQUIREMENTS.md, docs/ARCHITECTURE.md, docs/USER_FLOWS.md, docs/DECISIONS.md, and docs/ROADMAP.md as appropriate. Remove template placeholders before advancing to PLANNING. Do not begin feature implementation.",
         ProjectPhase.PLANNING: "Create a concrete implementation plan in PLAN.md or docs/PLAN.md from the agreed documentation, including milestones, tasks, dependencies, technical implementation sequence, and an Acceptance Criteria section. Do not implement the planned features yet.",
         ProjectPhase.DEVELOPMENT: "Implement the human-approved plan. Keep documentation synchronized with meaningful architectural or requirement changes. Run tests and use the normal commit/CI workflow.",
