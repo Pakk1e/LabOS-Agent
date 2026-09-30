@@ -35,5 +35,5 @@ def save_memory(path: Path, memory: SupervisorMemory) -> None:
     tmp.write_text(json.dumps(memory.to_dict(), indent=2, sort_keys=True) + "\n", encoding="utf-8")
     tmp.replace(path)
 
-def memory_path(project: str) -> Path:
-    return Path("state") / project / "supervisor_state.json"
+def memory_path(state_root: Path, project: str) -> Path:
+    return state_root / project / "supervisor_state.json"
