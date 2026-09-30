@@ -489,7 +489,7 @@ Start now by inspecting the current repository state and continue the task.
                     "cannot access GitHub Actions for the configured repository; "
                     "set GITHUB_TOKEN/GH_TOKEN or authenticate GitHub CLI with 'gh auth login'"
                 ) from exc
-            memory_file = memory_path(self.project_name)
+            memory_file = memory_path(self.config.state_root, self.project_name)
             memory = load_memory(memory_file, self.project_name)
             try:
                 observation = observe_github(self.project.repository)
