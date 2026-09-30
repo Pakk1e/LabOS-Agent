@@ -37,7 +37,7 @@
 - [x] Capture and persist the handoff.
 - [x] Preserve Project context as a hard requirement.
 - [x] Provide configurable Project new-chat navigation.
-- [ ] Run a live rollover test against the user's actual Project UI.
+- [x] Run a live rollover test against the user's actual Project UI.
 
 ## Phase 5 — Autonomous mode
 - [x] Add safety gates.
