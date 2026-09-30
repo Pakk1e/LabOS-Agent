@@ -537,9 +537,8 @@ class ChatGPTPage:
         if not project_name:
             return None
 
-        # Current ChatGPT exposes a direct Project-scoped "New chat" button
-        # in the sidebar. Prefer it over the older Project-options -> Home
-        # navigation because the options/home control is not always rendered.
+        # Current ChatGPT has used several Project sidebar DOM shapes. Prefer
+        # the explicit Project-scoped button when available.
         direct=self.page.locator(
             f'button[aria-label="New chat in {project_name}"]'
         ).first
@@ -548,6 +547,39 @@ class ChatGPTPage:
                 return direct
         except Exception:
             pass
+
+        # Newer Project sidebar: the New chat icon may have a generic aria-label
+        # and sit beside the Project name rather than carrying the Project name
+        # itself. Find a visible new-chat control whose nearby row contains the
+        # requested Project name.
+        target=project_name.casefold().strip()
+        controls=self.page.locator('button, [role="button"]')
+        for i in range(controls.count()):
+            control=controls.nth(i)
+            try:
+                if not control.is_visible():
+                    continue
+                combined=" | ".join(
+                    x for x in (
+                        control.inner_text(timeout=200),
+                        control.get_attribute("aria-label"),
+                        control.get_attribute("title"),
+                        control.get_attribute("data-testid"),
+                    ) if x
+                ).replace("\\n"," ").casefold()
+                if "new chat" not in combined:
+                    continue
+                row=control
+                for _ in range(6):
+                    row=row.locator("xpath=..")
+                    try:
+                        row_text=row.inner_text(timeout=200).casefold()
+                    except Exception:
+                        continue
+                    if target and target in row_text:
+                        return control
+            except Exception:
+                continue
 
         # Older Project UI: open the Project options and then click its
         # Project-home button.
