@@ -571,6 +571,7 @@ Start now by inspecting the current repository state and continue the task.
                         self.project.repository,
                         ci_run_id=analysis.ci_run_id if analysis.structured else None,
                         target_sha=analysis.current_commit if analysis.structured else None,
+                        workflow_name=analysis.ci_workflow if analysis.structured else None,
                     )
                     reconciliation = reconcile(
                         analysis,
