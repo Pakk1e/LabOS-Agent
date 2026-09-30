@@ -38,7 +38,7 @@ from .lifecycle import (
     save_lifecycle_state,
 )
 
-def _save_run_summary(project: str, tracker: RunTracker) -> None:
+def _save_run_summary(state_root: Path, project: str, tracker: RunTracker) -> None:
     path = Path("state") / project / "runs" / f"{tracker.summary.run_number:06d}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
