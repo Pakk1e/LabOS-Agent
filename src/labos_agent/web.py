@@ -872,7 +872,7 @@ class Handler(BaseHTTPRequestHandler):
         if target == current and not approved and not has_notes:
             return self._send(400, {"error": "no lifecycle change requested"})
         if approved and target is not ProjectPhase.DEVELOPMENT:
-            return self._send(400, {"error": "human approval is required only for the DEVELOPMENT gate"})
+            return self._send(400, {"error": "approval metadata can only be recorded after advancing to DEVELOPMENT"})
         if approved and target != current:
             return self._send(409, {"error": "advance to DEVELOPMENT before granting its approval"})
         state = LifecycleState(
