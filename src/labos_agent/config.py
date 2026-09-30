@@ -44,6 +44,7 @@ class ProjectConfig:
 class AppConfig:
     browser: BrowserConfig = field(default_factory=BrowserConfig)
     projects: dict[str, ProjectConfig] = field(default_factory=dict)
+    state_root: Path = Path("state")
 
 def _parse_ci_stages(raw: object) -> dict[str, tuple[tuple[str, ...], ...]]:
     if raw is None: return {}
@@ -110,4 +111,4 @@ def load_config(path: Path) -> AppConfig:
             initial_idea=str(value.get("initial_idea", "")),
             brainstorm_notes=str(value.get("brainstorm_notes", "")),
         )
-    return AppConfig(browser=browser, projects=projects)
+    return AppConfig(browser=browser, projects=projects, state_root=path.parent / "state")
