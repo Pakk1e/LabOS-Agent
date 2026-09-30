@@ -596,6 +596,8 @@ Start now by inspecting the current repository state and continue the task.
                                 chat,
                                 previous_phase,
                                 target_phase,
+                                tracker,
+                                iteration.number,
                             )
                             tracker.finish_iteration(
                                 "PHASE_COMPLETE",
