@@ -680,7 +680,7 @@ No human approval is required."""),
                 elif state == ChatState.WAIT_CI:
                     observed = observe_github(
                         self.project.repository,
-                        ci_run_id=analysis.ci_run if analysis.structured else None,
+                        ci_run_id=analysis.ci_run_id if analysis.structured else None,
                     )
                     reconciliation = reconcile(
                         analysis,
