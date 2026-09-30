@@ -397,3 +397,78 @@ def test_acceptance_validation_does_not_match_pass_from_next_criterion(tmp_path)
     ok, missing = validate_acceptance_criteria(root)
     assert not ok
     assert "AC-1 is not marked PASS" in missing
+
+
+def test_autonomous_phase_transition_persists_and_starts_fresh_project_chat(tmp_path):
+    class FakeTransitionChat:
+        def __init__(self):
+            self.started = False
+            self.project_messages = []
+
+        def start_new_project_chat(self, **kwargs):
+            self.started = True
+
+        def project_context_present(self, project_name):
+            return project_name == "Testing"
+
+        def assert_ready(self):
+            pass
+
+        def send_project_message_and_wait_for_response(self, project_name, message, **kwargs):
+            self.project_messages.append((project_name, message))
+            return "next phase response"
+
+    project = ProjectConfig(
+        name="testing",
+        repository="Pakk1e/testing",
+        project_root=tmp_path / "repo",
+        continuation_message="Continue Testing",
+        project_name="Testing",
+        lifecycle_phase=ProjectPhase.BRAINSTORM,
+    )
+    config = AppConfig(
+        projects={"testing": project},
+        state_root=tmp_path / "state",
+    )
+    supervisor = ConversationSupervisor(config, "testing")
+    chat = FakeTransitionChat()
+
+    response = supervisor._advance_lifecycle_phase(
+        chat,
+        ProjectPhase.BRAINSTORM,
+        ProjectPhase.DOCUMENTATION,
+    )
+
+    state = load_lifecycle_state(tmp_path / "state", "testing")
+    assert supervisor.current_phase is ProjectPhase.DOCUMENTATION
+    assert state.phase is ProjectPhase.DOCUMENTATION
+    assert chat.started
+    assert chat.project_messages
+    assert chat.project_messages[0][0] == "Testing"
+    assert "PROJECT LIFECYCLE PHASE: DOCUMENTATION" in chat.project_messages[0][1]
+    assert "HUMAN APPROVAL: NOT REQUIRED" in chat.project_messages[0][1]
+    assert response == "next phase response"
+
+
+def test_autonomous_transition_recovery_uses_persisted_phase(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """projects:
+  testing:
+    repository: Pakk1e/testing
+    project_root: /tmp/testing
+    continuation_message: Continue Testing
+    project_name: Testing
+    lifecycle:
+      phase: BRAINSTORM
+""",
+        encoding="utf-8",
+    )
+    save_lifecycle_state(
+        tmp_path / "state",
+        "testing",
+        LifecycleState(phase=ProjectPhase.DOCUMENTATION),
+    )
+    from labos_agent.config import load_config
+    loaded = load_config(config_path).projects["testing"]
+    assert loaded.lifecycle_phase is ProjectPhase.DOCUMENTATION
