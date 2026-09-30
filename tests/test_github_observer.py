@@ -61,7 +61,7 @@ def test_observe_github_resolves_workflow_run_number(monkeypatch):
         if command[:3] == ["gh", "api", "repos/owner/repo/"]:
             return _Completed(json.dumps({"default_branch": "main"}))
         if command[:3] == ["gh", "api", "repos/owner/repo/branches/main"]:
-            return _Completed(json.dumps({"object": {"sha": "abc1234"}}))
+            return _Completed(json.dumps({"commit": {"sha": "abc1234"}}))
         return _Completed(json.dumps([
             {
                 "databaseId": 166,
