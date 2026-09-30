@@ -28,6 +28,7 @@ class LifecycleState:
     def __post_init__(self) -> None:
         # Approval is retained only for backwards-compatible persisted state.
         # Lifecycle progression is autonomous; no phase requires a human gate.
+        pass
 
     @property
     def approval_required(self) -> bool:
