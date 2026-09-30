@@ -266,11 +266,11 @@ into implementation tasks and acceptance criteria.
 Lifecycle transitions are evidence-gated. Moving into PLANNING requires the
 durable documentation set to exist and contain non-placeholder content.
 Moving into DEVELOPMENT requires a requirements document plus an implementation
-plan containing an **Acceptance Criteria** section. Human approval is then
-required as a separate action before DEVELOPMENT can run. Moving into
-MAINTENANCE requires a validation report containing **Validation Results** and
-**Acceptance Criteria** sections. Lifecycle transitions and approvals are
-recorded in `state/<project>/lifecycle_history.jsonl`.
+plan containing an **Acceptance Criteria** section. The autonomous supervisor
+advances when that evidence gate passes; persisted approval fields are retained
+only for backwards compatibility. Moving into MAINTENANCE requires a validation
+report containing **Validation Results** and **Acceptance Criteria** sections.
+Lifecycle transitions are recorded in `state/<project>/lifecycle_history.jsonl`.
 
 The LabOS UI exposes the current lifecycle phase, next phase, approval status,
 and the evidence gate with missing items. The low-level supervisor state
