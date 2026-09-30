@@ -702,6 +702,7 @@ No human approval is required."""),
                             timeout_seconds=self.ci_timeout_seconds,
                             poll_seconds=self.ci_poll_seconds,
                             target_sha=analysis.current_commit if analysis.structured else None,
+                            workflow_name=analysis.ci_workflow if analysis.structured else None,
                         )
                     tracker.record(
                         remote_ci_passed=passed,
