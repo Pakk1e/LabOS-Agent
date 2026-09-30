@@ -148,6 +148,69 @@ def test_project_home_button_prefers_current_direct_new_chat_control():
     assert page.calls[0] == 'button[aria-label="New chat in Vadovsky Tech — Lab OS"]'
 
 
+class _ProjectRowControl:
+    def __init__(self):
+        self.parent = _ProjectRow()
+    
+    def is_visible(self):
+        return True
+    
+    def inner_text(self, timeout=None):
+        return ""
+    
+    def get_attribute(self, name):
+        return "New chat" if name == "aria-label" else None
+    
+    def locator(self, selector):
+        assert selector == "xpath=.."
+        return self.parent
+
+
+class _ProjectRow:
+    def inner_text(self, timeout=None):
+        return "Testing"
+    
+    def locator(self, selector):
+        assert selector == "xpath=.."
+        return self
+
+
+class _ProjectRowControls:
+    def __init__(self, control):
+        self.control = control
+    
+    def count(self):
+        return 1
+    
+    def nth(self, index):
+        assert index == 0
+        return self.control
+
+
+class _ProjectRowPage:
+    def __init__(self):
+        self.control = _ProjectRowControl()
+    
+    def locator(self, selector):
+        if selector == 'button[aria-label="New chat in Testing"]':
+            return type("_Direct", (), {
+                "first": type("_First", (), {
+                    "count": lambda _self: 0,
+                    "is_visible": lambda _self: False,
+                })()
+            })()
+        if selector == 'button, [role="button"]':
+            return _ProjectRowControls(self.control)
+        raise AssertionError(f"unexpected selector: {selector}")
+
+
+def test_project_home_button_finds_generic_new_chat_next_to_project_name():
+    page = _ProjectRowPage()
+    chat = ChatGPTPage(page)
+    button = chat._project_home_button("Testing")
+    assert button is page.control
+
+
 def test_select_page_prefers_exact_project_url():
     wrong = _FakeTab("https://chatgpt.com/c/wrong")
     project = _FakeTab("https://chatgpt.com/g/g-p-weather/project")
