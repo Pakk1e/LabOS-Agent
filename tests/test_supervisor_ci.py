@@ -117,4 +117,3 @@ def test_wait_for_ci_filters_by_workflow_name():
     )
     assert result[0] is True
     assert "run=2" in result[1]
-\n
