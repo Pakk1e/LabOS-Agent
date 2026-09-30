@@ -734,7 +734,7 @@ def test_full_lifecycle_browser_api_flow(tmp_path):
             page.goto(f"http://127.0.0.1:{server.server_port}/", wait_until="domcontentloaded")
             page.wait_for_function("document.querySelector('#projectList')?.innerText.includes('demo')")
             page.locator("#projectList .project", has_text="demo").click()
-            page.get_by_role("button", name="Lifecycle").click()
+            page.get_by_role("button", name="Lifecycle", exact=True).click()
             page.locator("#brainstormNotes").fill("Goals, users, constraints and alternatives")
             with page.expect_response(lambda response: response.url.endswith("/api/projects/demo/lifecycle") and response.request.method == "POST"):
                 page.get_by_role("button", name="Save notes").click()
@@ -758,7 +758,7 @@ def test_full_lifecycle_browser_api_flow(tmp_path):
             page.evaluate("fetch('/api/projects/demo/lifecycle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phase:'MAINTENANCE'})})")
             page.evaluate("refresh()")
             page.get_by_text("MAINTENANCE", exact=True).first.wait_for()
-            page.get_by_role("button", name="Lifecycle").click()
+            page.get_by_role("button", name="Lifecycle", exact=True).click()
             page.get_by_text("phase_transition", exact=True).first.wait_for()
             browser.close()
     finally:
