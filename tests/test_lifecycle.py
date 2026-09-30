@@ -32,10 +32,10 @@ def test_guided_lifecycle_progression():
     ]
 
 
-def test_development_requires_human_approval():
-    assert can_start_supervisor(ProjectPhase.PLANNING, False)
-    assert not can_start_supervisor(ProjectPhase.DEVELOPMENT, False)
-    assert can_start_supervisor(ProjectPhase.DEVELOPMENT, True)
+def test_all_lifecycle_phases_start_without_human_approval():
+    for phase in ProjectPhase:
+        assert can_start_supervisor(phase, False)
+        assert can_start_supervisor(phase, True)
 
 
 def test_phase_normalization_and_invalid_value():
@@ -46,16 +46,14 @@ def test_phase_normalization_and_invalid_value():
 
 def test_phase_instructions_are_specific():
     assert "Do not implement product features" in phase_instruction(ProjectPhase.BRAINSTORM)
+    assert "Read the supplied goal and brainstorm notes" in phase_instruction(ProjectPhase.BRAINSTORM)
     assert "documentation" in phase_instruction(ProjectPhase.DOCUMENTATION).lower()
     assert "approved plan" in phase_instruction(ProjectPhase.DEVELOPMENT).lower()
 
 
-def test_only_development_requires_approval():
+def test_approval_is_legacy_state_not_a_runtime_gate():
     for phase in ProjectPhase:
-        if phase is ProjectPhase.DEVELOPMENT:
-            assert not can_start_supervisor(phase, False)
-        else:
-            assert can_start_supervisor(phase, False)
+        assert can_start_supervisor(phase, False)
 
 
 def test_project_modes():
@@ -90,7 +88,7 @@ def test_lifecycle_state_falls_back_for_existing_projects(tmp_path):
     assert not loaded.approved
 
 
-def test_supervisor_refuses_unapproved_development(tmp_path):
+def test_supervisor_allows_unapproved_development(tmp_path):
     project = ProjectConfig(
         name="demo",
         repository="example/demo",
@@ -100,8 +98,7 @@ def test_supervisor_refuses_unapproved_development(tmp_path):
         lifecycle_approved=False,
     )
     supervisor = ConversationSupervisor(AppConfig(projects={"demo": project}), "demo")
-    with pytest.raises(SupervisorError, match="human approval"):
-        supervisor.run()
+    assert supervisor.current_phase is ProjectPhase.DEVELOPMENT
 
 
 def test_config_reads_runtime_lifecycle_state(tmp_path):
@@ -133,13 +130,13 @@ def test_config_reads_runtime_lifecycle_state(tmp_path):
     assert project.project_mode == "guided"
 
 
-def test_lifecycle_state_rejects_approval_outside_development():
-    with pytest.raises(ValueError, match="only valid in the DEVELOPMENT"):
-        LifecycleState(
-            phase=ProjectPhase.PLANNING,
-            approved=True,
-            approved_at="2026-09-29T13:00:00+00:00",
-        )
+def test_lifecycle_state_accepts_legacy_approval_on_any_phase():
+    state = LifecycleState(
+        phase=ProjectPhase.PLANNING,
+        approved=True,
+        approved_at="2026-09-29T13:00:00+00:00",
+    )
+    assert state.approved
 
 
 def test_lifecycle_state_rejects_corrupt_approved_file(tmp_path):
@@ -192,6 +189,8 @@ def test_supervisor_prompt_includes_lifecycle_contract(tmp_path):
     assert "PROJECT LIFECYCLE PHASE: DOCUMENTATION" in prompt
     assert "PROJECT MODE: specification" in prompt
     assert "Do not begin feature implementation" in prompt
+    assert "LabOS will automatically start the next phase in a fresh Project chat" in prompt
+    assert "HUMAN APPROVAL: NOT REQUIRED" in prompt
 
 
 def test_config_rejects_non_boolean_legacy_approval(tmp_path):
