@@ -85,3 +85,22 @@ def test_wait_for_ci_filters_to_target_sha():
 
     assert passed is True
     assert summary == "GitHub CI passed: Target CI=success"
+
+
+def test_done_rejects_wrong_ci_run_identity():
+    wrong = GitHubObservation(
+        branch="main",
+        commit_sha="abc1234",
+        ci_run_id=999,
+        ci_run_number=42,
+        ci_status="completed",
+        ci_conclusion="success",
+        ci_sha="abc1234",
+        ci_name="CI",
+        ci_created_at="2026-09-29T08:00:00Z",
+        ci_url="https://example.test/ci/999",
+        ci_workflow="CI",
+    )
+    result = reconcile(response(), wrong)
+    assert result.verified is False
+    assert result.phase == SupervisorPhase.CONFLICT
