@@ -528,6 +528,7 @@ Start now by inspecting the current repository state and continue the task.
                     observed = observe_github(self.project.repository)
                     memory.last_response = response
                     memory.last_analysis = analysis.to_dict()
+                    previous_observed_commit = memory.last_observed_commit
                     memory.last_observed_commit = observed.commit_sha
                     memory.last_observed_branch = observed.branch
                     memory.last_observed_ci_run = observed.ci_run_id
