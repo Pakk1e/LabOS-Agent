@@ -14,14 +14,14 @@ class GitHubObservation:
     branch: str
     commit_sha: str
     ci_run_id: int | None
-    ci_run_number: int | None
     ci_status: str | None
     ci_conclusion: str | None
     ci_sha: str | None
     ci_name: str | None
-    ci_workflow: str | None
     ci_created_at: str | None
     ci_url: str | None
+    ci_run_number: int | None = None
+    ci_workflow: str | None = None
 
 
 def _gh_auth_token() -> str:
