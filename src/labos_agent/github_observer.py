@@ -65,6 +65,18 @@ def _get_json(url: str) -> dict:
             return json.load(response)
 
 
+def _gh_api_json(repository: str, path: str) -> dict:
+    """Read repository metadata through the authenticated gh CLI."""
+    result = subprocess.run(
+        ["gh", "api", f"repos/{repository}/{path}"],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    return json.loads(result.stdout)
+
+
 def _gh_run_json(
     repository: str,
     ci_run_id: int | None = None,
@@ -100,10 +112,9 @@ def _gh_run_json(
 
 
 def observe_github(repository: str, *, ci_run_id: int | None = None) -> GitHubObservation:
-    owner, name = repository.split("/", 1)
-    repo = _get_json(f"https://api.github.com/repos/{owner}/{name}")
+    repo = _gh_api_json(repository, "")
     branch = str(repo["default_branch"])
-    ref = _get_json(f"https://api.github.com/repos/{owner}/{name}/git/ref/heads/{branch}")
+    ref = _gh_api_json(repository, f"git/ref/heads/{branch}")
     commit_sha = str(ref["object"]["sha"])
 
     latest = _gh_run_json(repository, ci_run_id, head_sha=commit_sha)
