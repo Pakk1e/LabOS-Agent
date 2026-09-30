@@ -131,9 +131,11 @@ class _ProjectButtonPage:
     def locator(self, selector):
         self.calls.append(selector)
         if selector == 'button[aria-label="New chat in Vadovsky Tech — Lab OS"]':
-            return type("_First", (), {
-                "count": lambda _self: 1,
-                "is_visible": lambda _self: self.direct.visible,
+            return type("_Locator", (), {
+                "first": type("_First", (), {
+                    "count": lambda _self: 1,
+                    "is_visible": lambda _self: self.direct.visible,
+                })()
             })()
         raise AssertionError(f"unexpected selector: {selector}")
 
