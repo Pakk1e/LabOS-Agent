@@ -540,7 +540,6 @@ Start now by inspecting the current repository state and continue the task.
                     observed = observe_github(self.project.repository)
                     memory.last_response = response
                     memory.last_analysis = analysis.to_dict()
-                    previous_observed_commit = memory.last_observed_commit
                     memory.last_observed_commit = observed.commit_sha
                     memory.last_observed_branch = observed.branch
                     memory.last_observed_ci_run = observed.ci_run_id
@@ -695,6 +694,9 @@ No human approval is required."""),
                     observed = observe_github(
                         self.project.repository,
                         ci_run_id=analysis.ci_run_id if analysis.structured else None,
+                        ci_run_number=analysis.ci_run if analysis.structured else None,
+                        target_sha=analysis.current_commit if analysis.structured else None,
+                        workflow_name=analysis.ci_workflow if analysis.structured else None,
                     )
                     reconciliation = reconcile(
                         analysis,

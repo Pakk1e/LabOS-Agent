@@ -88,7 +88,7 @@ def test_observe_github_resolves_workflow_run_number(monkeypatch):
     monkeypatch.setattr(observer, "_get_json", fake_get)
     monkeypatch.setattr(observer.subprocess, "run", fake_run)
 
-    result = observer.observe_github("owner/repo", ci_run_id=42)
+    result = observer.observe_github("owner/repo", ci_run_number=42)
 
     assert result.ci_run_id == 166
     assert result.ci_sha == "abc1234"
@@ -154,3 +154,46 @@ class _JsonResponse:
 
     def read(self):
         return json.dumps(self.payload).encode("utf-8")
+
+
+def test_observe_github_ci_run_id_is_not_ambiguous_with_run_number(monkeypatch):
+    def fake_run(command, **kwargs):
+        if command == ["gh", "api", "repos/owner/repo"]:
+            return _Completed(json.dumps({"default_branch": "main"}))
+        if command == ["gh", "api", "repos/owner/repo/branches/main"]:
+            return _Completed(json.dumps({"commit": {"sha": "abc1234"}}))
+        return _Completed(json.dumps([
+            {
+                "databaseId": 42,
+                "number": 7,
+                "status": "completed",
+                "conclusion": "failure",
+                "headSha": "wrong-sha",
+                "name": "Other CI",
+                "createdAt": "2026-09-29T08:00:00Z",
+                "url": "https://example.test/42",
+            },
+            {
+                "databaseId": 166,
+                "number": 42,
+                "status": "completed",
+                "conclusion": "success",
+                "headSha": "abc1234",
+                "name": "Weather CI",
+                "createdAt": "2026-09-29T09:00:00Z",
+                "url": "https://example.test/166",
+            },
+        ]))
+
+    monkeypatch.setattr(observer.subprocess, "run", fake_run)
+
+    result = observer.observe_github(
+        "owner/repo",
+        ci_run_id=166,
+        target_sha="abc1234",
+        workflow_name="Weather CI",
+    )
+
+    assert result.ci_run_id == 166
+    assert result.ci_run_number == 42
+    assert result.ci_workflow == "Weather CI"
