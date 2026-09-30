@@ -421,6 +421,9 @@ Start now by inspecting the current repository state and continue the task.
         chat: ChatGPTPage,
         previous_phase: ProjectPhase,
         target_phase: ProjectPhase,
+        *,
+        tracker: RunTracker | None = None,
+        iteration: int | None = None,
     ) -> str:
         """Persist a lifecycle transition before starting the fresh Project chat."""
         self.current_phase = target_phase
@@ -429,6 +432,15 @@ Start now by inspecting the current repository state and continue the task.
             self.project_name,
             LifecycleState(phase=target_phase, approved=False),
         )
+        if tracker is not None:
+            _save_run_event(
+                self.project_name,
+                tracker,
+                "phase.transition.prepared",
+                iteration=iteration,
+                from_phase=previous_phase.value,
+                to_phase=target_phase.value,
+            )
         _start_fresh_chat(chat, self.project)
         if not self.project.project_name:
             raise SupervisorError("autonomous lifecycle transitions require a configured ChatGPT Project")
@@ -596,6 +608,8 @@ Start now by inspecting the current repository state and continue the task.
                                 chat,
                                 previous_phase,
                                 target_phase,
+                                tracker=tracker,
+                                iteration=iteration.number,
                             )
                             stopped = self._stop_if_turn_limit(tracker, response)
                             if stopped is not None:
@@ -615,7 +629,7 @@ Start now by inspecting the current repository state and continue the task.
                             _save_run_event(
                                 self.project_name,
                                 tracker,
-                                "phase.transition",
+                                "phase.transition.completed",
                                 iteration=iteration.number,
                                 from_phase=previous_phase.value,
                                 to_phase=target_phase.value,

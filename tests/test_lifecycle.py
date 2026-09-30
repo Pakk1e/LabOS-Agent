@@ -2,6 +2,7 @@ import pytest
 
 from labos_agent.config import AppConfig, ProjectConfig
 from labos_agent.supervisor import ConversationSupervisor, SupervisorError
+from labos_agent.run_summary import RunTracker
 from labos_agent.lifecycle import (
     LifecycleState,
     ProjectPhase,
@@ -473,3 +474,42 @@ def test_autonomous_transition_recovery_uses_persisted_phase(tmp_path):
     from labos_agent.config import load_config
     loaded = load_config(config_path).projects["testing"]
     assert loaded.lifecycle_phase is ProjectPhase.DOCUMENTATION
+
+
+def test_phase_transition_journals_before_fresh_chat(tmp_path, monkeypatch):
+    state_root = tmp_path / "state"
+    project_root = tmp_path / "repo"
+    project_root.mkdir()
+    project = ProjectConfig(
+        name="demo",
+        repository="example/demo",
+        project_root=project_root,
+        continuation_message="Continue demo",
+        project_name="Demo Project",
+        lifecycle_phase=ProjectPhase.DEVELOPMENT,
+    )
+    config = AppConfig(projects={"demo": project}, state_root=state_root)
+    supervisor = ConversationSupervisor(config, "demo")
+    monkeypatch.setattr(ConversationSupervisor, "_state_root", state_root)
+    from datetime import datetime, timezone
+    tracker = RunTracker("demo", 1, datetime.now(timezone.utc))
+
+    def crash_before_chat(*args, **kwargs):
+        raise RuntimeError("browser crashed before fresh chat")
+
+    monkeypatch.setattr("labos_agent.supervisor._start_fresh_chat", crash_before_chat)
+
+    with pytest.raises(RuntimeError, match="browser crashed"):
+        supervisor._advance_lifecycle_phase(
+            object(),
+            ProjectPhase.DEVELOPMENT,
+            ProjectPhase.VALIDATION,
+            tracker=tracker,
+            iteration=7,
+        )
+
+    lifecycle = load_lifecycle_state(state_root, "demo")
+    assert lifecycle.phase is ProjectPhase.VALIDATION
+    events = (state_root / "demo" / "runs" / "000001.events.jsonl").read_text(encoding="utf-8")
+    assert "phase.transition.prepared" in events
+    assert "phase.transition.completed" not in events

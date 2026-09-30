@@ -111,6 +111,17 @@ LabOS persists the latest parsed response and independently observed GitHub stat
 
 If the structured block is missing or invalid, LabOS sends a reminder and waits for a corrected response. The supervisor's reconciliation state machine distinguishes WORKING, WAITING_CI, FIXING_CI, DONE, and CONFLICT. This protocol remains independent of repository contents and local shell execution.
 
+## Supervisor modes
+
+LabOS-Agent has two intentionally separate execution paths:
+
+- **lab-agent run / continue** is the legacy controller loop. It owns repository inspection, controlled execution, local-CI gating, commit/push, and remote-CI delivery through the phases.py delivery pipeline. It does not use the minimal supervisor's <LABOS_STATE> reconciliation protocol.
+- **lab-agent supervise** is the newer minimal ChatGPT state-marker supervisor. It treats ChatGPT's structured state as a claim and independently reconciles completion against GitHub commit/CI identity before advancing the project lifecycle.
+
+The two paths therefore have different state models by design. Do not assume a state recorded by the legacy loop is equivalent to a verified DONE from the minimal supervisor. New lifecycle automation uses the minimal supervisor path.
+
+Phase transitions in the minimal supervisor persist the lifecycle state and append a phase.transition.prepared event before opening the fresh Project chat. A successful handoff appends phase.transition.completed afterward. This makes a browser crash during rollover recoverable and auditable without pretending the new chat was successfully opened.
+
 ## Lab OS control UI
 
 A lightweight local web control plane is available without adding a frontend
