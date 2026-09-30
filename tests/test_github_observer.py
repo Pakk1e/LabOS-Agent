@@ -19,8 +19,8 @@ def test_observe_github_uses_gh_for_latest_ci_run(monkeypatch):
         calls.append(command)
         if command[:3] == ["gh", "api", "repos/owner/repo/"]:
             return _Completed(json.dumps({"default_branch": "main"}))
-        if command[:3] == ["gh", "api", "repos/owner/repo/git/ref/heads/main"]:
-            return _Completed(json.dumps({"object": {"sha": "abc1234"}}))
+        if command[:3] == ["gh", "api", "repos/owner/repo/branches/main"]:
+            return _Completed(json.dumps({"commit": {"sha": "abc1234"}}))
         return _Completed(
             json.dumps([{
                 "databaseId": 166,
@@ -45,7 +45,7 @@ def test_observe_github_uses_gh_for_latest_ci_run(monkeypatch):
     assert result.ci_conclusion == "success"
     assert calls[:2] == [
         ["gh", "api", "repos/owner/repo/"],
-        ["gh", "api", "repos/owner/repo/git/ref/heads/main"],
+        ["gh", "api", "repos/owner/repo/branches/main"],
     ]
 
 
@@ -60,7 +60,7 @@ def test_observe_github_resolves_workflow_run_number(monkeypatch):
     def fake_run(command, **kwargs):
         if command[:3] == ["gh", "api", "repos/owner/repo/"]:
             return _Completed(json.dumps({"default_branch": "main"}))
-        if command[:3] == ["gh", "api", "repos/owner/repo/git/ref/heads/main"]:
+        if command[:3] == ["gh", "api", "repos/owner/repo/branches/main"]:
             return _Completed(json.dumps({"object": {"sha": "abc1234"}}))
         return _Completed(json.dumps([
             {
@@ -101,8 +101,8 @@ def test_observe_github_uses_gh_api_for_repository_state(monkeypatch):
         calls.append(command)
         if command == ["gh", "api", "repos/owner/repo/"]:
             return _Completed(json.dumps({"default_branch": "main"}))
-        if command == ["gh", "api", "repos/owner/repo/git/ref/heads/main"]:
-            return _Completed(json.dumps({"object": {"sha": "deadbeef"}}))
+        if command == ["gh", "api", "repos/owner/repo/branches/main"]:
+            return _Completed(json.dumps({"commit": {"sha": "deadbeef"}}))
         return _Completed("[]")
 
     monkeypatch.setattr(observer.subprocess, "run", fake_run)
@@ -113,7 +113,7 @@ def test_observe_github_uses_gh_api_for_repository_state(monkeypatch):
     assert result.commit_sha == "deadbeef"
     assert calls[:2] == [
         ["gh", "api", "repos/owner/repo/"],
-        ["gh", "api", "repos/owner/repo/git/ref/heads/main"],
+        ["gh", "api", "repos/owner/repo/branches/main"],
     ]
 
 
