@@ -201,7 +201,7 @@ function overview(p){
    </section>
    <section class="card wide">
      <div class="section-head"><div><h3>Live activity</h3><div class="hint">Most recent supervisor events</div></div><span class="muted">${esc(p.updated_at||'—')}</span></div>
-     <div class="response">${p.recent_events?.length?p.recent_events.map(e=>esc((e.ts||'')+'  '+e.event+'  '+(e.state||e.summary||'')+'  '+(e.success===undefined?'':e.success))).join('\\n'):'No supervisor events recorded yet.'}</div>
+     <div class="response">${p.recent_events?.length?p.recent_events.map(e=>esc((e.ts||'')+'  '+e.event+'  '+(e.state||e.summary||'')+'  '+(e.success===undefined?'':e.success))).join('\n'):'No supervisor events recorded yet.'}</div>
    </section>
    <section class="card wide">
      <div class="section-head"><div><h3>Latest agent state</h3><div class="hint">The current work item and recorded continuation state</div></div><span class="badge ${p.task_status==='DONE'?'good':p.state==='FIX_CI'?'bad':'warn'}">${esc(p.task_status||'UNKNOWN')}</span></div>
