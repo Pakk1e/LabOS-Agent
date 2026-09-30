@@ -30,6 +30,7 @@ from .supervisor_state_machine import reconcile
 from .trace import trace, trace_summary
 from .lifecycle import (
     LifecycleState,
+    ProjectPhase,
     can_advance,
     can_start_supervisor,
     next_phase,
