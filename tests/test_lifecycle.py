@@ -74,7 +74,7 @@ def test_lifecycle_state_round_trip(tmp_path):
     save_lifecycle_state(state_root, "demo", state)
     loaded = load_lifecycle_state(state_root, "demo")
     assert loaded == state
-    assert loaded.approval_required
+    assert not loaded.approval_required
 
 
 def test_lifecycle_state_falls_back_for_existing_projects(tmp_path):
