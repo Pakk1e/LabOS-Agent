@@ -597,6 +597,9 @@ Start now by inspecting the current repository state and continue the task.
                                 previous_phase,
                                 target_phase,
                             )
+                            stopped = self._stop_if_turn_limit(tracker, response)
+                            if stopped is not None:
+                                return stopped
                             tracker.finish_iteration(
                                 "PHASE_COMPLETE",
                                 datetime.now(timezone.utc),
