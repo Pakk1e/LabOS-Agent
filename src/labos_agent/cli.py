@@ -12,6 +12,7 @@ from .ci.local import LocalCI
 from .loop import run_loop,run_once,state_path
 from .supervisor import ConversationSupervisor
 from .rollover import rollover
+from .report import build_morning_report
 from .controller import Controller
 from .safety import SafetyLimits
 from .state import AgentState,save_state
@@ -33,6 +34,9 @@ def build_parser():
     ci.add_argument("project")
     ci.add_argument("--stage",default="test")
     ci.add_argument("--config",default="config.yaml")
+    report=sub.add_parser("report",help="print a deterministic morning report from persisted supervisor state")
+    report.add_argument("project")
+    report.add_argument("--state-dir",default="")
     web=sub.add_parser("web",help="run the Lab OS control UI")
     web.add_argument("--config",default="config.yaml")
     web.add_argument("--host",default="127.0.0.1")
@@ -74,6 +78,10 @@ def parse_deadline(value,now):
         from datetime import timedelta
         deadline += timedelta(days=1)
     return deadline
+
+def report_command(args):
+    state_dir = Path(args.state_dir) if args.state_dir else Path("state") / args.project
+    print(build_morning_report(state_dir, args.project), end="")
 
 def ci_command(args):
     config=load_config(Path(args.config))
