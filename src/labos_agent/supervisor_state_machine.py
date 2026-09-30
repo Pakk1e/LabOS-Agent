@@ -48,6 +48,9 @@ def reconcile(
             and observation.commit_sha == analysis.current_commit
             and observation.ci_sha == analysis.current_commit
             and observation.ci_conclusion == "success"
+            and (analysis.ci_run_id is None or observation.ci_run_id == analysis.ci_run_id)
+            and (analysis.ci_run is None or observation.ci_run_number == analysis.ci_run)
+            and (analysis.ci_workflow is None or observation.ci_workflow == analysis.ci_workflow)
         ):
             return Reconciliation(
                 SupervisorPhase.WAITING_CI,
@@ -87,11 +90,15 @@ def reconcile(
             and observation.commit_sha == analysis.current_commit
         )
         ci_verified = (
-            analysis.ci_status != "PASSED"
-            or (
-                observation.ci_sha == analysis.current_commit
-                and observation.ci_conclusion == "success"
-            )
+            analysis.ci_status == "PASSED"
+            and analysis.ci_run_id is not None
+            and analysis.ci_run is not None
+            and analysis.ci_workflow not in (None, "", "NONE")
+            and observation.ci_sha == analysis.current_commit
+            and observation.ci_conclusion == "success"
+            and observation.ci_run_id == analysis.ci_run_id
+            and observation.ci_run_number == analysis.ci_run
+            and observation.ci_workflow == analysis.ci_workflow
         )
         verified = commit_verified and ci_verified
         return Reconciliation(
