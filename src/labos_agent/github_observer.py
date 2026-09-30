@@ -111,10 +111,11 @@ def _gh_run_json(
         if workflow_name:
             matches = [run for run in matches if run.get("name") == workflow_name]
         return matches[0] if matches else None
-    # LABOS_STATE.CI_RUN is the workflow run number, not GitHub's database ID.
+    # CI_RUN_ID is GitHub's unique database ID. Never treat it as a workflow
+    # run number: those numbers are only unique within a workflow.
     matches = [
         run for run in runs
-        if (run.get("databaseId") == ci_run_id or run.get("number") == ci_run_id)
+        if run.get("databaseId") == ci_run_id
         and (head_sha is None or run.get("headSha") == head_sha)
         and (workflow_name is None or run.get("name") == workflow_name)
     ]
