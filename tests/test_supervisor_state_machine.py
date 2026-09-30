@@ -8,6 +8,8 @@ def observation(sha="abc1234", conclusion="success", ci_sha="abc1234"):
         branch="main",
         commit_sha=sha,
         ci_run_id=166,
+        ci_run_number=42,
+        ci_workflow="CI",
         ci_status="completed",
         ci_conclusion=conclusion,
         ci_sha=ci_sha,
@@ -25,7 +27,9 @@ CURRENT_COMMIT => {commit}
 COMMIT_STATUS => PUSHED
 REPOSITORY_CHANGED => YES
 LOCAL_TESTS => PASSED
-CI_RUN => 166
+CI_RUN => 42
+CI_RUN_ID => 166
+CI_WORKFLOW => CI
 CI_STATUS => {ci_status}
 NEXT_ACTION => {'FINISH' if state == 'DONE' else 'WAIT_FOR_CI'}
 </LABOS_STATE>
