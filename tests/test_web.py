@@ -686,6 +686,7 @@ def test_lifecycle_ui_browser_flow(tmp_path):
             page.locator("#projectList .project", has_text="demo").click()
             page.locator("#content").wait_for()
             assert not errors, errors
+            page.get_by_role("button", name="Lifecycle").click()
             page.locator(".phase", has_text="DEVELOPMENT").wait_for()
             page.get_by_role("button", name="Approve Development").click()
             page.get_by_text("Approved", exact=True).wait_for()
@@ -733,6 +734,7 @@ def test_full_lifecycle_browser_api_flow(tmp_path):
             page.goto(f"http://127.0.0.1:{server.server_port}/", wait_until="domcontentloaded")
             page.wait_for_function("document.querySelector('#projectList')?.innerText.includes('demo')")
             page.locator("#projectList .project", has_text="demo").click()
+            page.get_by_role("button", name="Lifecycle").click()
             page.locator("#brainstormNotes").fill("Goals, users, constraints and alternatives")
             with page.expect_response(lambda response: response.url.endswith("/api/projects/demo/lifecycle") and response.request.method == "POST"):
                 page.get_by_role("button", name="Save notes").click()
