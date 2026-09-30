@@ -655,6 +655,19 @@ No human approval is required."""),
                         tracker.start_iteration(datetime.now(timezone.utc))
                         continue
 
+                    if not verified:
+                        tracker.finish_iteration("COMPLETION_UNVERIFIED", datetime.now(timezone.utc), reconciliation.reason)
+                        response = chat.send_and_wait_for_response(
+                            self._prompt("[LAB OS — COMPLETION NOT VERIFIED]\n" + reconciliation.reason + "\nContinue until GitHub independently verifies the exact completion."),
+                            timeout_seconds=self.config.browser.response_timeout_seconds,
+                            quiet_seconds=self.config.browser.quiet_seconds,
+                        )
+                        stopped = self._stop_if_turn_limit(tracker, response)
+                        if stopped is not None:
+                            return stopped
+                        tracker.start_iteration(datetime.now(timezone.utc))
+                        continue
+
                     # No next phase means the lifecycle is genuinely complete.
                     tracker.finish_iteration("DONE", datetime.now(timezone.utc), reason)
                     tracker.finish_run(result, datetime.now(timezone.utc), reason)
