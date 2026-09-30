@@ -571,6 +571,14 @@ class ChatGPTPage:
 
     def start_new_project_chat(self,*,project_name:str|None,project_url:str|None,selector:str|None)->None:
         if project_name:
+            # A fresh supervisor run may be attached to an unrelated ChatGPT
+            # conversation. If a Project URL is configured, enter that Project
+            # first; only then use the Project-scoped New chat control.
+            if project_url:
+                normalized_project_url=project_url.rstrip("/")
+                if self.page.url.rstrip("/") != normalized_project_url:
+                    self.page.goto(project_url,wait_until="domcontentloaded",timeout=60000)
+                    self.page.wait_for_timeout(1000)
             home=self._project_home_button(project_name)
             if home is None:
                 raise RuntimeError(
