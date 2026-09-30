@@ -139,7 +139,7 @@ def test_lifecycle_state_accepts_legacy_approval_on_any_phase():
     assert state.approved
 
 
-def test_lifecycle_state_rejects_corrupt_approved_file(tmp_path):
+def test_lifecycle_state_accepts_legacy_approval_file(tmp_path):
     state_root = tmp_path / "state"
     path = state_root / "demo"
     path.mkdir(parents=True)
@@ -147,8 +147,10 @@ def test_lifecycle_state_rejects_corrupt_approved_file(tmp_path):
         '{"phase":"PLANNING","approved":true,"approved_at":"2026-09-29T13:00:00+00:00"}',
         encoding="utf-8",
     )
-    with pytest.raises(ValueError, match="invalid lifecycle state"):
-        load_lifecycle_state(state_root, "demo")
+    loaded = load_lifecycle_state(state_root, "demo")
+    assert loaded.phase is ProjectPhase.PLANNING
+    assert loaded.approved
+    assert not loaded.approval_required
 
 
 def test_lifecycle_state_rejects_missing_phase(tmp_path):
