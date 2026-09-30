@@ -28,7 +28,14 @@ from .github_observer import GitHubObservation, observe_github
 from .supervisor_memory import SupervisorMemory, load_memory, memory_path, save_memory
 from .supervisor_state_machine import reconcile
 from .trace import trace, trace_summary
-from .lifecycle import can_start_supervisor, phase_instruction
+from .lifecycle import (
+    LifecycleState,
+    can_advance,
+    can_start_supervisor,
+    next_phase,
+    phase_instruction,
+    save_lifecycle_state,
+)
 
 def _save_run_summary(project: str, tracker: RunTracker) -> None:
     path = Path("state") / project / "runs" / f"{tracker.summary.run_number:06d}.json"
@@ -410,14 +417,6 @@ Start now by inspecting the current repository state and continue the task.
         return response
 
     def run(self) -> str:
-        if not can_start_supervisor(
-            self.project.lifecycle_phase,
-            self.project.lifecycle_approved,
-        ):
-            raise SupervisorError(
-                "human approval is required before starting the supervisor in "
-                "the DEVELOPMENT lifecycle phase"
-            )
         with _project_execution_lock(self.project_name):
             return self._run_locked()
 
@@ -540,6 +539,94 @@ Start now by inspecting the current repository state and continue the task.
                     verified = reconciliation.verified
                     result = "DONE_VERIFIED" if verified else "DONE_UNVERIFIED"
                     reason = None if verified else reconciliation.reason
+
+                    # DONE completes the current lifecycle phase. If the
+                    # repository contains the evidence required by the next
+                    # phase, advance automatically and start a fresh Project chat.
+                    target_phase = next_phase(self.current_phase)
+                    if verified and target_phase is not None:
+                        can_transition, missing = can_advance(
+                            self.project.project_root,
+                            self.current_phase,
+                            target_phase,
+                        )
+                        if can_transition:
+                            previous_phase = self.current_phase
+                            self.current_phase = target_phase
+                            save_lifecycle_state(
+                                Path("state"),
+                                self.project_name,
+                                LifecycleState(phase=target_phase, approved=False),
+                            )
+                            tracker.finish_iteration(
+                                "PHASE_COMPLETE",
+                                datetime.now(timezone.utc),
+                                f"{previous_phase.value} -> {target_phase.value}",
+                            )
+                            trace(
+                                "phase.transition",
+                                project=self.project_name,
+                                iteration=iteration.number,
+                                from_phase=previous_phase.value,
+                                to_phase=target_phase.value,
+                            )
+                            _save_run_event(
+                                self.project_name,
+                                tracker,
+                                "phase.transition",
+                                iteration=iteration.number,
+                                from_phase=previous_phase.value,
+                                to_phase=target_phase.value,
+                            )
+                            _save_run_summary(self.project_name, tracker)
+
+                            _start_fresh_chat(chat, self.project)
+                            response = chat.send_project_message_and_wait_for_response(
+                                self.project.project_name,
+                                self._bootstrap_prompt(
+                                    f"Automatically advanced from {previous_phase.value} to "
+                                    f"{target_phase.value}. Continue the new phase now. "
+                                    "No human approval is required."
+                                ),
+                                timeout_seconds=self.config.browser.response_timeout_seconds,
+                                quiet_seconds=self.config.browser.quiet_seconds,
+                            )
+                            tracker.start_iteration(datetime.now(timezone.utc))
+                            continue
+
+                        # DONE was reported, but the repository is not yet ready
+                        # to enter the next phase. Keep working in this conversation.
+                        missing_text = "\n".join(f"- {item}" for item in missing)
+                        tracker.finish_iteration(
+                            "PHASE_INCOMPLETE",
+                            datetime.now(timezone.utc),
+                            "missing phase evidence",
+                        )
+                        trace(
+                            "phase.incomplete",
+                            project=self.project_name,
+                            iteration=iteration.number,
+                            phase=self.current_phase.value,
+                            missing=missing,
+                        )
+                        response = chat.send_and_wait_for_response(
+                            self._prompt(
+                                f"""[LAB OS — PHASE EVIDENCE INCOMPLETE]
+You reported DONE for {self.current_phase.value}, but LabOS cannot advance yet.
+
+The repository evidence required for the next phase ({target_phase.value}) is incomplete:
+{missing_text}
+
+Continue the current phase. Create or complete the missing evidence in the repository,
+run relevant checks, and only report DONE again when the phase is genuinely complete.
+No human approval is required."""),
+                            timeout_seconds=self.config.browser.response_timeout_seconds,
+                            quiet_seconds=self.config.browser.quiet_seconds,
+                        )
+                        tracker.start_iteration(datetime.now(timezone.utc))
+                        continue
+
+                    # No next phase means the lifecycle is genuinely complete.
                     tracker.finish_iteration("DONE", datetime.now(timezone.utc), reason)
                     tracker.finish_run(result, datetime.now(timezone.utc), reason)
                     trace("iteration.complete", project=self.project_name, iteration=iteration.number, success=verified, state=result)
