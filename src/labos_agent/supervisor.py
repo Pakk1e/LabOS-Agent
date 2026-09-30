@@ -409,6 +409,33 @@ Start now by inspecting the current repository state and continue the task.
     def _prompt(self, message: str) -> str:
         return message.rstrip() + "\n\n" + STATE_BLOCK_INSTRUCTION
 
+    def _advance_lifecycle_phase(
+        self,
+        chat: ChatGPTPage,
+        previous_phase: ProjectPhase,
+        target_phase: ProjectPhase,
+    ) -> str:
+        """Persist a lifecycle transition before starting the fresh Project chat."""
+        self.current_phase = target_phase
+        save_lifecycle_state(
+            self.config.state_root,
+            self.project_name,
+            LifecycleState(phase=target_phase, approved=False),
+        )
+        _start_fresh_chat(chat, self.project)
+        if not self.project.project_name:
+            raise SupervisorError("autonomous lifecycle transitions require a configured ChatGPT Project")
+        return chat.send_project_message_and_wait_for_response(
+            self.project.project_name,
+            self._bootstrap_prompt(
+                f"Automatically advanced from {previous_phase.value} to "
+                f"{target_phase.value}. Continue the new phase now. "
+                "No human approval is required."
+            ),
+            timeout_seconds=self.config.browser.response_timeout_seconds,
+            quiet_seconds=self.config.browser.quiet_seconds,
+        )
+
     def _stop_if_turn_limit(self, tracker: RunTracker, response: str) -> str | None:
         if not self.max_turns or self.turns < self.max_turns:
             return None
@@ -554,11 +581,10 @@ Start now by inspecting the current repository state and continue the task.
                         )
                         if can_transition:
                             previous_phase = self.current_phase
-                            self.current_phase = target_phase
-                            save_lifecycle_state(
-                                self.config.state_root,
-                                self.project_name,
-                                LifecycleState(phase=target_phase, approved=False),
+                            response = self._advance_lifecycle_phase(
+                                chat,
+                                previous_phase,
+                                target_phase,
                             )
                             tracker.finish_iteration(
                                 "PHASE_COMPLETE",
@@ -581,18 +607,6 @@ Start now by inspecting the current repository state and continue the task.
                                 to_phase=target_phase.value,
                             )
                             _save_run_summary(self.project_name, tracker)
-
-                            _start_fresh_chat(chat, self.project)
-                            response = chat.send_project_message_and_wait_for_response(
-                                self.project.project_name,
-                                self._bootstrap_prompt(
-                                    f"Automatically advanced from {previous_phase.value} to "
-                                    f"{target_phase.value}. Continue the new phase now. "
-                                    "No human approval is required."
-                                ),
-                                timeout_seconds=self.config.browser.response_timeout_seconds,
-                                quiet_seconds=self.config.browser.quiet_seconds,
-                            )
                             tracker.start_iteration(datetime.now(timezone.utc))
                             continue
 
