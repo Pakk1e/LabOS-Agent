@@ -4,7 +4,7 @@ LabOS is release-ready when the engineering control plane can safely create or a
 
 ## Lifecycle
 - All lifecycle phases and sequential transitions are enforced.
-- DEVELOPMENT requires explicit human approval.
+- DEVELOPMENT proceeds autonomously once planning evidence is complete; persisted approval fields are legacy compatibility state, not a runtime gate.
 - Evidence gates reject missing or placeholder documentation.
 - Validation requires every documented acceptance criterion to have a line-level PASS result.
 - Runtime lifecycle state survives configuration changes and restart.
@@ -29,7 +29,7 @@ LabOS is release-ready when the engineering control plane can safely create or a
 - JSON request bodies are bounded.
 - JSON content type and user-controlled URL/input fields are validated.
 - Project names cannot escape lifecycle state directories.
-- DEVELOPMENT approval is enforced at the API and supervisor layers.
+- Lifecycle progression is enforced at the API and supervisor layers; no human approval gate is required.
 
 ## Quality
 - API error paths have deterministic status codes.

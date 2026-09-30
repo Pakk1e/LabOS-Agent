@@ -24,16 +24,34 @@ class SupervisorMemory:
 
 def load_memory(path: Path, project: str) -> SupervisorMemory:
     if not path.exists():
-        return SupervisorMemory(project=project)
-    data = json.loads(path.read_text(encoding="utf-8"))
+        backup = path.with_suffix(path.suffix + ".bak")
+        if not backup.exists():
+            return SupervisorMemory(project=project)
+        path = backup
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        backup = path.with_suffix(path.suffix + ".bak")
+        if path != backup and backup.exists():
+            data = json.loads(backup.read_text(encoding="utf-8"))
+        else:
+            raise ValueError(f"invalid supervisor memory for project {project}") from exc
+    if not isinstance(data, dict):
+        raise ValueError("supervisor memory must be a JSON object")
     data.setdefault("project", project)
-    return SupervisorMemory(**data)
+    memory = SupervisorMemory(**data)
+    if memory.project != project:
+        raise ValueError("supervisor memory project mismatch")
+    return memory
 
 def save_memory(path: Path, memory: SupervisorMemory) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(memory.to_dict(), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    backup = path.with_suffix(path.suffix + ".bak")
+    if path.exists():
+        path.replace(backup)
     tmp.replace(path)
 
-def memory_path(project: str) -> Path:
-    return Path("state") / project / "supervisor_state.json"
+def memory_path(state_root: Path, project: str) -> Path:
+    return state_root / project / "supervisor_state.json"

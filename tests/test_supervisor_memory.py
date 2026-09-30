@@ -38,3 +38,12 @@ def test_github_observation_is_structured():
     )
     assert observation.commit_sha == "abc1234"
     assert observation.ci_sha == observation.commit_sha
+
+
+def test_supervisor_memory_recovers_from_backup(tmp_path):
+    path = tmp_path / "state" / "weather" / "supervisor_state.json"
+    save_memory(path, SupervisorMemory(project="weather", last_analysis={"state": "CONTINUE"}))
+    save_memory(path, SupervisorMemory(project="weather", last_analysis={"state": "DONE"}))
+    path.write_text("{broken", encoding="utf-8")
+    loaded = load_memory(path, "weather")
+    assert loaded.last_analysis["state"] == "CONTINUE"
