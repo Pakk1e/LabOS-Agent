@@ -310,15 +310,17 @@ class ConversationSupervisor:
             else project.remote_ci_poll_seconds
         )
         self.turns = 0
+        self.current_phase = project.lifecycle_phase
 
     def _lifecycle_context(self) -> str:
-        phase = self.project.lifecycle_phase
-        approval = "APPROVED" if self.project.lifecycle_approved else "NOT APPROVED"
+        phase = self.current_phase
         return (
             f"PROJECT LIFECYCLE PHASE: {phase.value}\n"
             f"PROJECT MODE: {self.project.project_mode}\n"
-            f"HUMAN APPROVAL: {approval}\n"
-            f"PHASE RULE: {phase_instruction(phase)}"
+            "HUMAN APPROVAL: NOT REQUIRED\n"
+            f"PHASE RULE: {phase_instruction(phase)}\n"
+            "LIFECYCLE RULE: complete the current phase when its repository evidence "
+            "is ready; LabOS will automatically start the next phase in a fresh Project chat."
         )
 
     def _recovery_context(self, memory: SupervisorMemory, observation: GitHubObservation) -> str:
