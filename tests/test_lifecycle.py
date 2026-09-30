@@ -48,7 +48,8 @@ def test_phase_instructions_are_specific():
     assert "Do not implement product features" in phase_instruction(ProjectPhase.BRAINSTORM)
     assert "Read the supplied goal and brainstorm notes" in phase_instruction(ProjectPhase.BRAINSTORM)
     assert "documentation" in phase_instruction(ProjectPhase.DOCUMENTATION).lower()
-    assert "approved plan" in phase_instruction(ProjectPhase.DEVELOPMENT).lower()
+    assert "documented plan" in phase_instruction(ProjectPhase.DEVELOPMENT).lower()
+    assert "autonomously" in phase_instruction(ProjectPhase.DEVELOPMENT).lower()
 
 
 def test_approval_is_legacy_state_not_a_runtime_gate():
