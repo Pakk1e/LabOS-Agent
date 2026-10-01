@@ -230,6 +230,8 @@ def test_create_project_publishes_bootstrap_commit(tmp_path, monkeypatch):
         "project_root": str(root),
         "project_mode": "guided",
         "initial_idea": "Build an engineering workspace",
+        "project_name": "Demo Project",
+        "project_url": "https://chatgpt.com/g/g-p-demo/project",
         "create_repository": True,
     })
 
@@ -237,6 +239,29 @@ def test_create_project_publishes_bootstrap_commit(tmp_path, monkeypatch):
     assert sent["body"]["bootstrap_commit"] == "abc123"
     assert (root / "docs" / "IDEA.md").exists()
     assert (root / "AGENTS.md").exists()
+
+def test_create_project_requires_chatgpt_project_binding(tmp_path):
+    from labos_agent.web import Handler
+
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("projects: {}\n", encoding="utf-8")
+    handler = object.__new__(Handler)
+    handler.server = type("Server", (), {"config_path": config_path})()
+    sent = {}
+    handler._send = lambda status, body, content_type="application/json": sent.update(status=status, body=body)
+
+    handler._create_project({
+        "name": "demo",
+        "repository": "example/demo",
+        "project_root": str(tmp_path / "repo"),
+        "project_mode": "guided",
+        "initial_idea": "Build an engineering workspace",
+        "create_repository": False,
+    })
+
+    assert sent["status"] == 400
+    assert sent["body"]["error"] == "project_url is required when creating a LabOS project"
+
 
 def test_create_github_repository_uses_requested_visibility(monkeypatch):
     from labos_agent.web import _create_github_repository
