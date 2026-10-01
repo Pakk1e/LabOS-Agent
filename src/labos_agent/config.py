@@ -40,6 +40,7 @@ class ProjectConfig:
     lifecycle_approved: bool = False
     lifecycle_approved_at: str | None = None
     project_mode: str = "guided"
+    manual_lifecycle_advance_enabled: bool = True
     initial_idea: str = ""
     brainstorm_notes: str = ""
 
@@ -114,6 +115,7 @@ def load_config(path: Path) -> AppConfig:
             lifecycle_approved=lifecycle_state.approved,
             lifecycle_approved_at=lifecycle_state.approved_at,
             project_mode=normalize_project_mode(lifecycle.get("mode", "guided")),
+            manual_lifecycle_advance_enabled=bool(lifecycle.get("manual_lifecycle_advance_enabled", True)),
             initial_idea=str(value.get("initial_idea", "")),
             brainstorm_notes=str(value.get("brainstorm_notes", "")),
         )
