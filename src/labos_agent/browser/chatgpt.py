@@ -591,6 +591,28 @@ class ChatGPTPage:
                     continue
         return None
 
+    def resume_conversation(self, conversation_url:str, *, project_name:str|None=None)->None:
+        """Open the supervisor's persisted conversation and verify its context."""
+        if not conversation_url or not self._is_chatgpt_url(conversation_url):
+            raise ValueError("conversation_url must be a ChatGPT URL")
+        self.page.goto(conversation_url,wait_until="domcontentloaded",timeout=60000)
+        self.page.wait_for_timeout(1000)
+        if not self._is_chatgpt_url(self.page.url):
+            raise RuntimeError(
+                f"ChatGPT conversation did not open; current URL: {self.page.url}"
+            )
+        if project_name:
+            if not self.project_context_present(project_name):
+                raise RuntimeError(
+                    f"required ChatGPT Project context not detected while resuming: {project_name}"
+                )
+            if self.project_chat_composer(project_name) is None:
+                raise RuntimeError(
+                    f"Project composer is unavailable while resuming: {project_name}"
+                )
+        else:
+            self.assert_ready()
+
     def start_new_chat(self)->None:
         """Start a genuinely new non-Project ChatGPT conversation.
 

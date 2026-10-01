@@ -395,6 +395,28 @@ class ConversationSupervisor:
         memory.updated_at = now.isoformat()
         save_memory(memory_file, memory)
 
+    def _start_or_resume_chat(self, chat: ChatGPTPage, memory: SupervisorMemory, memory_file: Path) -> bool:
+        """Resume the last conversation when possible; otherwise create a fresh one."""
+        if memory.conversation_url:
+            try:
+                chat.resume_conversation(
+                    memory.conversation_url,
+                    project_name=self.project.project_name,
+                )
+                trace("chat.resume", project=self.project_name, conversation_url=memory.conversation_url)
+                return False
+            except (RuntimeError, ValueError) as exc:
+                trace("chat.resume.failed", project=self.project_name,
+                      conversation_url=memory.conversation_url, error=str(exc))
+
+        self._wait_before_fresh_chat()
+        self._mark_fresh_chat_started(memory, memory_file)
+        _start_fresh_chat(chat, self.project)
+        trace("chat.fresh", project=self.project_name,
+              reason="no-persisted-conversation" if not memory.conversation_url else "resume-failed",
+              url=getattr(chat.page, "url", ""))
+        return True
+
     def _send_next_message(self, chat: ChatGPTPage, message: str, *, delay: bool = True) -> str:
         if delay:
             self._wait_before_next_message()
@@ -607,13 +629,9 @@ Start now. Complete the current phase rather than merely describing what should 
             memory_file = memory_path(self.config.state_root, self.project_name)
             memory = load_memory(memory_file, self.project_name)
             self._load_persisted_fresh_chat_time(memory)
-            # _start_fresh_chat may need to navigate from an unrelated
-            # ChatGPT conversation into the configured Project before creating
-            # the fresh conversation. Persist the start time before creating it
-            # so a process crash cannot bypass the minimum fresh-chat interval.
-            self._wait_before_fresh_chat()
-            self._mark_fresh_chat_started(memory, memory_file)
-            _start_fresh_chat(chat, self.project)
+            # Existing agents resume their persisted ChatGPT conversation.
+            # Only the first run (or an unrecoverable conversation) creates a fresh chat.
+            self._start_or_resume_chat(chat, memory, memory_file)
 
             try:
                 ci_baseline = set(run.id for run in _github_get(self.project.repository))
