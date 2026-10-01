@@ -1083,3 +1083,67 @@ def test_lifecycle_gate_matches_transition_evidence(tmp_path):
     assert gate["target"] == "DEVELOPMENT"
     assert gate["satisfied"] is False
     assert "PLAN.md or docs/PLAN.md" in gate["missing"]
+
+
+def test_manual_lifecycle_advance_setting_is_exposed_and_enforced(tmp_path):
+    from http.client import HTTPConnection
+    from http.server import ThreadingHTTPServer
+    from labos_agent.web import Handler, EventHub
+
+    config_path = tmp_path / "config.yaml"
+    root = tmp_path / "repo"
+    root.mkdir()
+    config_path.write_text(
+        "projects:\n"
+        "  demo:\n"
+        "    repository: example/demo\n"
+        f"    project_root: {root}\n"
+        "    continuation_message: Continue demo\n"
+        "    lifecycle:\n"
+        "      mode: guided\n"
+        "      manual_lifecycle_advance_enabled: false\n"
+        "    project_name: Demo\n"
+        "    project_url: https://chatgpt.com/g/g-p-demo/project\n",
+        encoding="utf-8",
+    )
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server.config_path = config_path
+    server.event_hub = EventHub(config_path, interval=0.01)
+    server.event_hub.start()
+    thread = __import__("threading").Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        conn = HTTPConnection("127.0.0.1", server.server_port)
+        conn.request("GET", "/api/projects/demo")
+        response = conn.getresponse()
+        data = __import__("json").loads(response.read())
+        assert response.status == 200
+        assert data["manual_lifecycle_advance_enabled"] is False
+
+        conn = HTTPConnection("127.0.0.1", server.server_port)
+        conn.request(
+            "POST",
+            "/api/projects/demo/lifecycle",
+            body='{"phase":"DEVELOPMENT"}',
+            headers={"Content-Type": "application/json"},
+        )
+        response = conn.getresponse()
+        body = response.read().decode()
+        assert response.status == 409
+        assert "manual lifecycle advancement is disabled" in body
+    finally:
+        server.shutdown()
+        server.event_hub.stop()
+        thread.join(timeout=2)
+
+
+def test_ui_contains_manual_lifecycle_setting():
+    from pathlib import Path
+
+    html = (Path(__file__).resolve().parents[1] / "src" / "labos_agent" / "web" / "index.html").read_text(
+        encoding="utf-8"
+    )
+    assert "manual_lifecycle_advance_enabled" in html
+    assert "Enable manual lifecycle advancement" in html
+    assert "Automatic supervisor phase transitions are unaffected." in html
