@@ -104,3 +104,39 @@ def test_done_rejects_wrong_ci_run_identity():
     result = reconcile(response(), wrong)
     assert result.verified is False
     assert result.phase == SupervisorPhase.CONFLICT
+
+
+def test_supervisor_syncs_remote_commit_before_phase_gate():
+    from labos_agent.supervisor import ConversationSupervisor
+
+    supervisor = ConversationSupervisor.__new__(ConversationSupervisor)
+    calls = []
+
+    supervisor._sync_workspace = lambda observed, *, reason: calls.append(
+        (observed.commit_sha, reason)
+    )
+
+    supervisor._sync_if_remote_changed(
+        observation("newsha"),
+        "oldsha",
+    )
+
+    assert calls == [("newsha", "remote-commit-observed")]
+
+
+def test_supervisor_does_not_resync_unchanged_commit():
+    from labos_agent.supervisor import ConversationSupervisor
+
+    supervisor = ConversationSupervisor.__new__(ConversationSupervisor)
+    calls = []
+
+    supervisor._sync_workspace = lambda observed, *, reason: calls.append(
+        (observed.commit_sha, reason)
+    )
+
+    supervisor._sync_if_remote_changed(
+        observation("same"),
+        "same",
+    )
+
+    assert calls == []
