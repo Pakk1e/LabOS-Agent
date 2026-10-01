@@ -1147,3 +1147,21 @@ def test_ui_contains_manual_lifecycle_setting():
     assert "manual_lifecycle_advance_enabled" in html
     assert "Enable manual lifecycle advancement" in html
     assert "Automatic supervisor phase transitions are unaffected." in html
+
+
+def test_documentation_inventory_uses_root_plan_when_present(tmp_path):
+    from labos_agent.web import _documentation_inventory
+
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "PLAN.md").write_text(
+        "# Plan\n\n## Acceptance Criteria\n- AC-1 works",
+        encoding="utf-8",
+    )
+
+    rows = _documentation_inventory(str(tmp_path))
+    plan = next(row for row in rows if row["name"] == "PLAN.md")
+
+    assert plan["exists"] is True
+    assert plan["path"] == str(tmp_path / "PLAN.md")
+    assert plan["bytes"] > 0
+    assert plan["placeholder"] is False
