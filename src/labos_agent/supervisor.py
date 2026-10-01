@@ -28,6 +28,7 @@ from .github_observer import GitHubObservation, observe_github
 from .supervisor_memory import SupervisorMemory, load_memory, memory_path, save_memory
 from .supervisor_state_machine import reconcile
 from .trace import trace, trace_summary
+from .git_gate import sync_repository
 from .lifecycle import (
     LifecycleState,
     ProjectPhase,
@@ -325,6 +326,20 @@ class ConversationSupervisor:
         self._last_progress_commit: str | None = None
         self._no_progress_iterations = 0
 
+    def _sync_workspace(self, observation: GitHubObservation, *, reason: str) -> None:
+        synced = sync_repository(
+            self.project.project_root,
+            self.project.repository,
+            branch_name=observation.branch,
+            expected_sha=observation.commit_sha,
+        )
+        trace(
+            "repository.sync",
+            project=self.project_name,
+            reason=reason,
+            commit=synced,
+        )
+
     def _lifecycle_context(self) -> str:
         phase = self.current_phase
         return (
@@ -612,6 +627,10 @@ Start now. Complete the current phase rather than merely describing what should 
             except Exception as exc:
                 raise SupervisorError(f"cannot observe GitHub repository state: {exc}") from exc
 
+            # The controlled workspace is disposable; synchronize it to the
+            # authoritative GitHub revision before the first agent response.
+            self._sync_workspace(observation, reason="run.start")
+
             # Establish the repository baseline before the first agent response so
             # the first unchanged CONTINUE response counts toward no-progress.
             self._last_progress_commit = observation.commit_sha
@@ -690,6 +709,8 @@ Start now. Complete the current phase rather than merely describing what should 
                         target_sha=analysis.current_commit if analysis.structured else None,
                         workflow_name=analysis.ci_workflow if analysis.structured else None,
                     )
+                    if observed.commit_sha != previous_observed_commit:
+                        self._sync_workspace(observed, reason="remote-commit-observed")
                     reconciliation = reconcile(
                         analysis,
                         observed,
@@ -831,6 +852,9 @@ No human approval is required."""))
                         reason=None if passed else summary,
                     )
                     ci_baseline = set(run.id for run in _github_get(self.project.repository))
+                    if passed:
+                        latest = observe_github(self.project.repository, target_sha=analysis.current_commit if analysis.structured else None, workflow_name=analysis.ci_workflow if analysis.structured else None)
+                        self._sync_workspace(latest, reason="ci-passed")
                     tracker.finish_iteration("WAIT_CI", datetime.now(timezone.utc), None if passed else summary)
                     trace(
                         "remote_ci.complete" if passed else "remote_ci.error",
