@@ -477,7 +477,7 @@ class ChatGPTPage:
         home=self._project_home_button(project_name)
         if home is None:
             raise RuntimeError(f"visible Project home button not found for: {project_name}")
-        home.click()
+        self._click_project_home(home)
         self.page.wait_for_timeout(1500)
 
     def print_project_home_composer_diagnostic(self,project_name:str)->None:
@@ -532,6 +532,22 @@ class ChatGPTPage:
                     print(f"{i}: {combined[:500]}")
             except Exception:
                 continue
+
+    def _click_project_home(self, home)->None:
+        """Activate a resolved Project-home control even when ChatGPT overlays it."""
+        try:
+            home.click(timeout=3000)
+            return
+        except PlaywrightTimeoutError:
+            # ChatGPT's sidebar can leave a clipping/scroll layer over the button
+            # while the control is already visible and correctly resolved. A DOM
+            # click targets the resolved button directly instead of its covered
+            # screen coordinates.
+            try:
+                home.evaluate("(el) => el.click()")
+                return
+            except PlaywrightError:
+                raise
 
     def _project_home_button(self, project_name: str):
         if not project_name:
@@ -616,7 +632,7 @@ class ChatGPTPage:
                 raise RuntimeError(
                     f"visible Project home button not found for: {project_name}"
                 )
-            home.click()
+            self._click_project_home(home)
             deadline=time.monotonic()+10
             while time.monotonic()<deadline:
                 composer=self.project_chat_composer(project_name)
