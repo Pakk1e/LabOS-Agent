@@ -592,19 +592,32 @@ class ChatGPTPage:
         return None
 
     def start_new_chat(self)->None:
-        """Start a genuinely new non-Project ChatGPT conversation."""
-        button=self._new_chat_button()
-        if button is not None:
-            self._click_new_chat(button)
-        else:
-            # ChatGPT's canonical root is the fallback new-chat surface when
-            # the sidebar control is not exposed in the current DOM.
-            self.page.goto("https://chatgpt.com/",wait_until="domcontentloaded",timeout=60000)
+        """Start a genuinely new non-Project ChatGPT conversation.
+
+        Do not rely on whichever "New chat" control happens to be visible in
+        the sidebar. That control can be project-scoped or can preserve the
+        currently selected conversation. Navigating to ChatGPT's canonical
+        root first gives the supervisor a deterministic non-Project surface.
+        """
+        self.page.goto("https://chatgpt.com/",wait_until="domcontentloaded",timeout=60000)
         self.page.wait_for_timeout(1000)
         if not self._is_chat_root_url(self.page.url):
             raise RuntimeError(
-                f"ChatGPT did not open a new conversation; current URL: {self.page.url}"
+                f"ChatGPT did not open the generic new-chat surface; current URL: {self.page.url}"
             )
+
+        # Some ChatGPT builds expose an explicit global New chat button even
+        # on the root surface. Activate it when present, but only after the
+        # deterministic root navigation above.
+        button=self._new_chat_button()
+        if button is not None:
+            self._click_new_chat(button)
+            self.page.wait_for_timeout(500)
+            if not self._is_chat_root_url(self.page.url):
+                raise RuntimeError(
+                    f"ChatGPT New chat control left the generic surface; current URL: {self.page.url}"
+                )
+
         deadline=time.monotonic()+10
         while time.monotonic()<deadline:
             if self._find_input() is not None:
