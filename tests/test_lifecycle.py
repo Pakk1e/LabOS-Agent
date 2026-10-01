@@ -540,3 +540,40 @@ def test_phase_transition_journals_before_fresh_chat(tmp_path, monkeypatch):
     events = (state_root / "demo" / "runs" / "000001.events.jsonl").read_text(encoding="utf-8")
     assert "phase.transition.prepared" in events
     assert "phase.transition.completed" not in events
+
+
+def test_supervisor_sync_workspace_targets_observed_github_revision(tmp_path, monkeypatch):
+    from labos_agent.github_observer import GitHubObservation
+    import labos_agent.supervisor as supervisor_module
+
+    project = ProjectConfig(
+        name="demo",
+        repository="example/demo",
+        project_root=tmp_path / "repo",
+        continuation_message="Continue demo",
+        lifecycle_phase=ProjectPhase.DOCUMENTATION,
+    )
+    config = AppConfig(projects={"demo": project}, state_root=tmp_path / "state")
+    supervisor = ConversationSupervisor(config, "demo")
+    calls = []
+
+    def fake_sync(root, repository, *, branch_name, expected_sha):
+        calls.append((root, repository, branch_name, expected_sha))
+        return expected_sha
+
+    monkeypatch.setattr(supervisor_module, "sync_repository", fake_sync)
+    observation = GitHubObservation(
+        branch="main",
+        commit_sha="abc123",
+        ci_run_id=None,
+        ci_status=None,
+        ci_conclusion=None,
+        ci_sha=None,
+        ci_name=None,
+        ci_created_at=None,
+        ci_url=None,
+    )
+
+    supervisor._sync_workspace(observation, reason="regression-test")
+
+    assert calls == [(tmp_path / "repo", "example/demo", "main", "abc123")]
