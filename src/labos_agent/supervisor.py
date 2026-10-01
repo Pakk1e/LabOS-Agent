@@ -694,7 +694,7 @@ Start now. Complete the current phase rather than merely describing what should 
                     memory.last_observed_ci_conclusion = observed.ci_conclusion
                     memory.conversation_url = page.url
                     memory.updated_at = datetime.now(timezone.utc).isoformat()
-                    save_memory(memory, memory)
+                    save_memory(memory_file, memory)
                     self._sync_if_remote_changed(observed, previous_observed_commit)
                 except Exception as exc:
                     trace("run.error", project=self.project_name, error=f"GitHub observation failed after response: {exc}")

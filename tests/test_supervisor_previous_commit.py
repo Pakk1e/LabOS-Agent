@@ -12,3 +12,12 @@ def test_supervisor_snapshots_previous_observed_commit_before_mutating_memory():
     assert snapshot in source
     assert source.index(snapshot) < source.index(observation)
     assert source.index(snapshot) < source.index(done_reconciliation)
+
+
+def test_supervisor_persists_memory_to_memory_file_after_observation():
+    import inspect
+
+    source = inspect.getsource(supervisor.ConversationSupervisor._run_locked)
+
+    assert "save_memory(memory_file, memory)" in source
+    assert "save_memory(memory, memory)" not in source
