@@ -48,6 +48,18 @@ class ChatGPTPage:
         except ValueError: return False
         return host=="chatgpt.com" or host.endswith(".chatgpt.com")
 
+    @staticmethod
+    def _is_chat_root_url(url:str)->bool:
+        try:
+            parsed=urlparse(url)
+        except ValueError:
+            return False
+        return (
+            parsed.hostname is not None
+            and ChatGPTPage._is_chatgpt_url(url)
+            and parsed.path in {"", "/"}
+        )
+
     @classmethod
     def select_page(cls,context,*,project_name:str|None=None,project_url:str|None=None):
         """Select the ChatGPT page belonging to the requested Project.
@@ -59,6 +71,19 @@ class ChatGPTPage:
         if not pages:
             raise RuntimeError("No ChatGPT page is attached")
         if len(pages)==1:
+            return pages[0]
+
+        if not project_name and not project_url:
+            # A non-Project lifecycle run must never inherit an arbitrary open
+            # conversation (for example, another LabOS project). Prefer a tab
+            # already at ChatGPT's canonical new-chat surface; start_new_project_chat
+            # will still explicitly activate New chat before sending.
+            root_pages = [
+                page for page in pages
+                if cls._is_chat_root_url(page.url)
+            ]
+            if root_pages:
+                return root_pages[0]
             return pages[0]
 
         if project_url:
@@ -533,6 +558,60 @@ class ChatGPTPage:
             except Exception:
                 continue
 
+    def _click_new_chat(self, control)->None:
+        """Activate a resolved generic New chat control."""
+        try:
+            control.click(timeout=3000)
+            return
+        except PlaywrightTimeoutError:
+            try:
+                control.evaluate("(el) => el.click()")
+                return
+            except PlaywrightError:
+                raise
+
+    def _new_chat_button(self):
+        """Find the global New chat control without selecting another project."""
+        selectors=(
+            'button[aria-label="New chat"]',
+            '[role="button"][aria-label="New chat"]',
+            'a[aria-label="New chat"]',
+            'button[title="New chat"]',
+            '[role="button"][title="New chat"]',
+            'a[title="New chat"]',
+        )
+        for selector in selectors:
+            loc=self.page.locator(selector)
+            for i in range(loc.count()):
+                item=loc.nth(i)
+                try:
+                    if item.is_visible():
+                        return item
+                except Exception:
+                    continue
+        return None
+
+    def start_new_chat(self)->None:
+        """Start a genuinely new non-Project ChatGPT conversation."""
+        button=self._new_chat_button()
+        if button is not None:
+            self._click_new_chat(button)
+        else:
+            # ChatGPT's canonical root is the fallback new-chat surface when
+            # the sidebar control is not exposed in the current DOM.
+            self.page.goto("https://chatgpt.com/",wait_until="domcontentloaded",timeout=60000)
+        self.page.wait_for_timeout(1000)
+        if not self._is_chat_root_url(self.page.url):
+            raise RuntimeError(
+                f"ChatGPT did not open a new conversation; current URL: {self.page.url}"
+            )
+        deadline=time.monotonic()+10
+        while time.monotonic()<deadline:
+            if self._find_input() is not None:
+                return
+            self.page.wait_for_timeout(250)
+        raise RuntimeError("ChatGPT new-chat composer did not become available")
+
     def _click_project_home(self, home)->None:
         """Activate a resolved Project-home control even when ChatGPT overlays it."""
         try:
@@ -656,7 +735,7 @@ class ChatGPTPage:
             loc.click()
             self.page.wait_for_timeout(1000)
         else:
-            raise RuntimeError("Project rollover requires a Project name, URL, or verified selector")
+            self.start_new_chat()
 
         if project_name and not self.project_context_present(project_name):
             raise RuntimeError(f"required ChatGPT Project context not detected: {project_name}")
