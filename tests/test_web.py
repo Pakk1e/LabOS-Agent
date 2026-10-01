@@ -1059,3 +1059,27 @@ def test_project_creation_rejects_existing_repository_without_git(tmp_path):
         server.shutdown()
         server.event_hub.stop()
         thread.join(timeout=2)
+
+
+def test_lifecycle_gate_matches_transition_evidence(tmp_path):
+    from labos_agent.lifecycle import ProjectPhase
+    from labos_agent.web import _lifecycle_gate
+
+    root = tmp_path / "repo"
+    (root / "docs").mkdir(parents=True)
+    (root / "docs" / "REQUIREMENTS.md").write_text("# Requirements\n", encoding="utf-8")
+
+    project = type(
+        "Project",
+        (),
+        {
+            "project_root": root,
+            "lifecycle_phase": ProjectPhase.PLANNING,
+        },
+    )()
+
+    gate = _lifecycle_gate(project)
+
+    assert gate["target"] == "DEVELOPMENT"
+    assert gate["satisfied"] is False
+    assert "PLAN.md or docs/PLAN.md" in gate["missing"]
