@@ -340,6 +340,14 @@ class ConversationSupervisor:
             commit=synced,
         )
 
+    def _sync_if_remote_changed(
+        self,
+        observation: GitHubObservation,
+        previous_observed_commit: str | None,
+    ) -> None:
+        if observation.commit_sha != previous_observed_commit:
+            self._sync_workspace(observation, reason="remote-commit-observed")
+
     def _lifecycle_context(self) -> str:
         phase = self.current_phase
         return (
@@ -686,7 +694,8 @@ Start now. Complete the current phase rather than merely describing what should 
                     memory.last_observed_ci_conclusion = observed.ci_conclusion
                     memory.conversation_url = page.url
                     memory.updated_at = datetime.now(timezone.utc).isoformat()
-                    save_memory(memory_file, memory)
+                    save_memory(memory, memory)
+                    self._sync_if_remote_changed(observed, previous_observed_commit)
                 except Exception as exc:
                     trace("run.error", project=self.project_name, error=f"GitHub observation failed after response: {exc}")
 
@@ -727,8 +736,6 @@ Start now. Complete the current phase rather than merely describing what should 
                         target_sha=analysis.current_commit if analysis.structured else None,
                         workflow_name=analysis.ci_workflow if analysis.structured else None,
                     )
-                    if observed.commit_sha != previous_observed_commit:
-                        self._sync_workspace(observed, reason="remote-commit-observed")
                     reconciliation = reconcile(
                         analysis,
                         observed,
