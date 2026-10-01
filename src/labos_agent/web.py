@@ -487,7 +487,7 @@ def _documentation_inventory(root: str) -> list[dict]:
     target = Path(root).expanduser()
     docs = [
         "IDEA.md", "PRODUCT.md", "REQUIREMENTS.md", "ARCHITECTURE.md",
-        "DECISIONS.md", "ROADMAP.md", "USER_FLOWS.md", "PLAN.md",
+        "DECISIONS.md", "ROADMAP.md", "USER_FLOWS.md",
     ]
     result = []
     for name in docs:
@@ -503,6 +503,25 @@ def _documentation_inventory(root: str) -> list[dict]:
             "_To be completed", "_To be created", "TODO", "TBD",
         ))
         result.append({"name": name, "path": str(path), "exists": exists, "placeholder": placeholder, "bytes": len(content.encode("utf-8"))})
+    plan_paths = ("PLAN.md", "docs/PLAN.md")
+    plan_path = next((target / relative for relative in plan_paths if (target / relative).is_file()), target / "PLAN.md")
+    plan_exists = plan_path.is_file()
+    plan_content = ""
+    if plan_exists:
+        try:
+            plan_content = plan_path.read_text(encoding="utf-8")
+        except OSError:
+            plan_content = ""
+    plan_placeholder = any(token in plan_content for token in (
+        "_To be completed", "_To be created", "TODO", "TBD",
+    ))
+    result.append({
+        "name": "PLAN.md",
+        "path": str(plan_path),
+        "exists": plan_exists,
+        "placeholder": plan_placeholder,
+        "bytes": len(plan_content.encode("utf-8")),
+    })
     agents = target / "AGENTS.md"
     result.append({"name": "AGENTS.md", "path": str(agents), "exists": agents.exists(), "placeholder": False, "bytes": agents.stat().st_size if agents.exists() else 0})
     return result
