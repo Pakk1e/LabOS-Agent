@@ -153,6 +153,8 @@ NEXT_ACTION => CONTINUE_WORK
         ci_created_at=None,
         ci_url=None,
     )
+    # Mirror the baseline captured by _run_locked before the first response.
+    supervisor._last_progress_commit = observed.commit_sha
     assert supervisor._record_no_progress(analysis, observed) is False
     for _ in range(3):
         assert supervisor._record_no_progress(analysis, observed) is False
