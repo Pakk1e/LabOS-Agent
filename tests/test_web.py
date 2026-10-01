@@ -1073,7 +1073,7 @@ def test_lifecycle_gate_matches_transition_evidence(tmp_path):
         "Project",
         (),
         {
-            "project_root": str(root),
+            "project_root": root,
             "lifecycle_phase": ProjectPhase.PLANNING,
         },
     )()
