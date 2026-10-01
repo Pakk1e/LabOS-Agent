@@ -491,7 +491,13 @@ class ChatGPTPage:
                     editable.append(item)
             except Exception:
                 continue
-        if len(editable)==1:
+        # ChatGPT may render more than one visible editable surface while a
+        # Project home is loading (for example, a transient search/compose
+        # surface). Once the Project context has been verified, requiring
+        # exactly one editable element is unnecessarily brittle. Prefer the
+        # first visible editable candidate, matching the generic input lookup
+        # behavior used elsewhere in this adapter.
+        if editable:
             return editable[0]
         return None
 
