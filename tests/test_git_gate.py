@@ -423,7 +423,7 @@ def test_sync_repository_replaces_legacy_non_git_workspace(tmp_path: Path, monke
     _git(source, "config", "user.name", "LabOS Test")
     _git(source, "config", "user.email", "labos@example.invalid")
     (source / "docs").mkdir()
-    (source / "docs" / "PRODUCT.md").write_text("complete\\n", encoding="utf-8")
+    (source / "docs" / "PRODUCT.md").write_text("complete\n", encoding="utf-8")
     _git(source, "add", ".")
     _git(source, "commit", "-m", "authoritative")
     _git(source, "branch", "-M", "main")
@@ -432,8 +432,8 @@ def test_sync_repository_replaces_legacy_non_git_workspace(tmp_path: Path, monke
     sha = _git(source, "rev-parse", "HEAD")
 
     (root / "docs").mkdir(parents=True)
-    (root / "docs" / "PRODUCT.md").write_text("_To be completed._\\n", encoding="utf-8")
-    (root / "AGENTS.md").write_text("legacy controlled workspace\\n", encoding="utf-8")
+    (root / "docs" / "PRODUCT.md").write_text("_To be completed._\n", encoding="utf-8")
+    (root / "AGENTS.md").write_text("legacy controlled workspace\n", encoding="utf-8")
 
     real_run = git_gate.subprocess.run
 
