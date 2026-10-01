@@ -7,6 +7,8 @@ import hashlib
 import os
 import subprocess
 import time
+import shutil
+import tempfile
 
 from .trace import trace
 
@@ -344,6 +346,65 @@ def can_clear_legacy_dirty_recovery(root: Path, baseline_untracked: set[str] | t
         return False
     current_untracked = set(_untracked_paths(root))
     return current_untracked.issubset(set(baseline_untracked))
+
+
+def sync_repository(
+    root: Path,
+    repository: str,
+    *,
+    branch_name: str = "main",
+    expected_sha: str | None = None,
+) -> str:
+    """Synchronize the controlled workspace to the authoritative GitHub branch.
+
+    Git workspaces are fast-forwarded through the normal Git safety gate. Legacy
+    non-Git controlled workspaces are replaced by a fresh clone because they have
+    no revision history that can be reconciled safely.
+    """
+    root = root.expanduser().resolve()
+    if (root / ".git").exists():
+        prepare_repository(root, branch_name=branch_name)
+        head = _git(root, "rev-parse", "HEAD")
+    else:
+        staging_parent = root.parent
+        staging_parent.mkdir(parents=True, exist_ok=True)
+        staging = Path(tempfile.mkdtemp(prefix=f".labos-sync-{root.name}-", dir=staging_parent))
+        shutil.rmtree(staging)
+        try:
+            subprocess.run(
+                ["gh", "repo", "clone", repository, str(staging)],
+                cwd=staging_parent,
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            head = _git(staging, "rev-parse", "HEAD")
+            if expected_sha is not None and head != expected_sha:
+                raise RuntimeError(
+                    f"repository sync fetched {head}, expected authoritative commit {expected_sha}"
+                )
+            backup = root.with_name(f"{root.name}.labos-stale-backup")
+            if root.exists():
+                if backup.exists():
+                    shutil.rmtree(backup)
+                root.rename(backup)
+            try:
+                staging.rename(root)
+            except Exception:
+                if not root.exists() and backup.exists():
+                    backup.rename(root)
+                raise
+            if backup.exists():
+                shutil.rmtree(backup)
+        finally:
+            if staging.exists():
+                shutil.rmtree(staging, ignore_errors=True)
+    if expected_sha is not None and head != expected_sha:
+        raise RuntimeError(
+            f"repository workspace is at {head}, expected authoritative commit {expected_sha}"
+        )
+    return head
 
 
 def prepare_repository(root: Path, *, branch_name: str = "main", allow_dirty: bool = False, expected_dirty_fingerprint: str | None = None) -> None:
