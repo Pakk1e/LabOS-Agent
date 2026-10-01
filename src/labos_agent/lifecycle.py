@@ -78,6 +78,56 @@ PLACEHOLDER_MARKERS = (
 )
 
 
+def phase_instruction(phase: ProjectPhase) -> str:
+    """Return a direct, phase-specific work contract for the ChatGPT agent."""
+    instructions = {
+        ProjectPhase.IDEA: (
+            "You are in the IDEA phase. Clarify the initial idea and establish the project "
+            "starting point. When the idea is clear and recorded, report DONE."
+        ),
+        ProjectPhase.BRAINSTORM: (
+            "You are in the BRAINSTORMING phase. Explore the idea thoroughly: define the "
+            "problem, users, useful capabilities, alternatives, risks, open questions, and "
+            "a practical direction. Work independently for this turn; do not stop after a "
+            "small suggestion. When brainstorming is complete, create or update docs/IDEA.md "
+            "with the agreed brainstorming notes and the marker 'LabOS brainstorming notes', "
+            "then report DONE. Do not start the documentation phase."
+        ),
+        ProjectPhase.DOCUMENTATION: (
+            "You are in the DOCUMENTATION phase. Turn the agreed idea into complete, durable "
+            "project documentation. Finish the required product, requirements, architecture, "
+            "decisions, roadmap, user-flow, and AGENTS documentation. Remove placeholders. "
+            "Do not begin feature implementation. When the documentation set is complete, "
+            "report DONE."
+        ),
+        ProjectPhase.PLANNING: (
+            "You are in the PLANNING phase. Convert the requirements into an executable "
+            "implementation plan with explicit AC-* acceptance criteria, sequencing, scope, "
+            "technical decisions, and validation approach. Finish PLAN.md (or docs/PLAN.md). "
+            "When the plan is complete, report DONE."
+        ),
+        ProjectPhase.DEVELOPMENT: (
+            "You are in the DEVELOPMENT phase. Implement the planned product, not just a "
+            "small incremental change. Work independently and use the available repository "
+            "tools. Run relevant tests, commit and push completed work, and only report DONE "
+            "when the implementation is genuinely complete and its required CI validation "
+            "has passed."
+        ),
+        ProjectPhase.VALIDATION: (
+            "You are in the VALIDATION phase. Validate the implementation against every "
+            "acceptance criterion. Run the relevant checks, record concrete results in "
+            "VALIDATION.md (or docs/VALIDATION.md), and mark each AC as PASS only when it "
+            "is actually verified. When validation is complete, report DONE."
+        ),
+        ProjectPhase.MAINTENANCE: (
+            "You are in the MAINTENANCE phase. Review the finished project and acceptance "
+            "evidence, fix any remaining issues, and leave the repository in a validated "
+            "maintainable state. When the lifecycle is genuinely complete, report DONE."
+        ),
+    }
+    return instructions[phase]
+
+
 def phase_evidence(project_root: Path, phase: ProjectPhase) -> tuple[bool, tuple[str, ...]]:
     """Return whether the repository contains the minimum evidence for entering phase."""
     required = PHASE_EVIDENCE_FILES.get(phase, ())
