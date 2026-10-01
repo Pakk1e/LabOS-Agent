@@ -733,6 +733,7 @@ class ChatGPTPage:
 
     def start_new_project_chat(self,*,project_name:str|None,project_url:str|None,selector:str|None)->None:
         if project_name:
+            deadline=time.monotonic()+10
             # A configured Project URL is the authoritative entry point. The
             # Project URL already exposes the Project-scoped new-chat composer;
             # do not click a sidebar control after navigation because ChatGPT
@@ -757,7 +758,6 @@ class ChatGPTPage:
                         f"visible Project home button not found for: {project_name}"
                     )
                 self._click_project_home(home)
-                deadline=time.monotonic()+10
             while time.monotonic()<deadline:
                 composer=self.project_chat_composer(project_name)
                 if composer is not None:
