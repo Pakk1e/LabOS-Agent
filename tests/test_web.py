@@ -397,7 +397,8 @@ def test_lifecycle_requires_separate_development_transition_and_approval(tmp_pat
     assert project.lifecycle_approved_at
 
 
-def test_existing_repository_mode_requires_local_git_repository(tmp_path):    from labos_agent.web import Handler
+def test_existing_repository_mode_requires_local_git_repository(tmp_path):
+    from labos_agent.web import Handler
 
     config_path = tmp_path / "config.yaml"
     config_path.write_text("projects: {}\n", encoding="utf-8")
@@ -492,11 +493,13 @@ def test_full_guided_lifecycle_end_to_end(tmp_path):
 
     docs = root / "docs"
     for name in ("PRODUCT.md", "REQUIREMENTS.md", "ARCHITECTURE.md", "DECISIONS.md", "ROADMAP.md", "USER_FLOWS.md"):
-        (docs / name).write_text(f"# {name}\n\nApproved project content", encoding="utf-8")    (root / "AGENTS.md").write_text("# Guided\n\nProject rules", encoding="utf-8")
+        (docs / name).write_text(f"# {name}\n\nApproved project content", encoding="utf-8")
+    (root / "AGENTS.md").write_text("# Guided\n\nProject rules", encoding="utf-8")
     handler._update_lifecycle("guided", {"phase": "PLANNING"})
     (root / "PLAN.md").write_text("# Plan\n\n## Acceptance Criteria\n- AC-1 core workflow works", encoding="utf-8")
     handler._update_lifecycle("guided", {"phase": "DEVELOPMENT"})
-    handler._update_lifecycle("guided", {"approved": True})    assert load_config(config_path).projects["guided"].lifecycle_approved
+    handler._update_lifecycle("guided", {"approved": True})
+    assert load_config(config_path).projects["guided"].lifecycle_approved
 
     handler._update_lifecycle("guided", {"phase": "VALIDATION"})
     (root / "VALIDATION.md").write_text(
@@ -595,7 +598,8 @@ def test_create_project_rejects_false_string_as_true_boolean(tmp_path):
     config_path = tmp_path / "config.yaml"
     config_path.write_text("projects: {}\n", encoding="utf-8")
     root = tmp_path / "repo"
-    handler = object.__new__(Handler)    handler.server = type("Server", (), {"config_path": config_path})()
+    handler = object.__new__(Handler)
+    handler.server = type("Server", (), {"config_path": config_path})()
     sent = {}
     handler._send = lambda status, body, content_type="application/json": sent.update(status=status, body=body)
     handler._create_project({
