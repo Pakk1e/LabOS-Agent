@@ -448,7 +448,11 @@ def _lifecycle_gate(project) -> dict:
     target = next_phase(project.lifecycle_phase)
     if target is None:
         return {"target": None, "satisfied": True, "missing": []}
-    satisfied, missing = phase_evidence(project.project_root, target)
+    satisfied, missing = can_advance(
+        project.project_root,
+        project.lifecycle_phase,
+        target,
+    )
     return {"target": target.value, "satisfied": satisfied, "missing": list(missing)}
 def _lifecycle_history(config_path: Path, project: str, limit: int = 100) -> list[dict]:
     path = _lifecycle_history_path(config_path, project)
