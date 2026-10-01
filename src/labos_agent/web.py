@@ -820,6 +820,11 @@ class Handler(BaseHTTPRequestHandler):
 
     @staticmethod
     def _apply_optional(project: dict, body: dict) -> None:
+        if "manual_lifecycle_advance_enabled" in body:
+            project.setdefault("lifecycle", {})["manual_lifecycle_advance_enabled"] = _parse_bool(
+                body["manual_lifecycle_advance_enabled"],
+                "manual_lifecycle_advance_enabled",
+            )
         for key in ("project_name", "project_url", "new_chat_selector", "ci_stage"):
             value = str(body.get(key, "")).strip()
             if key == "project_url" and value and not _URL_RE.fullmatch(value):
@@ -857,11 +862,6 @@ class Handler(BaseHTTPRequestHandler):
             project["project_root"] = root
         if "continuation_message" in body:
             project["continuation_message"] = str(body["continuation_message"]).strip()
-        if "manual_lifecycle_advance_enabled" in body:
-            project.setdefault("lifecycle", {})["manual_lifecycle_advance_enabled"] = _parse_bool(
-                body["manual_lifecycle_advance_enabled"],
-                "manual_lifecycle_advance_enabled",
-            )
         self._apply_optional(project, body)
         _write_config(self.config_path, payload)
         config = load_config(self.config_path)
