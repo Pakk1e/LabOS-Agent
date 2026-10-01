@@ -248,6 +248,74 @@ def test_select_page_prefers_project_context_when_urls_are_not_exact(monkeypatch
     ) is project
 
 
+class _NewChatControl:
+    def __init__(self):
+        self.clicked = 0
+
+    def is_visible(self):
+        return True
+
+    def click(self, timeout=None):
+        assert timeout == 3000
+        self.clicked += 1
+
+    def evaluate(self, script):
+        raise AssertionError("DOM fallback should not be needed")
+
+
+class _NewChatPage:
+    def __init__(self, url="https://chatgpt.com/c/testing"):
+        self.url = url
+        self.control = _NewChatControl()
+
+    def locator(self, selector):
+        if selector == 'button[aria-label="New chat"]':
+            return type("_Locator", (), {
+                "count": lambda _self: 1,
+                "nth": lambda _self, index: self.control,
+            })()
+        if selector in (
+            '[role="button"][aria-label="New chat"]',
+            'a[aria-label="New chat"]',
+            'button[title="New chat"]',
+            '[role="button"][title="New chat"]',
+            'a[title="New chat"]',
+        ):
+            return type("_Locator", (), {
+                "count": lambda _self: 0,
+            })()
+        if selector in (
+            '[contenteditable="true"][role="textbox"]',
+            '#prompt-textarea[contenteditable="true"]',
+            '[contenteditable="true"]',
+            'textarea',
+        ):
+            return type("_ComposerLocator", (), {
+                "first": self.control,
+                "count": lambda _self: 1,
+                "is_visible": lambda _self: True,
+            })()
+        raise AssertionError(f"unexpected selector: {selector}")
+
+    def wait_for_timeout(self, milliseconds):
+        self.url = "https://chatgpt.com/"
+
+
+def test_start_new_chat_activates_global_new_chat_control():
+    page = _NewChatPage()
+    chat = ChatGPTPage(page)
+    chat.start_new_chat()
+    assert page.control.clicked == 1
+    assert page.url == "https://chatgpt.com/"
+
+
+def test_select_page_without_project_prefers_chatgpt_root_over_open_conversation():
+    wrong = _FakeTab("https://chatgpt.com/c/testing")
+    root = _FakeTab("https://chatgpt.com/")
+    context = _FakeContext(wrong, root)
+    assert ChatGPTPage.select_page(context) is root
+
+
 class _BodyLocator:
     def __init__(self, text):
         self.text = text
