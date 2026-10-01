@@ -291,9 +291,10 @@ class _NewChatPage:
             'textarea',
         ):
             return type("_ComposerLocator", (), {
-                "first": self.control,
-                "count": lambda _self: 1,
-                "is_visible": lambda _self: True,
+                "first": type("_First", (), {
+                    "count": lambda _self: 1,
+                    "is_visible": lambda _self: True,
+                })(),
             })()
         raise AssertionError(f"unexpected selector: {selector}")
 
