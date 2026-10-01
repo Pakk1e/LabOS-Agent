@@ -1008,7 +1008,7 @@ def test_project_creation_modes_api(tmp_path, monkeypatch):
     thread.start()
     try:
         conn = HTTPConnection("127.0.0.1", server.server_port)
-        body = '{"name":"spec","repository":"example/spec","project_root":"' + str(tmp_path / "spec") + '","project_mode":"specification","create_repository":false}'
+        body = '{"name":"spec","repository":"example/spec","project_root":"' + str(tmp_path / "spec") + '","project_mode":"specification","project_name":"Demo Project","project_url":"https://chatgpt.com/g/g-p-demo/project","create_repository":false}'
         conn.request("POST", "/api/projects", body=body, headers={"Content-Type":"application/json"})
         response = conn.getresponse()
         assert response.status == 201
@@ -1050,7 +1050,7 @@ def test_project_creation_rejects_existing_repository_without_git(tmp_path):
     thread.start()
     try:
         conn = HTTPConnection("127.0.0.1", server.server_port)
-        body = '{"name":"bad","repository":"example/bad","project_root":"' + str(root) + '","project_mode":"existing_repository","create_repository":false}'
+        body = '{"name":"bad","repository":"example/bad","project_root":"' + str(root) + '","project_mode":"existing_repository","project_name":"Demo Project","project_url":"https://chatgpt.com/g/g-p-demo/project","create_repository":false}'
         conn.request("POST", "/api/projects", body=body, headers={"Content-Type":"application/json"})
         response = conn.getresponse()
         assert response.status == 400
