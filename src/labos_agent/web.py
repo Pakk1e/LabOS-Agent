@@ -749,6 +749,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(400, {"error": "project_url is required when creating a LabOS project"})
         if not project_name:
             return self._send(400, {"error": "project_name is required when creating a LabOS project"})
+        if not _URL_RE.fullmatch(project_url):
+            return self._send(400, {"error": "project_url must be an http(s) URL"})
         visibility = str(body.get("repository_visibility", "private")).strip().lower()
         if project_mode == "existing_repository" and not create_repository:
             target = Path(root).expanduser()
