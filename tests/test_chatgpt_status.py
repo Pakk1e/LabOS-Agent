@@ -307,9 +307,10 @@ class _NewChatPage:
         self.url = "https://chatgpt.com/"
 
 
-def test_resume_conversation_navigates_to_persisted_chat():
+def test_resume_conversation_navigates_to_persisted_chat(monkeypatch):
     page = _NewChatPage(url="https://chatgpt.com/c/old")
     chat = ChatGPTPage(page)
+    monkeypatch.setattr(chat, "assert_ready", lambda: None)
     chat.resume_conversation("https://chatgpt.com/c/persisted")
     assert page.url == "https://chatgpt.com/c/persisted"
 
