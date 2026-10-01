@@ -97,8 +97,8 @@ def test_process_record_is_cleared_when_pid_is_stale(tmp_path):
     assert not record.exists()
 
 
-def test_persist_process_writes_project_identity(tmp_path):    from labos_agent.web import _persist_process, _process_record
-
+def test_persist_process_writes_project_identity(tmp_path):
+    from labos_agent.web import _persist_process, _process_record
     class FakeProcess:
         pid = 12345
 
@@ -198,7 +198,6 @@ def test_initialize_new_repository_commits_and_pushes_bootstrap(tmp_path, monkey
         return type("Result", (), {"stdout": "", "stderr": ""})()
     monkeypatch.setattr("labos_agent.web.subprocess.run", fake_run)
     commit = _initialize_new_repository(str(root), project_name="Demo")
-
     assert commit == "abc123"
     assert [call[3:] for call in calls[:-1]] == [
         ["config", "user.name", "LabOS-Agent"],
@@ -295,9 +294,9 @@ def test_existing_repository_creation_does_not_bootstrap_files(tmp_path):
         "name": "existing",
         "repository": "Pakk1e/existing",
         "project_root": str(root),
-        "project_mode": "existing_repository",        "initial_idea": "Inspect this repository first",
+        "project_mode": "existing_repository",
+        "initial_idea": "Inspect this repository first",
     })
-
     assert sent["status"] == 201
     assert result is None
     assert marker.read_text(encoding="utf-8") == "# Existing repository\\n"
@@ -394,11 +393,11 @@ def test_lifecycle_requires_separate_development_transition_and_approval(tmp_pat
     handler._update_lifecycle("demo", {"approved": True})
     assert sent["status"] == 200
     project = load_config(config_path).projects["demo"]
-    assert project.lifecycle_approved    assert project.lifecycle_approved_at
+    assert project.lifecycle_approved
+    assert project.lifecycle_approved_at
 
 
-def test_existing_repository_mode_requires_local_git_repository(tmp_path):
-    from labos_agent.web import Handler
+def test_existing_repository_mode_requires_local_git_repository(tmp_path):    from labos_agent.web import Handler
 
     config_path = tmp_path / "config.yaml"
     config_path.write_text("projects: {}\n", encoding="utf-8")
@@ -497,8 +496,7 @@ def test_full_guided_lifecycle_end_to_end(tmp_path):
     handler._update_lifecycle("guided", {"phase": "PLANNING"})
     (root / "PLAN.md").write_text("# Plan\n\n## Acceptance Criteria\n- AC-1 core workflow works", encoding="utf-8")
     handler._update_lifecycle("guided", {"phase": "DEVELOPMENT"})
-    handler._update_lifecycle("guided", {"approved": True})
-    assert load_config(config_path).projects["guided"].lifecycle_approved
+    handler._update_lifecycle("guided", {"approved": True})    assert load_config(config_path).projects["guided"].lifecycle_approved
 
     handler._update_lifecycle("guided", {"phase": "VALIDATION"})
     (root / "VALIDATION.md").write_text(
@@ -597,8 +595,7 @@ def test_create_project_rejects_false_string_as_true_boolean(tmp_path):
     config_path = tmp_path / "config.yaml"
     config_path.write_text("projects: {}\n", encoding="utf-8")
     root = tmp_path / "repo"
-    handler = object.__new__(Handler)
-    handler.server = type("Server", (), {"config_path": config_path})()
+    handler = object.__new__(Handler)    handler.server = type("Server", (), {"config_path": config_path})()
     sent = {}
     handler._send = lambda status, body, content_type="application/json": sent.update(status=status, body=body)
     handler._create_project({
