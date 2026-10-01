@@ -307,6 +307,13 @@ class _NewChatPage:
         self.url = "https://chatgpt.com/"
 
 
+def test_resume_conversation_navigates_to_persisted_chat():
+    page = _NewChatPage(url="https://chatgpt.com/c/old")
+    chat = ChatGPTPage(page)
+    chat.resume_conversation("https://chatgpt.com/c/persisted")
+    assert page.url == "https://chatgpt.com/c/persisted"
+
+
 def test_start_new_chat_forces_generic_root_before_using_new_chat_control():
     page = _NewChatPage()
     chat = ChatGPTPage(page)
