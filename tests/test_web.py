@@ -99,7 +99,6 @@ def test_process_record_is_cleared_when_pid_is_stale(tmp_path):
 
 def test_persist_process_writes_project_identity(tmp_path):
     from labos_agent.web import _persist_process, _process_record
-
     class FakeProcess:
         pid = 12345
 
@@ -184,6 +183,61 @@ def test_sse_event_uses_event_stream_format():
     )
 
 
+
+def test_initialize_new_repository_commits_and_pushes_bootstrap(tmp_path, monkeypatch):
+    from labos_agent.web import _initialize_new_repository
+
+    root = tmp_path / "repo"
+    root.mkdir()
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        if command[-2:] == ["rev-parse", "HEAD"]:
+            return type("Result", (), {"stdout": "abc123\n"})()
+        return type("Result", (), {"stdout": "", "stderr": ""})()
+    monkeypatch.setattr("labos_agent.web.subprocess.run", fake_run)
+    commit = _initialize_new_repository(str(root), project_name="Demo")
+    assert commit == "abc123"
+    assert [call[3:] for call in calls[:-1]] == [
+        ["config", "user.name", "LabOS-Agent"],
+        ["config", "user.email", "labos-agent@localhost"],
+        ["add", "docs", "AGENTS.md"],
+        ["commit", "-m", "Initialize Demo with LabOS project structure"],
+        ["branch", "-M", "main"],
+        ["push", "-u", "origin", "main"],
+    ]
+
+
+def test_create_project_publishes_bootstrap_commit(tmp_path, monkeypatch):
+    from labos_agent.web import Handler
+
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("projects: {}\n", encoding="utf-8")
+    root = tmp_path / "repo"
+    handler = object.__new__(Handler)
+    handler.server = type("Server", (), {"config_path": config_path})()
+    sent = {}
+    handler._send = lambda status, body, content_type="application/json": sent.update(status=status, body=body)
+
+    monkeypatch.setattr("labos_agent.web._create_github_repository", lambda repository, visibility: None)
+    monkeypatch.setattr("labos_agent.web._clone_github_repository", lambda repository, root_path: Path(root_path).mkdir(parents=True, exist_ok=True))
+    monkeypatch.setattr("labos_agent.web._initialize_new_repository", lambda root_path, project_name: "abc123")
+
+    handler._create_project({
+        "name": "demo",
+        "repository": "example/demo",
+        "project_root": str(root),
+        "project_mode": "guided",
+        "initial_idea": "Build an engineering workspace",
+        "create_repository": True,
+    })
+
+    assert sent["status"] == 201
+    assert sent["body"]["bootstrap_commit"] == "abc123"
+    assert (root / "docs" / "IDEA.md").exists()
+    assert (root / "AGENTS.md").exists()
+
 def test_create_github_repository_uses_requested_visibility(monkeypatch):
     from labos_agent.web import _create_github_repository
     calls = []
@@ -243,7 +297,6 @@ def test_existing_repository_creation_does_not_bootstrap_files(tmp_path):
         "project_mode": "existing_repository",
         "initial_idea": "Inspect this repository first",
     })
-
     assert sent["status"] == 201
     assert result is None
     assert marker.read_text(encoding="utf-8") == "# Existing repository\\n"
@@ -539,7 +592,6 @@ def test_concurrent_lifecycle_transition_allows_only_one_winner(tmp_path):
     for thread in threads: thread.join()
     assert sorted(results) == [200, 400]
     assert load_config(config_path).projects["demo"].lifecycle_phase.name == "DEVELOPMENT"
-
 
 def test_create_project_rejects_false_string_as_true_boolean(tmp_path):
     from labos_agent.web import Handler
