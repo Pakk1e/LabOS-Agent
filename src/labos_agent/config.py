@@ -10,7 +10,7 @@ from .lifecycle import ProjectPhase, load_lifecycle_state, normalize_phase, norm
 class BrowserConfig:
     cdp_url: str = "http://127.0.0.1:9222"
     profile_dir: Path = Path("./browser-profile")
-    response_timeout_seconds: float = 300.0
+    response_timeout_seconds: float = 1200.0
     quiet_seconds: float = 3.0
 
 @dataclass(frozen=True)
@@ -24,6 +24,9 @@ class ProjectConfig:
     new_chat_selector: str | None = None
     rollover_after_iterations: int = 20
     rollover_after_response_chars: int = 120_000
+    min_fresh_chat_delay_seconds: float = 420.0
+    response_to_next_message_delay_seconds: float = 45.0
+    max_no_progress_iterations: int = 5
     ci_timeout_seconds: float = 1800.0
     ci_stage: str | None = None
     ci_stages: dict[str, tuple[tuple[str, ...], ...]] = field(default_factory=dict)
@@ -67,7 +70,7 @@ def load_config(path: Path) -> AppConfig:
     browser = BrowserConfig(
         cdp_url=br.get("cdp_url","http://127.0.0.1:9222"),
         profile_dir=Path(br.get("profile_dir","./browser-profile")).expanduser(),
-        response_timeout_seconds=float(br.get("response_timeout_seconds",300)),
+        response_timeout_seconds=float(br.get("response_timeout_seconds",1200)),
         quiet_seconds=float(br.get("quiet_seconds",3)),
     )
     projects = {}
@@ -96,6 +99,9 @@ def load_config(path: Path) -> AppConfig:
             new_chat_selector=value.get("new_chat_selector"),
             rollover_after_iterations=int(value.get("rollover_after_iterations",20)),
             rollover_after_response_chars=int(value.get("rollover_after_response_chars",120000)),
+            min_fresh_chat_delay_seconds=float(value.get("min_fresh_chat_delay_seconds",420)),
+            response_to_next_message_delay_seconds=float(value.get("response_to_next_message_delay_seconds",45)),
+            max_no_progress_iterations=int(value.get("max_no_progress_iterations",5)),
             ci_timeout_seconds=float(value.get("ci_timeout_seconds",1800)),
             ci_stage=value.get("ci_stage"), ci_stages=_parse_ci_stages(value.get("ci")),
             state_files=tuple(value.get("state_files",ProjectConfig.state_files)),
