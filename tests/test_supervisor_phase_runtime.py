@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from labos_agent.config import AppConfig, BrowserConfig, ProjectConfig
@@ -5,6 +6,7 @@ from labos_agent.github_observer import GitHubObservation
 from labos_agent.lifecycle import ProjectPhase, phase_instruction
 from labos_agent.response_protocol import parse_labos_response
 from labos_agent.supervisor import ConversationSupervisor
+from labos_agent.supervisor_memory import SupervisorMemory, save_memory
 
 
 def _project(**overrides):
@@ -78,6 +80,84 @@ NEXT_ACTION => CONTINUE_WORK
     supervisor._last_progress_commit = observed.commit_sha
     assert supervisor._is_no_progress(analysis, observed)
     assert supervisor.project.max_no_progress_iterations == 5
+
+
+def test_fresh_chat_cooldown_survives_supervisor_restart(tmp_path, monkeypatch):
+    project = _project(min_fresh_chat_delay_seconds=420)
+    config = AppConfig(
+        browser=BrowserConfig(response_timeout_seconds=1200),
+        projects={"test": project},
+        state_root=tmp_path / "state",
+    )
+    memory_file = tmp_path / "state" / "test" / "supervisor_state.json"
+    started_at = datetime.now(timezone.utc) - timedelta(seconds=30)
+    save_memory(
+        memory_file,
+        SupervisorMemory(project="test", last_fresh_chat_at=started_at.isoformat()),
+    )
+
+    supervisor = ConversationSupervisor(config, "test")
+    memory = SupervisorMemory(project="test", last_fresh_chat_at=started_at.isoformat())
+    supervisor._load_persisted_fresh_chat_time(memory)
+
+    sleeps = []
+    monkeypatch.setattr("labos_agent.supervisor.time.sleep", sleeps.append)
+    supervisor._wait_before_fresh_chat()
+
+    assert sleeps
+    assert 380 <= sleeps[0] <= 400
+
+
+def test_fresh_chat_start_persists_timestamp(tmp_path, monkeypatch):
+    project = _project(min_fresh_chat_delay_seconds=0)
+    config = AppConfig(
+        browser=BrowserConfig(response_timeout_seconds=1200),
+        projects={"test": project},
+        state_root=tmp_path / "state",
+    )
+    supervisor = ConversationSupervisor(config, "test")
+    memory = SupervisorMemory(project="test")
+    memory_file = tmp_path / "state" / "test" / "supervisor_state.json"
+
+    supervisor._mark_fresh_chat_started(memory, memory_file)
+
+    persisted = SupervisorMemory(**__import__("json").loads(memory_file.read_text(encoding="utf-8")))
+    assert persisted.last_fresh_chat_at is not None
+
+
+def test_no_progress_stops_on_exact_configured_iteration(tmp_path):
+    supervisor = _supervisor(_project(max_no_progress_iterations=5))
+    response = """<LABOS_STATE>
+STATE => CONTINUE
+TASK_STATUS => IN_PROGRESS
+CURRENT_COMMIT => UNKNOWN
+COMMIT_STATUS => NONE
+REPOSITORY_CHANGED => NO
+LOCAL_TESTS => NOT_RUN
+CI_RUN => NONE
+CI_RUN_ID => NONE
+CI_WORKFLOW => NONE
+CI_STATUS => NONE
+NEXT_ACTION => CONTINUE_WORK
+</LABOS_STATE>
+(STATE CONTINUE STATE)"""
+    analysis = parse_labos_response(response)
+    observed = GitHubObservation(
+        branch="main",
+        commit_sha="abc123",
+        ci_run_id=None,
+        ci_status=None,
+        ci_conclusion=None,
+        ci_sha=None,
+        ci_name=None,
+        ci_created_at=None,
+        ci_url=None,
+    )
+    assert supervisor._record_no_progress(analysis, observed) is False
+    for _ in range(3):
+        assert supervisor._record_no_progress(analysis, observed) is False
+    assert supervisor._record_no_progress(analysis, observed) is True
+    assert supervisor._no_progress_iterations == 5
 
 
 def test_runtime_defaults_match_operator_constraints():
