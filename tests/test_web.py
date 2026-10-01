@@ -1016,7 +1016,7 @@ def test_project_creation_modes_api(tmp_path, monkeypatch):
         assert data["lifecycle_phase"] == "DOCUMENTATION"
 
         conn = HTTPConnection("127.0.0.1", server.server_port)
-        body = '{"name":"existing","repository":"example/existing","project_root":"' + str(existing) + '","project_mode":"existing_repository","create_repository":false}'
+        body = '{"name":"existing","repository":"example/existing","project_root":"' + str(existing) + '","project_mode":"existing_repository","project_name":"Demo Project","project_url":"https://chatgpt.com/g/g-p-demo/project","create_repository":false}'
         conn.request("POST", "/api/projects", body=body, headers={"Content-Type":"application/json"})
         response = conn.getresponse()
         assert response.status == 201
