@@ -13,6 +13,7 @@ from labos_agent.lifecycle import (
     normalize_project_mode,
     phase_instruction,
     save_lifecycle_state,
+    can_advance,
 )
 
 
@@ -46,6 +47,9 @@ def test_phase_normalization_and_invalid_value():
 
 
 def test_phase_instructions_are_specific():
+    assert "IDEA phase" in phase_instruction(ProjectPhase.IDEA)
+    assert "LabOS initial idea" in phase_instruction(ProjectPhase.IDEA)
+    assert "Do not begin brainstorming" in phase_instruction(ProjectPhase.IDEA)
     assert "BRAINSTORMING phase" in phase_instruction(ProjectPhase.BRAINSTORM)
     assert "docs/IDEA.md" in phase_instruction(ProjectPhase.BRAINSTORM)
     assert "report DONE" in phase_instruction(ProjectPhase.BRAINSTORM)
@@ -263,6 +267,26 @@ def test_validation_gate_requires_validation_report(tmp_path):
         encoding="utf-8",
     )
     ok, missing = can_advance(root, ProjectPhase.VALIDATION, ProjectPhase.MAINTENANCE)
+    assert ok
+    assert not missing
+
+
+def test_idea_gate_requires_recorded_initial_idea(tmp_path):
+    from labos_agent.lifecycle import can_advance
+    root = tmp_path / "repo"
+    (root / "docs").mkdir(parents=True)
+    idea = root / "docs" / "IDEA.md"
+    idea.write_text("# Project Idea\n\nInitial idea", encoding="utf-8")
+
+    ok, missing = can_advance(root, ProjectPhase.IDEA, ProjectPhase.BRAINSTORM)
+    assert not ok
+    assert any("LabOS initial idea" in item for item in missing)
+
+    idea.write_text(
+        "# Project Idea\n\nInitial idea\n\n## LabOS initial idea\n\nGoals and scope",
+        encoding="utf-8",
+    )
+    ok, missing = can_advance(root, ProjectPhase.IDEA, ProjectPhase.BRAINSTORM)
     assert ok
     assert not missing
 
