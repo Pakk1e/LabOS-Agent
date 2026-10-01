@@ -355,8 +355,9 @@ class ConversationSupervisor:
                 time.sleep(remaining)
         self._last_fresh_chat_monotonic = time.monotonic()
 
-    def _send_next_message(self, chat: ChatGPTPage, message: str) -> str:
-        self._wait_before_next_message()
+    def _send_next_message(self, chat: ChatGPTPage, message: str, *, delay: bool = True) -> str:
+        if delay:
+            self._wait_before_next_message()
         if self.project.project_name:
             return chat.send_project_message_and_wait_for_response(
                 self.project.project_name,
@@ -510,6 +511,7 @@ Start now. Complete the current phase rather than merely describing what should 
                 f"Automatically advanced from {previous_phase.value} to {target_phase.value}. "
                 "Start the new phase now and finish it effectively."
             ),
+            delay=False,
         )
 
     def _stop_if_turn_limit(self, tracker: RunTracker, response: str) -> str | None:
@@ -568,7 +570,7 @@ Start now. Complete the current phase rather than merely describing what should 
 
             recovery_context = self._recovery_context(memory, observation)
             bootstrap_prompt = self._bootstrap_prompt(recovery_context)
-            response = self._send_next_message(chat, bootstrap_prompt)
+            response = self._send_next_message(chat, bootstrap_prompt, delay=False)
 
             tracker.start_iteration(run_started_at)
             while True:
