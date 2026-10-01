@@ -360,9 +360,15 @@ class ConversationSupervisor:
         if self.project.project_name:
             return chat.send_project_message_and_wait_for_response(
                 self.project.project_name,
-                message)
+                message,
+                timeout_seconds=self.config.browser.response_timeout_seconds,
+                quiet_seconds=self.config.browser.quiet_seconds,
+            )
         return chat.send_and_wait_for_response(
-            message)
+            message,
+            timeout_seconds=self.config.browser.response_timeout_seconds,
+            quiet_seconds=self.config.browser.quiet_seconds,
+        )
 
     def _is_no_progress(self, analysis: LabOSResponse, observed: GitHubObservation | None) -> bool:
         return (
@@ -435,17 +441,24 @@ REPOSITORY SAFETY:
   task explicitly requires it.
 - Preserve intentional existing changes.
 
-IMPLEMENTATION AND CI WORKFLOW:
-1. Inspect the current state and continue the requested task.
-2. Make the actual implementation changes.
-3. Run the relevant local tests/checks when available.
-4. When a meaningful change is ready for validation, commit it and push it to
-   {repository} so GitHub Actions can validate the pushed commit.
-5. Do not claim that a file was changed, a commit was created, a push happened,
-   or CI passed unless you actually performed/observed that action.
-6. When CI fails, inspect the real failure, fix it, commit/push the fix, and
-   wait for CI again.
-7. When the requested work is genuinely complete and validated, use DONE.
+WORKING STYLE:
+- Work independently and aim to finish the current phase effectively in this turn.
+- You may make substantial coordinated changes; do not artificially limit the work.
+- Spend the available time completing the phase rather than stopping after a small suggestion.
+- If repository access is unavailable, report that accurately; do not claim progress.
+
+REPOSITORY AND CI WORKFLOW:
+1. Inspect the current repository state.
+2. Perform the actual work required by the current phase.
+3. Run relevant local tests/checks when appropriate.
+4. Commit and push completed work when it is ready for GitHub Actions.
+5. Do not claim file changes, commits, pushes, or CI results you did not actually observe.
+6. Fix real CI failures and validate the fix.
+7. When the phase work is genuinely complete and the required evidence is present,
+   report DONE. LabOS will independently verify the completion.
+
+PROJECT IDEA AND NOTES:
+{self._phase_material()}
 
 CURRENT TASK:
 {task}
@@ -455,7 +468,7 @@ LIFECYCLE:
 
 {recovery_context}
 
-Start now by inspecting the current repository state and continue the task.
+Start now. Complete the current phase rather than merely describing what should be done.
 {STATE_BLOCK_INSTRUCTION}
 """
 
