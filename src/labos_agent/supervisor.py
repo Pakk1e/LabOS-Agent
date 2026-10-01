@@ -714,6 +714,10 @@ Start now. Complete the current phase rather than merely describing what should 
                                 tracker=tracker,
                                 iteration=iteration.number,
                             )
+                            # The transition starts a fresh chat and updates persistent
+                            # supervisor memory. Reload it so the next observation cannot
+                            # overwrite the persisted fresh-chat timestamp with stale data.
+                            memory = load_memory(memory_file, self.project_name)
                             stopped = self._stop_if_turn_limit(tracker, response)
                             if stopped is not None:
                                 return stopped
