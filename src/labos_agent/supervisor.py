@@ -612,6 +612,10 @@ Start now. Complete the current phase rather than merely describing what should 
             except Exception as exc:
                 raise SupervisorError(f"cannot observe GitHub repository state: {exc}") from exc
 
+            # Establish the repository baseline before the first agent response so
+            # the first unchanged CONTINUE response counts toward no-progress.
+            self._last_progress_commit = observation.commit_sha
+
             recovery_context = self._recovery_context(memory, observation)
             bootstrap_prompt = self._bootstrap_prompt(recovery_context)
             response = self._send_next_message(chat, bootstrap_prompt, delay=False)
