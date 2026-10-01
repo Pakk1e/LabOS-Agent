@@ -40,6 +40,7 @@ class ProjectConfig:
     lifecycle_approved: bool = False
     lifecycle_approved_at: str | None = None
     project_mode: str = "guided"
+    manual_lifecycle_advance_enabled: bool = True
     initial_idea: str = ""
     brainstorm_notes: str = ""
 
@@ -63,6 +64,11 @@ def _parse_ci_stages(raw: object) -> dict[str, tuple[tuple[str, ...], ...]]:
             parsed.append(tuple(command))
         stages[stage] = tuple(parsed)
     return stages
+
+def _raise_invalid_manual_advance(project: str) -> bool:
+    raise ValueError(
+        f"lifecycle.manual_lifecycle_advance_enabled for project {project} must be a boolean"
+    )
 
 def load_config(path: Path) -> AppConfig:
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
@@ -114,6 +120,11 @@ def load_config(path: Path) -> AppConfig:
             lifecycle_approved=lifecycle_state.approved,
             lifecycle_approved_at=lifecycle_state.approved_at,
             project_mode=normalize_project_mode(lifecycle.get("mode", "guided")),
+            manual_lifecycle_advance_enabled=(
+                lifecycle.get("manual_lifecycle_advance_enabled", True)
+                if isinstance(lifecycle.get("manual_lifecycle_advance_enabled", True), bool)
+                else (_raise_invalid_manual_advance(key))
+            ),
             initial_idea=str(value.get("initial_idea", "")),
             brainstorm_notes=str(value.get("brainstorm_notes", "")),
         )

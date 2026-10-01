@@ -487,7 +487,7 @@ def _documentation_inventory(root: str) -> list[dict]:
     target = Path(root).expanduser()
     docs = [
         "IDEA.md", "PRODUCT.md", "REQUIREMENTS.md", "ARCHITECTURE.md",
-        "DECISIONS.md", "ROADMAP.md", "USER_FLOWS.md", "PLAN.md",
+        "DECISIONS.md", "ROADMAP.md", "USER_FLOWS.md",
     ]
     result = []
     for name in docs:
@@ -503,6 +503,25 @@ def _documentation_inventory(root: str) -> list[dict]:
             "_To be completed", "_To be created", "TODO", "TBD",
         ))
         result.append({"name": name, "path": str(path), "exists": exists, "placeholder": placeholder, "bytes": len(content.encode("utf-8"))})
+    plan_paths = ("PLAN.md", "docs/PLAN.md")
+    plan_path = next((target / relative for relative in plan_paths if (target / relative).is_file()), target / "PLAN.md")
+    plan_exists = plan_path.is_file()
+    plan_content = ""
+    if plan_exists:
+        try:
+            plan_content = plan_path.read_text(encoding="utf-8")
+        except OSError:
+            plan_content = ""
+    plan_placeholder = any(token in plan_content for token in (
+        "_To be completed", "_To be created", "TODO", "TBD",
+    ))
+    result.append({
+        "name": "PLAN.md",
+        "path": str(plan_path),
+        "exists": plan_exists,
+        "placeholder": plan_placeholder,
+        "bytes": len(plan_content.encode("utf-8")),
+    })
     agents = target / "AGENTS.md"
     result.append({"name": "AGENTS.md", "path": str(agents), "exists": agents.exists(), "placeholder": False, "bytes": agents.stat().st_size if agents.exists() else 0})
     return result
@@ -541,6 +560,7 @@ def _project_view(config_path: Path, name: str, project) -> dict:
         "initial_idea": project.initial_idea,
         "brainstorm_notes": project.brainstorm_notes,
         "project_mode": project.project_mode,
+        "manual_lifecycle_advance_enabled": project.manual_lifecycle_advance_enabled,
         "lifecycle_phase": project.lifecycle_phase.value,
         "lifecycle_approved": project.lifecycle_approved,
         "lifecycle_approved_at": project.lifecycle_approved_at,
@@ -819,6 +839,11 @@ class Handler(BaseHTTPRequestHandler):
 
     @staticmethod
     def _apply_optional(project: dict, body: dict) -> None:
+        if "manual_lifecycle_advance_enabled" in body:
+            project.setdefault("lifecycle", {})["manual_lifecycle_advance_enabled"] = _parse_bool(
+                body["manual_lifecycle_advance_enabled"],
+                "manual_lifecycle_advance_enabled",
+            )
         for key in ("project_name", "project_url", "new_chat_selector", "ci_stage"):
             value = str(body.get(key, "")).strip()
             if key == "project_url" and value and not _URL_RE.fullmatch(value):
@@ -919,6 +944,15 @@ class Handler(BaseHTTPRequestHandler):
             approved=project_config.lifecycle_approved,
             approved_at=project_config.lifecycle_approved_at,
         )
+        if target != current and not project_config.manual_lifecycle_advance_enabled:
+            return self._send(
+                409,
+                {
+                    "error": "manual lifecycle advancement is disabled in project settings",
+                    "phase": current.value,
+                    "target": target.value,
+                },
+            )
         if target != current:
             allowed, missing = can_advance(project_config.project_root, current, target)
             if not allowed:
