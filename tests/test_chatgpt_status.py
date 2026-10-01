@@ -211,6 +211,44 @@ def test_project_home_button_finds_generic_new_chat_next_to_project_name():
     assert button is page.control
 
 
+class _ProjectUrlFreshPage:
+    def __init__(self):
+        self.url = "https://chatgpt.com/c/testing"
+        self.navigations = []
+        self.context_checks = 0
+
+    def goto(self, url, wait_until=None, timeout=None):
+        self.navigations.append((url, wait_until, timeout))
+        self.url = url
+
+    def wait_for_timeout(self, milliseconds):
+        pass
+
+
+def test_project_url_fresh_chat_does_not_click_sidebar_control(monkeypatch):
+    page = _ProjectUrlFreshPage()
+    chat = ChatGPTPage(page)
+    monkeypatch.setattr(chat, "project_context_present", lambda name: True)
+    monkeypatch.setattr(chat, "project_chat_composer", lambda name: object())
+    monkeypatch.setattr(
+        chat,
+        "_project_home_button",
+        lambda name: (_ for _ in ()).throw(
+            AssertionError("sidebar Project control must not be used when project_url is configured")
+        ),
+    )
+
+    chat.start_new_project_chat(
+        project_name="LabOS-Bootstrap-Test",
+        project_url="https://chatgpt.com/g/g-p-bootstrap/project",
+        selector=None,
+    )
+
+    assert page.navigations == [
+        ("https://chatgpt.com/g/g-p-bootstrap/project", "domcontentloaded", 60000)
+    ]
+
+
 def test_select_page_prefers_exact_project_url():
     wrong = _FakeTab("https://chatgpt.com/c/wrong")
     project = _FakeTab("https://chatgpt.com/g/g-p-weather/project")

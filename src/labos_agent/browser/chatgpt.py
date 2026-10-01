@@ -733,34 +733,40 @@ class ChatGPTPage:
 
     def start_new_project_chat(self,*,project_name:str|None,project_url:str|None,selector:str|None)->None:
         if project_name:
-            # A fresh supervisor run may be attached to an unrelated ChatGPT
-            # conversation. If a Project URL is configured, enter that Project
-            # first; only then use the Project-scoped New chat control.
             if project_url:
                 normalized_project_url=project_url.rstrip("/")
                 if self.page.url.rstrip("/") != normalized_project_url:
                     self.page.goto(project_url,wait_until="domcontentloaded",timeout=60000)
                     self.page.wait_for_timeout(1000)
-            home=self._project_home_button(project_name)
-            if home is None:
-                raise RuntimeError(
-                    f"visible Project home button not found for: {project_name}"
-                )
-            self._click_project_home(home)
-            deadline=time.monotonic()+10
-            while time.monotonic()<deadline:
-                composer=self.project_chat_composer(project_name)
-                if composer is not None:
-                    try:
-                        if composer.is_visible():
-                            break
-                    except Exception:
-                        pass
-                self.page.wait_for_timeout(250)
+                if not self.project_context_present(project_name):
+                    raise RuntimeError(
+                        f"required ChatGPT Project context not detected: {project_name}"
+                    )
+                if self.project_chat_composer(project_name) is None:
+                    raise RuntimeError(
+                        f"Project composer does not identify a new chat for: {project_name}"
+                    )
             else:
-                raise RuntimeError(
-                    f"Project composer did not become editable for: {project_name}"
-                )
+                home=self._project_home_button(project_name)
+                if home is None:
+                    raise RuntimeError(
+                        f"visible Project home button not found for: {project_name}"
+                    )
+                self._click_project_home(home)
+                deadline=time.monotonic()+10
+                while time.monotonic()<deadline:
+                    composer=self.project_chat_composer(project_name)
+                    if composer is not None:
+                        try:
+                            if composer.is_visible():
+                                break
+                        except Exception:
+                            pass
+                    self.page.wait_for_timeout(250)
+                else:
+                    raise RuntimeError(
+                        f"Project composer did not become editable for: {project_name}"
+                    )
         elif project_url:
             self.page.goto(project_url,wait_until="domcontentloaded",timeout=60000)
         elif selector:
@@ -778,6 +784,4 @@ class ChatGPTPage:
             if self.project_chat_composer(project_name) is None:
                 raise RuntimeError(f"Project composer does not identify a new chat for: {project_name}")
         else:
-            self.assert_ready()
-        if not project_name:
             self.assert_ready()
