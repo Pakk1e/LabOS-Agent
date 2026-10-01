@@ -321,6 +321,7 @@ class ConversationSupervisor:
         self.turns = 0
         self.current_phase = project.lifecycle_phase
         self._last_fresh_chat_monotonic: float | None = None
+        self._last_fresh_chat_at: datetime | None = None
         self._last_progress_commit: str | None = None
         self._no_progress_iterations = 0
 
@@ -345,15 +346,39 @@ class ConversationSupervisor:
             trace("chat.delay", project=self.project_name, kind="response_to_next_message", seconds=delay)
             time.sleep(delay)
 
+    def _load_persisted_fresh_chat_time(self, memory: SupervisorMemory) -> None:
+        value = memory.last_fresh_chat_at
+        if not value:
+            self._last_fresh_chat_at = None
+            return
+        try:
+            parsed = datetime.fromisoformat(value)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            self._last_fresh_chat_at = parsed.astimezone(timezone.utc)
+        except ValueError:
+            trace("chat.delay.invalid_timestamp", project=self.project_name, value=value)
+            self._last_fresh_chat_at = None
+
     def _wait_before_fresh_chat(self) -> None:
         delay = max(0.0, self.project.min_fresh_chat_delay_seconds)
-        last = self._last_fresh_chat_monotonic
-        if last is not None and delay > 0:
-            remaining = delay - (time.monotonic() - last)
+        now = datetime.now(timezone.utc)
+        last_at = self._last_fresh_chat_at
+        if last_at is not None and delay > 0:
+            elapsed = max(0.0, (now - last_at).total_seconds())
+            remaining = delay - elapsed
             if remaining > 0:
                 trace("chat.delay", project=self.project_name, kind="fresh_chat_minimum", seconds=remaining)
                 time.sleep(remaining)
         self._last_fresh_chat_monotonic = time.monotonic()
+
+    def _mark_fresh_chat_started(self, memory: SupervisorMemory, memory_file: Path) -> None:
+        now = datetime.now(timezone.utc)
+        self._last_fresh_chat_at = now
+        self._last_fresh_chat_monotonic = time.monotonic()
+        memory.last_fresh_chat_at = now.isoformat()
+        memory.updated_at = now.isoformat()
+        save_memory(memory_file, memory)
 
     def _send_next_message(self, chat: ChatGPTPage, message: str, *, delay: bool = True) -> str:
         if delay:
@@ -502,6 +527,9 @@ Start now. Complete the current phase rather than merely describing what should 
                 to_phase=target_phase.value,
             )
         self._wait_before_fresh_chat()
+        memory_file = memory_path(self.config.state_root, self.project_name)
+        memory = load_memory(memory_file, self.project_name)
+        self._mark_fresh_chat_started(memory, memory_file)
         _start_fresh_chat(chat, self.project)
         if not self.project.project_name:
             raise SupervisorError("autonomous lifecycle transitions require a configured ChatGPT Project")
@@ -548,11 +576,16 @@ Start now. Complete the current phase rather than merely describing what should 
                 raise SupervisorError("ChatGPT verification challenge is active")
             if not status.is_chatgpt:
                 raise SupervisorError("attached page is not ChatGPT")
+            memory_file = memory_path(self.config.state_root, self.project_name)
+            memory = load_memory(memory_file, self.project_name)
+            self._load_persisted_fresh_chat_time(memory)
             # _start_fresh_chat may need to navigate from an unrelated
             # ChatGPT conversation into the configured Project before creating
-            # the fresh conversation.
+            # the fresh conversation. Persist the start time before creating it
+            # so a process crash cannot bypass the minimum fresh-chat interval.
+            self._wait_before_fresh_chat()
+            self._mark_fresh_chat_started(memory, memory_file)
             _start_fresh_chat(chat, self.project)
-            self._last_fresh_chat_monotonic = time.monotonic()
 
             try:
                 ci_baseline = set(run.id for run in _github_get(self.project.repository))
@@ -561,8 +594,6 @@ Start now. Complete the current phase rather than merely describing what should 
                     "cannot access GitHub Actions for the configured repository; "
                     "set GITHUB_TOKEN/GH_TOKEN or authenticate GitHub CLI with 'gh auth login'"
                 ) from exc
-            memory_file = memory_path(self.config.state_root, self.project_name)
-            memory = load_memory(memory_file, self.project_name)
             try:
                 observation = observe_github(self.project.repository)
             except Exception as exc:
