@@ -312,7 +312,7 @@ def test_resume_conversation_navigates_to_persisted_chat(monkeypatch):
     chat = ChatGPTPage(page)
     monkeypatch.setattr(chat, "assert_ready", lambda: None)
     chat.resume_conversation("https://chatgpt.com/c/persisted")
-    assert page.url == "https://chatgpt.com/c/persisted"
+    assert page.navigations == [("https://chatgpt.com/c/persisted", "domcontentloaded", 60000)]
 
 
 def test_start_new_chat_forces_generic_root_before_using_new_chat_control():
