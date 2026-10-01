@@ -758,7 +758,7 @@ class ChatGPTPage:
                         f"visible Project home button not found for: {project_name}"
                     )
                 self._click_project_home(home)
-            while time.monotonic()<deadline:
+                while time.monotonic()<deadline:
                 composer=self.project_chat_composer(project_name)
                 if composer is not None:
                     try:
