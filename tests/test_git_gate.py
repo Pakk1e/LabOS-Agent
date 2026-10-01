@@ -440,7 +440,7 @@ def test_sync_repository_replaces_legacy_non_git_workspace(tmp_path: Path, monke
     def fake_run(command, **kwargs):
         if command[:4] == ["gh", "repo", "clone", "example/testing"]:
             target = Path(command[4])
-            return real_run(["git", "clone", str(remote), str(target)], **kwargs)
+            return real_run(["git", "clone", "--branch", "main", str(remote), str(target)], **kwargs)
         return real_run(command, **kwargs)
 
     monkeypatch.setattr(git_gate.subprocess, "run", fake_run)
@@ -468,7 +468,7 @@ def test_sync_repository_uses_git_safety_gate_for_existing_checkout(tmp_path: Pa
     _git(root, "branch", "-M", "main")
     _git(root, "remote", "add", "origin", str(remote))
     _git(root, "push", "-u", "origin", "main")
-    subprocess.run(["git", "clone", str(remote), str(peer)], check=True, capture_output=True)
+    subprocess.run(["git", "clone", "--branch", "main", str(remote), str(peer)], check=True, capture_output=True)
     _git(peer, "config", "user.name", "LabOS Peer")
     _git(peer, "config", "user.email", "peer@example.invalid")
     (peer / "remote.txt").write_text("remote\n", encoding="utf-8")
