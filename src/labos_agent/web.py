@@ -541,6 +541,7 @@ def _project_view(config_path: Path, name: str, project) -> dict:
         "initial_idea": project.initial_idea,
         "brainstorm_notes": project.brainstorm_notes,
         "project_mode": project.project_mode,
+        "manual_lifecycle_advance_enabled": project.manual_lifecycle_advance_enabled,
         "lifecycle_phase": project.lifecycle_phase.value,
         "lifecycle_approved": project.lifecycle_approved,
         "lifecycle_approved_at": project.lifecycle_approved_at,
@@ -856,6 +857,11 @@ class Handler(BaseHTTPRequestHandler):
             project["project_root"] = root
         if "continuation_message" in body:
             project["continuation_message"] = str(body["continuation_message"]).strip()
+        if "manual_lifecycle_advance_enabled" in body:
+            project.setdefault("lifecycle", {})["manual_lifecycle_advance_enabled"] = _parse_bool(
+                body["manual_lifecycle_advance_enabled"],
+                "manual_lifecycle_advance_enabled",
+            )
         self._apply_optional(project, body)
         _write_config(self.config_path, payload)
         config = load_config(self.config_path)
@@ -919,6 +925,15 @@ class Handler(BaseHTTPRequestHandler):
             approved=project_config.lifecycle_approved,
             approved_at=project_config.lifecycle_approved_at,
         )
+        if target != current and not project_config.manual_lifecycle_advance_enabled:
+            return self._send(
+                409,
+                {
+                    "error": "manual lifecycle advancement is disabled in project settings",
+                    "phase": current.value,
+                    "target": target.value,
+                },
+            )
         if target != current:
             allowed, missing = can_advance(project_config.project_root, current, target)
             if not allowed:
