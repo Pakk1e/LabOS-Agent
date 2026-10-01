@@ -126,6 +126,23 @@ def _bootstrap_project_documents(root: str, name: str, idea: str) -> None:
         agents.write_text("# " + name + "\n\nThis repository is managed through LabOS. Follow the project lifecycle. During brainstorming and documentation, do not implement product features. Keep requirements, architecture, decisions, and roadmap synchronized with the agreed project.\n", encoding="utf-8")
 
 
+def _initialize_new_repository(root: str, *, project_name: str) -> str:
+    """Commit the LabOS bootstrap files and publish the initial main branch."""
+    target = Path(root).expanduser()
+    commands = [
+        ["git", "-C", str(target), "config", "user.name", "LabOS-Agent"],
+        ["git", "-C", str(target), "config", "user.email", "labos-agent@localhost"],
+        ["git", "-C", str(target), "add", "docs", "AGENTS.md"],
+        ["git", "-C", str(target), "commit", "-m", f"Initialize {project_name} with LabOS project structure"],
+        ["git", "-C", str(target), "branch", "-M", "main"],
+        ["git", "-C", str(target), "push", "-u", "origin", "main"],
+    ]
+    for command in commands:
+        subprocess.run(command, cwd=Path.cwd(), check=True, capture_output=True, text=True, timeout=30)
+    result = subprocess.run(["git", "-C", str(target), "rev-parse", "HEAD"], cwd=Path.cwd(), check=True, capture_output=True, text=True, timeout=10)
+    return result.stdout.strip()
+
+
 def _clone_github_repository(repository: str, root: str) -> None:
     target = Path(root).expanduser()
     if target.exists():
@@ -752,10 +769,17 @@ class Handler(BaseHTTPRequestHandler):
             except subprocess.CalledProcessError as exc:
                 detail = (exc.stderr or exc.stdout or "").strip()
                 return self._send(502, {"error": detail or "GitHub repository creation or clone failed"})
+        bootstrap_commit = None
         if project_mode == "existing_repository":
             _assess_existing_repository(self.config_path, name, Path(root).expanduser())
         else:
             _bootstrap_project_documents(root, name, str(body.get("initial_idea", "")))
+            if create_repository:
+                try:
+                    bootstrap_commit = _initialize_new_repository(root, project_name=name)
+                except subprocess.CalledProcessError as exc:
+                    detail = (exc.stderr or exc.stdout or "").strip()
+                    return self._send(502, {"error": detail or "initial repository bootstrap commit failed"})
         initial_phase = (
             ProjectPhase.BRAINSTORM
             if project_mode == "guided"
@@ -776,7 +800,10 @@ class Handler(BaseHTTPRequestHandler):
             LifecycleState(phase=initial_phase),
         )
         config = load_config(self.config_path)
-        return self._send(201, _project_view(self.config_path, name, config.projects[name]))
+        view = _project_view(self.config_path, name, config.projects[name])
+        if bootstrap_commit:
+            view["bootstrap_commit"] = bootstrap_commit
+        return self._send(201, view)
 
     @staticmethod
     def _apply_optional(project: dict, body: dict) -> None:
