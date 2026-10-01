@@ -229,6 +229,8 @@ def test_create_project_publishes_bootstrap_commit(tmp_path, monkeypatch):
         "repository": "example/demo",
         "project_root": str(root),
         "project_mode": "guided",
+        "project_name": "Demo Project",
+        "project_url": "https://chatgpt.com/g/g-p-demo/project",
         "initial_idea": "Build an engineering workspace",
         "project_name": "Demo Project",
         "project_url": "https://chatgpt.com/g/g-p-demo/project",
@@ -320,6 +322,8 @@ def test_existing_repository_creation_does_not_bootstrap_files(tmp_path):
         "repository": "Pakk1e/existing",
         "project_root": str(root),
         "project_mode": "existing_repository",
+        "project_name": "Demo Project",
+        "project_url": "https://chatgpt.com/g/g-p-demo/project",
         "initial_idea": "Inspect this repository first",
     })
     assert sent["status"] == 201
@@ -353,6 +357,8 @@ def test_existing_repository_mode_rejects_repository_creation(tmp_path):
         "repository": "Pakk1e/existing",
         "project_root": str(root),
         "project_mode": "existing_repository",
+        "project_name": "Demo Project",
+        "project_url": "https://chatgpt.com/g/g-p-demo/project",
         "create_repository": True,
     })
 
@@ -442,6 +448,8 @@ def test_existing_repository_mode_requires_local_git_repository(tmp_path):
         "repository": "Pakk1e/existing",
         "project_root": str(root),
         "project_mode": "existing_repository",
+        "project_name": "Demo Project",
+        "project_url": "https://chatgpt.com/g/g-p-demo/project",
     })
 
     assert sent["status"] == 400
@@ -507,6 +515,8 @@ def test_full_guided_lifecycle_end_to_end(tmp_path):
         "repository": "example/guided",
         "project_root": str(root),
         "project_mode": "guided",
+        "project_name": "Demo Project",
+        "project_url": "https://chatgpt.com/g/g-p-demo/project",
         "initial_idea": "Build an engineering workspace",
     })
     assert sent["status"] == 201
@@ -554,6 +564,8 @@ def test_existing_repository_persists_git_assessment(tmp_path):
         "repository": "example/existing",
         "project_root": str(root),
         "project_mode": "existing_repository",
+        "project_name": "Demo Project",
+        "project_url": "https://chatgpt.com/g/g-p-demo/project",
     })
     assessment = __import__("json").loads(
         (tmp_path / "state" / "existing" / "repository_assessment.json").read_text(encoding="utf-8")
@@ -632,6 +644,8 @@ def test_create_project_rejects_false_string_as_true_boolean(tmp_path):
         "repository": "example/demo",
         "project_root": str(root),
         "project_mode": "guided",
+        "project_name": "Demo Project",
+        "project_url": "https://chatgpt.com/g/g-p-demo/project",
         "initial_idea": "Idea",
         "create_repository": "false",
     })
@@ -652,6 +666,8 @@ def test_create_project_rejects_malformed_boolean(tmp_path):
         "repository": "example/demo",
         "project_root": str(tmp_path / "repo"),
         "project_mode": "guided",
+        "project_name": "Demo Project",
+        "project_url": "https://chatgpt.com/g/g-p-demo/project",
         "initial_idea": "Idea",
         "create_repository": "yes",
     })
@@ -699,6 +715,8 @@ def test_new_project_bootstrap_matches_lifecycle_documentation_gate(tmp_path):
         "repository": "example/demo",
         "project_root": str(root),
         "project_mode": "guided",
+        "project_name": "Demo Project",
+        "project_url": "https://chatgpt.com/g/g-p-demo/project",
         "initial_idea": "Initial idea",
     })
     expected = {"IDEA.md", "PRODUCT.md", "REQUIREMENTS.md", "ARCHITECTURE.md", "DECISIONS.md", "ROADMAP.md", "USER_FLOWS.md"}
