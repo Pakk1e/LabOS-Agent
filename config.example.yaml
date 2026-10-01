@@ -3,7 +3,7 @@
 browser:
   cdp_url: "http://127.0.0.1:9222"
   profile_dir: "/path/to/LabOS-Agent/browser-profile"
-  response_timeout_seconds: 300
+  response_timeout_seconds: 1200
   quiet_seconds: 3
 
 projects:
@@ -21,6 +21,10 @@ projects:
       command_timeout_seconds: 300
     rollover_after_iterations: 20
     rollover_after_response_chars: 120000
+    # Supervisor pacing: one phase chat can work for up to 20 minutes.
+    min_fresh_chat_delay_seconds: 420
+    response_to_next_message_delay_seconds: 45
+    max_no_progress_iterations: 5
     # CI commands are trusted project configuration. Each command is an argv list;
     # LocalCI never passes these through a shell.
     ci_timeout_seconds: 1800
