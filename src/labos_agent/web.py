@@ -743,6 +743,12 @@ class Handler(BaseHTTPRequestHandler):
             create_repository = _parse_bool(body.get("create_repository"), "create_repository")
         except ValueError as exc:
             return self._send(400, {"error": str(exc)})
+        project_url = str(body.get("project_url", "")).strip()
+        project_name = str(body.get("project_name", "")).strip()
+        if not project_url:
+            return self._send(400, {"error": "project_url is required when creating a LabOS project"})
+        if not project_name:
+            return self._send(400, {"error": "project_name is required when creating a LabOS project"})
         visibility = str(body.get("repository_visibility", "private")).strip().lower()
         if project_mode == "existing_repository" and not create_repository:
             target = Path(root).expanduser()
