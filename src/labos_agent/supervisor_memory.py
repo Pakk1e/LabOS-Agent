@@ -17,6 +17,7 @@ class SupervisorMemory:
     last_observed_ci_run: int | None = None
     last_observed_ci_status: str | None = None
     last_observed_ci_conclusion: str | None = None
+    last_fresh_chat_at: str | None = None
     updated_at: str | None = None
 
     def to_dict(self) -> dict[str, Any]:

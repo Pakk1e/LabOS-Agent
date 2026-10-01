@@ -320,17 +320,106 @@ class ConversationSupervisor:
         )
         self.turns = 0
         self.current_phase = project.lifecycle_phase
+        self._last_fresh_chat_monotonic: float | None = None
+        self._last_fresh_chat_at: datetime | None = None
+        self._last_progress_commit: str | None = None
+        self._no_progress_iterations = 0
 
     def _lifecycle_context(self) -> str:
         phase = self.current_phase
         return (
-            f"PROJECT LIFECYCLE PHASE: {phase.value}\n"
+            f"CURRENT PHASE: {phase.value}\n"
             f"PROJECT MODE: {self.project.project_mode}\n"
-            "HUMAN APPROVAL: NOT REQUIRED\n"
-            f"PHASE RULE: {phase_instruction(phase)}\n"
-            "LIFECYCLE RULE: complete the current phase when its repository evidence "
-            "is ready; LabOS will automatically start the next phase in a fresh Project chat."
+            f"PHASE WORK CONTRACT:\n{phase_instruction(phase)}\n"
+            "PHASE TRANSITION: LabOS advances automatically after DONE is independently "
+            "verified and the required repository evidence is present."
         )
+
+    def _phase_material(self) -> str:
+        idea = self.project.initial_idea.strip() or "(No separate initial idea was configured.)"
+        notes = self.project.brainstorm_notes.strip() or "(No separate brainstorming notes were configured.)"
+        return f"INITIAL IDEA:\n{idea}\n\nEXISTING BRAINSTORMING NOTES:\n{notes}"
+
+    def _wait_before_next_message(self) -> None:
+        delay = max(0.0, self.project.response_to_next_message_delay_seconds)
+        if delay:
+            trace("chat.delay", project=self.project_name, kind="response_to_next_message", seconds=delay)
+            time.sleep(delay)
+
+    def _load_persisted_fresh_chat_time(self, memory: SupervisorMemory) -> None:
+        value = memory.last_fresh_chat_at
+        if not value:
+            self._last_fresh_chat_at = None
+            return
+        try:
+            parsed = datetime.fromisoformat(value)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            self._last_fresh_chat_at = parsed.astimezone(timezone.utc)
+        except ValueError:
+            trace("chat.delay.invalid_timestamp", project=self.project_name, value=value)
+            self._last_fresh_chat_at = None
+
+    def _wait_before_fresh_chat(self) -> None:
+        delay = max(0.0, self.project.min_fresh_chat_delay_seconds)
+        now = datetime.now(timezone.utc)
+        last_at = self._last_fresh_chat_at
+        if last_at is not None and delay > 0:
+            elapsed = max(0.0, (now - last_at).total_seconds())
+            remaining = delay - elapsed
+            if remaining > 0:
+                trace("chat.delay", project=self.project_name, kind="fresh_chat_minimum", seconds=remaining)
+                time.sleep(remaining)
+        self._last_fresh_chat_monotonic = time.monotonic()
+
+    def _mark_fresh_chat_started(self, memory: SupervisorMemory, memory_file: Path) -> None:
+        now = datetime.now(timezone.utc)
+        self._last_fresh_chat_at = now
+        self._last_fresh_chat_monotonic = time.monotonic()
+        memory.last_fresh_chat_at = now.isoformat()
+        memory.updated_at = now.isoformat()
+        save_memory(memory_file, memory)
+
+    def _send_next_message(self, chat: ChatGPTPage, message: str, *, delay: bool = True) -> str:
+        if delay:
+            self._wait_before_next_message()
+        if self.project.project_name:
+            return chat.send_project_message_and_wait_for_response(
+                self.project.project_name,
+                message,
+                timeout_seconds=self.config.browser.response_timeout_seconds,
+                quiet_seconds=self.config.browser.quiet_seconds,
+            )
+        return chat.send_and_wait_for_response(
+            message,
+            timeout_seconds=self.config.browser.response_timeout_seconds,
+            quiet_seconds=self.config.browser.quiet_seconds,
+        )
+
+    def _is_no_progress(self, analysis: LabOSResponse, observed: GitHubObservation | None) -> bool:
+        return (
+            analysis.state == ChatState.CONTINUE
+            and analysis.repository_changed is False
+            and analysis.local_tests == "NOT_RUN"
+            and analysis.commit_status == "NONE"
+            and analysis.ci_status == "NONE"
+            and analysis.next_action == "CONTINUE_WORK"
+            and observed is not None
+            and observed.commit_sha == self._last_progress_commit
+        )
+
+    def _record_no_progress(
+        self,
+        analysis: LabOSResponse,
+        observed: GitHubObservation | None,
+    ) -> bool:
+        if self._is_no_progress(analysis, observed):
+            self._no_progress_iterations += 1
+        else:
+            self._no_progress_iterations = 0
+        if observed is not None:
+            self._last_progress_commit = observed.commit_sha
+        return self._no_progress_iterations >= self.project.max_no_progress_iterations
 
     def _recovery_context(self, memory: SupervisorMemory, observation: GitHubObservation) -> str:
         if not memory.last_analysis:
@@ -391,17 +480,24 @@ REPOSITORY SAFETY:
   task explicitly requires it.
 - Preserve intentional existing changes.
 
-IMPLEMENTATION AND CI WORKFLOW:
-1. Inspect the current state and continue the requested task.
-2. Make the actual implementation changes.
-3. Run the relevant local tests/checks when available.
-4. When a meaningful change is ready for validation, commit it and push it to
-   {repository} so GitHub Actions can validate the pushed commit.
-5. Do not claim that a file was changed, a commit was created, a push happened,
-   or CI passed unless you actually performed/observed that action.
-6. When CI fails, inspect the real failure, fix it, commit/push the fix, and
-   wait for CI again.
-7. When the requested work is genuinely complete and validated, use DONE.
+WORKING STYLE:
+- Work independently and aim to finish the current phase effectively in this turn.
+- You may make substantial coordinated changes; do not artificially limit the work.
+- Spend the available time completing the phase rather than stopping after a small suggestion.
+- If repository access is unavailable, report that accurately; do not claim progress.
+
+REPOSITORY AND CI WORKFLOW:
+1. Inspect the current repository state.
+2. Perform the actual work required by the current phase.
+3. Run relevant local tests/checks when appropriate.
+4. Commit and push completed work when it is ready for GitHub Actions.
+5. Do not claim file changes, commits, pushes, or CI results you did not actually observe.
+6. Fix real CI failures and validate the fix.
+7. When the phase work is genuinely complete and the required evidence is present,
+   report DONE. LabOS will independently verify the completion.
+
+PROJECT IDEA AND NOTES:
+{self._phase_material()}
 
 CURRENT TASK:
 {task}
@@ -411,7 +507,7 @@ LIFECYCLE:
 
 {recovery_context}
 
-Start now by inspecting the current repository state and continue the task.
+Start now. Complete the current phase rather than merely describing what should be done.
 {STATE_BLOCK_INSTRUCTION}
 """
 
@@ -443,18 +539,20 @@ Start now by inspecting the current repository state and continue the task.
                 from_phase=previous_phase.value,
                 to_phase=target_phase.value,
             )
+        self._wait_before_fresh_chat()
+        memory_file = memory_path(self.config.state_root, self.project_name)
+        memory = load_memory(memory_file, self.project_name)
+        self._mark_fresh_chat_started(memory, memory_file)
         _start_fresh_chat(chat, self.project)
         if not self.project.project_name:
             raise SupervisorError("autonomous lifecycle transitions require a configured ChatGPT Project")
-        return chat.send_project_message_and_wait_for_response(
-            self.project.project_name,
+        return self._send_next_message(
+            chat,
             self._bootstrap_prompt(
-                f"Automatically advanced from {previous_phase.value} to "
-                f"{target_phase.value}. Continue the new phase now. "
-                "No human approval is required."
+                f"Automatically advanced from {previous_phase.value} to {target_phase.value}. "
+                "Start the new phase now and finish it effectively."
             ),
-            timeout_seconds=self.config.browser.response_timeout_seconds,
-            quiet_seconds=self.config.browser.quiet_seconds,
+            delay=False,
         )
 
     def _stop_if_turn_limit(self, tracker: RunTracker, response: str) -> str | None:
@@ -491,9 +589,15 @@ Start now by inspecting the current repository state and continue the task.
                 raise SupervisorError("ChatGPT verification challenge is active")
             if not status.is_chatgpt:
                 raise SupervisorError("attached page is not ChatGPT")
+            memory_file = memory_path(self.config.state_root, self.project_name)
+            memory = load_memory(memory_file, self.project_name)
+            self._load_persisted_fresh_chat_time(memory)
             # _start_fresh_chat may need to navigate from an unrelated
             # ChatGPT conversation into the configured Project before creating
-            # the fresh conversation.
+            # the fresh conversation. Persist the start time before creating it
+            # so a process crash cannot bypass the minimum fresh-chat interval.
+            self._wait_before_fresh_chat()
+            self._mark_fresh_chat_started(memory, memory_file)
             _start_fresh_chat(chat, self.project)
 
             try:
@@ -503,28 +607,18 @@ Start now by inspecting the current repository state and continue the task.
                     "cannot access GitHub Actions for the configured repository; "
                     "set GITHUB_TOKEN/GH_TOKEN or authenticate GitHub CLI with 'gh auth login'"
                 ) from exc
-            memory_file = memory_path(self.config.state_root, self.project_name)
-            memory = load_memory(memory_file, self.project_name)
             try:
                 observation = observe_github(self.project.repository)
             except Exception as exc:
                 raise SupervisorError(f"cannot observe GitHub repository state: {exc}") from exc
 
+            # Establish the repository baseline before the first agent response so
+            # the first unchanged CONTINUE response counts toward no-progress.
+            self._last_progress_commit = observation.commit_sha
+
             recovery_context = self._recovery_context(memory, observation)
             bootstrap_prompt = self._bootstrap_prompt(recovery_context)
-            if self.project.project_name:
-                response = chat.send_project_message_and_wait_for_response(
-                    self.project.project_name,
-                    bootstrap_prompt,
-                    timeout_seconds=self.config.browser.response_timeout_seconds,
-                    quiet_seconds=self.config.browser.quiet_seconds,
-                )
-            else:
-                response = chat.send_and_wait_for_response(
-                    bootstrap_prompt,
-                    timeout_seconds=self.config.browser.response_timeout_seconds,
-                    quiet_seconds=self.config.browser.quiet_seconds,
-                )
+            response = self._send_next_message(chat, bootstrap_prompt, delay=False)
 
             tracker.start_iteration(run_started_at)
             while True:
@@ -543,6 +637,7 @@ Start now by inspecting the current repository state and continue the task.
                 # snapshot must be taken before that mutation and must also exist when
                 # the GitHub observation itself fails.
                 previous_observed_commit = memory.last_observed_commit
+                observed: GitHubObservation | None = None
                 try:
                     observed = observe_github(self.project.repository)
                     memory.last_response = response
@@ -558,14 +653,23 @@ Start now by inspecting the current repository state and continue the task.
                 except Exception as exc:
                     trace("run.error", project=self.project_name, error=f"GitHub observation failed after response: {exc}")
 
+                if self._record_no_progress(analysis, observed):
+                    reason = (
+                        f"no repository progress for {self._no_progress_iterations} consecutive "
+                        "iterations; stopping the supervisor instead of repeating the same prompt"
+                    )
+                    tracker.finish_iteration("NO_PROGRESS", datetime.now(timezone.utc), reason)
+                    tracker.finish_run("BLOCKED", datetime.now(timezone.utc), reason)
+                    _save_run_summary(self.project_name, tracker)
+                    trace("run.blocked", project=self.project_name, run=tracker.summary.run_number, reason=reason)
+                    trace_summary(tracker.box(), project=self.project_name, success=False)
+                    return response
+
                 if analysis.structured and not analysis.valid:
                     tracker.finish_iteration("INVALID", datetime.now(timezone.utc), "invalid LABOS_STATE: " + "; ".join(analysis.errors))
                     trace("iteration.complete", project=self.project_name, iteration=iteration.number, success=False, state="INVALID")
-                    response = chat.send_and_wait_for_response(
-                        REMIND_MESSAGE + "\n\nYour LABOS_STATE block was invalid:\n- " + "\n- ".join(analysis.errors),
-                        timeout_seconds=self.config.browser.response_timeout_seconds,
-                        quiet_seconds=self.config.browser.quiet_seconds,
-                    )
+                    response = self._send_next_message(chat, 
+                        REMIND_MESSAGE + "\n\nYour LABOS_STATE block was invalid:\n- " + "\n- ".join(analysis.errors))
                     stopped = self._stop_if_turn_limit(tracker, response)
                     if stopped is not None:
                         return stopped
@@ -573,11 +677,8 @@ Start now by inspecting the current repository state and continue the task.
                 elif state is None:
                     tracker.finish_iteration("INVALID", datetime.now(timezone.utc), "missing or invalid state marker")
                     trace("iteration.complete", project=self.project_name, iteration=iteration.number, success=False, state="INVALID")
-                    response = chat.send_and_wait_for_response(
-                        REMIND_MESSAGE,
-                        timeout_seconds=self.config.browser.response_timeout_seconds,
-                        quiet_seconds=self.config.browser.quiet_seconds,
-                    )
+                    response = self._send_next_message(chat, 
+                        REMIND_MESSAGE)
                     stopped = self._stop_if_turn_limit(tracker, response)
                     if stopped is not None:
                         return stopped
@@ -617,6 +718,10 @@ Start now by inspecting the current repository state and continue the task.
                                 tracker=tracker,
                                 iteration=iteration.number,
                             )
+                            # The transition starts a fresh chat and updates persistent
+                            # supervisor memory. Reload it so the next observation cannot
+                            # overwrite the persisted fresh-chat timestamp with stale data.
+                            memory = load_memory(memory_file, self.project_name)
                             stopped = self._stop_if_turn_limit(tracker, response)
                             if stopped is not None:
                                 return stopped
@@ -659,7 +764,7 @@ Start now by inspecting the current repository state and continue the task.
                             phase=self.current_phase.value,
                             missing=missing,
                         )
-                        response = chat.send_and_wait_for_response(
+                        response = self._send_next_message(chat, 
                             self._prompt(
                                 f"""[LAB OS — PHASE EVIDENCE INCOMPLETE]
 You reported DONE for {self.current_phase.value}, but LabOS cannot advance yet.
@@ -669,20 +774,14 @@ The repository evidence required for the next phase ({target_phase.value}) is in
 
 Continue the current phase. Create or complete the missing evidence in the repository,
 run relevant checks, and only report DONE again when the phase is genuinely complete.
-No human approval is required."""),
-                            timeout_seconds=self.config.browser.response_timeout_seconds,
-                            quiet_seconds=self.config.browser.quiet_seconds,
-                        )
+No human approval is required."""))
                         tracker.start_iteration(datetime.now(timezone.utc))
                         continue
 
                     if not verified:
                         tracker.finish_iteration("COMPLETION_UNVERIFIED", datetime.now(timezone.utc), reconciliation.reason)
-                        response = chat.send_and_wait_for_response(
-                            self._prompt("[LAB OS — COMPLETION NOT VERIFIED]\n" + reconciliation.reason + "\nContinue until GitHub independently verifies the exact completion."),
-                            timeout_seconds=self.config.browser.response_timeout_seconds,
-                            quiet_seconds=self.config.browser.quiet_seconds,
-                        )
+                        response = self._send_next_message(chat, 
+                            self._prompt("[LAB OS — COMPLETION NOT VERIFIED]\n" + reconciliation.reason + "\nContinue until GitHub independently verifies the exact completion."))
                         stopped = self._stop_if_turn_limit(tracker, response)
                         if stopped is not None:
                             return stopped
@@ -746,11 +845,8 @@ No human approval is required."""),
                     stopped = self._stop_if_turn_limit(tracker, response)
                     if stopped is not None:
                         return stopped
-                    response = chat.send_and_wait_for_response(
-                        CI_PASSED_MESSAGE if passed else CI_FAILED_MESSAGE,
-                        timeout_seconds=self.config.browser.response_timeout_seconds,
-                        quiet_seconds=self.config.browser.quiet_seconds,
-                    )
+                    response = self._send_next_message(chat, 
+                        CI_PASSED_MESSAGE if passed else CI_FAILED_MESSAGE)
                     stopped = self._stop_if_turn_limit(tracker, response)
                     if stopped is not None:
                         return stopped
@@ -761,11 +857,8 @@ No human approval is required."""),
                     stopped = self._stop_if_turn_limit(tracker, response)
                     if stopped is not None:
                         return stopped
-                    response = chat.send_and_wait_for_response(
-                        CI_FAILED_MESSAGE,
-                        timeout_seconds=self.config.browser.response_timeout_seconds,
-                        quiet_seconds=self.config.browser.quiet_seconds,
-                    )
+                    response = self._send_next_message(chat, 
+                        CI_FAILED_MESSAGE)
                     stopped = self._stop_if_turn_limit(tracker, response)
                     if stopped is not None:
                         return stopped
@@ -776,10 +869,7 @@ No human approval is required."""),
                     stopped = self._stop_if_turn_limit(tracker, response)
                     if stopped is not None:
                         return stopped
-                    response = chat.send_and_wait_for_response(
-                        CONTINUE_MESSAGE,
-                        timeout_seconds=self.config.browser.response_timeout_seconds,
-                        quiet_seconds=self.config.browser.quiet_seconds,
-                    )
+                    response = self._send_next_message(chat, 
+                        CONTINUE_MESSAGE)
                     tracker.start_iteration(datetime.now(timezone.utc))
 

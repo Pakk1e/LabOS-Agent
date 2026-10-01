@@ -13,6 +13,7 @@ from labos_agent.lifecycle import (
     normalize_project_mode,
     phase_instruction,
     save_lifecycle_state,
+    can_advance,
 )
 
 
@@ -46,11 +47,16 @@ def test_phase_normalization_and_invalid_value():
 
 
 def test_phase_instructions_are_specific():
-    assert "Do not implement product features" in phase_instruction(ProjectPhase.BRAINSTORM)
-    assert "Read the supplied goal and brainstorm notes" in phase_instruction(ProjectPhase.BRAINSTORM)
-    assert "documentation" in phase_instruction(ProjectPhase.DOCUMENTATION).lower()
-    assert "documented plan" in phase_instruction(ProjectPhase.DEVELOPMENT).lower()
-    assert "autonomously" in phase_instruction(ProjectPhase.DEVELOPMENT).lower()
+    assert "IDEA phase" in phase_instruction(ProjectPhase.IDEA)
+    assert "LabOS initial idea" in phase_instruction(ProjectPhase.IDEA)
+    assert "Do not begin brainstorming" in phase_instruction(ProjectPhase.IDEA)
+    assert "BRAINSTORMING phase" in phase_instruction(ProjectPhase.BRAINSTORM)
+    assert "docs/IDEA.md" in phase_instruction(ProjectPhase.BRAINSTORM)
+    assert "report DONE" in phase_instruction(ProjectPhase.BRAINSTORM)
+    assert "DOCUMENTATION phase" in phase_instruction(ProjectPhase.DOCUMENTATION)
+    assert "Do not begin feature implementation" in phase_instruction(ProjectPhase.DOCUMENTATION)
+    assert "DEVELOPMENT phase" in phase_instruction(ProjectPhase.DEVELOPMENT)
+    assert "Run relevant tests" in phase_instruction(ProjectPhase.DEVELOPMENT)
 
 
 def test_approval_is_legacy_state_not_a_runtime_gate():
@@ -190,11 +196,11 @@ def test_supervisor_prompt_includes_lifecycle_contract(tmp_path):
     )
     supervisor = ConversationSupervisor(AppConfig(projects={"demo": project}), "demo")
     prompt = supervisor._bootstrap_prompt()
-    assert "PROJECT LIFECYCLE PHASE: DOCUMENTATION" in prompt
+    assert "CURRENT PHASE: DOCUMENTATION" in prompt
     assert "PROJECT MODE: specification" in prompt
+    assert "PHASE WORK CONTRACT:" in prompt
     assert "Do not begin feature implementation" in prompt
-    assert "LabOS will automatically start the next phase in a fresh Project chat" in prompt
-    assert "HUMAN APPROVAL: NOT REQUIRED" in prompt
+    assert "PHASE TRANSITION: LabOS advances automatically" in prompt
 
 
 def test_config_rejects_non_boolean_legacy_approval(tmp_path):
@@ -261,6 +267,26 @@ def test_validation_gate_requires_validation_report(tmp_path):
         encoding="utf-8",
     )
     ok, missing = can_advance(root, ProjectPhase.VALIDATION, ProjectPhase.MAINTENANCE)
+    assert ok
+    assert not missing
+
+
+def test_idea_gate_requires_recorded_initial_idea(tmp_path):
+    from labos_agent.lifecycle import can_advance
+    root = tmp_path / "repo"
+    (root / "docs").mkdir(parents=True)
+    idea = root / "docs" / "IDEA.md"
+    idea.write_text("# Project Idea\n\nInitial idea", encoding="utf-8")
+
+    ok, missing = can_advance(root, ProjectPhase.IDEA, ProjectPhase.BRAINSTORM)
+    assert not ok
+    assert any("LabOS initial idea" in item for item in missing)
+
+    idea.write_text(
+        "# Project Idea\n\nInitial idea\n\n## LabOS initial idea\n\nGoals and scope",
+        encoding="utf-8",
+    )
+    ok, missing = can_advance(root, ProjectPhase.IDEA, ProjectPhase.BRAINSTORM)
     assert ok
     assert not missing
 
@@ -447,8 +473,9 @@ def test_autonomous_phase_transition_persists_and_starts_fresh_project_chat(tmp_
     assert chat.started
     assert chat.project_messages
     assert chat.project_messages[0][0] == "Testing"
-    assert "PROJECT LIFECYCLE PHASE: DOCUMENTATION" in chat.project_messages[0][1]
-    assert "HUMAN APPROVAL: NOT REQUIRED" in chat.project_messages[0][1]
+    assert "CURRENT PHASE: DOCUMENTATION" in chat.project_messages[0][1]
+    assert "PHASE WORK CONTRACT:" in chat.project_messages[0][1]
+    assert "PHASE TRANSITION: LabOS advances automatically" in chat.project_messages[0][1]
     assert response == "next phase response"
 
 
