@@ -410,3 +410,76 @@ def test_git_ls_remote_retries_after_timeout(monkeypatch, tmp_path: Path):
     assert git_gate._git(tmp_path, "ls-remote", "origin", "refs/heads/main", check=False) == "abc123 refs/heads/main"
     assert len(calls) == 2
     assert all(call[1]["timeout"] == git_gate.GIT_COMMAND_TIMEOUT_SECONDS for call in calls)
+
+
+def test_sync_repository_replaces_legacy_non_git_workspace(tmp_path: Path, monkeypatch):
+    import labos_agent.git_gate as git_gate
+
+    remote = tmp_path / "remote.git"
+    source = tmp_path / "source"
+    root = tmp_path / "controlled"
+    subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True)
+    subprocess.run(["git", "init", str(source)], check=True, capture_output=True)
+    _git(source, "config", "user.name", "LabOS Test")
+    _git(source, "config", "user.email", "labos@example.invalid")
+    (source / "docs").mkdir()
+    (source / "docs" / "PRODUCT.md").write_text("complete
+", encoding="utf-8")
+    _git(source, "add", ".")
+    _git(source, "commit", "-m", "authoritative")
+    _git(source, "branch", "-M", "main")
+    _git(source, "remote", "add", "origin", str(remote))
+    _git(source, "push", "-u", "origin", "main")
+    sha = _git(source, "rev-parse", "HEAD")
+
+    (root / "docs").mkdir(parents=True)
+    (root / "docs" / "PRODUCT.md").write_text("_To be completed._
+", encoding="utf-8")
+    (root / "AGENTS.md").write_text("legacy controlled workspace
+", encoding="utf-8")
+
+    real_run = git_gate.subprocess.run
+
+    def fake_run(command, **kwargs):
+        if command[:4] == ["gh", "repo", "clone", "example/testing"]:
+            target = Path(command[4])
+            return real_run(["git", "clone", str(remote), str(target)], **kwargs)
+        return real_run(command, **kwargs)
+
+    monkeypatch.setattr(git_gate.subprocess, "run", fake_run)
+    synced = git_gate.sync_repository(root, "example/testing", expected_sha=sha)
+
+    assert synced == sha
+    assert (root / ".git").is_dir()
+    assert (root / "docs" / "PRODUCT.md").read_text(encoding="utf-8") == "complete\n"
+    assert (root / "AGENTS.md").exists() is False
+
+
+def test_sync_repository_uses_git_safety_gate_for_existing_checkout(tmp_path: Path):
+    from labos_agent.git_gate import sync_repository
+
+    remote = tmp_path / "remote.git"
+    root = tmp_path / "repo"
+    peer = tmp_path / "peer"
+    subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True)
+    subprocess.run(["git", "init", str(root)], check=True, capture_output=True)
+    _git(root, "config", "user.name", "LabOS Test")
+    _git(root, "config", "user.email", "labos@example.invalid")
+    (root / "base.txt").write_text("base\n", encoding="utf-8")
+    _git(root, "add", "base.txt")
+    _git(root, "commit", "-m", "base")
+    _git(root, "branch", "-M", "main")
+    _git(root, "remote", "add", "origin", str(remote))
+    _git(root, "push", "-u", "origin", "main")
+    subprocess.run(["git", "clone", str(remote), str(peer)], check=True, capture_output=True)
+    _git(peer, "config", "user.name", "LabOS Peer")
+    _git(peer, "config", "user.email", "peer@example.invalid")
+    (peer / "remote.txt").write_text("remote\n", encoding="utf-8")
+    _git(peer, "add", "remote.txt")
+    _git(peer, "commit", "-m", "remote")
+    _git(peer, "push", "origin", "main")
+    expected = _git(peer, "rev-parse", "HEAD")
+
+    assert sync_repository(root, "unused", expected_sha=expected) == expected
+    assert _git(root, "rev-parse", "HEAD") == expected
+    assert (root / "remote.txt").exists()
