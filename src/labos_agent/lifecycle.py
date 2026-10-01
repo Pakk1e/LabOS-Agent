@@ -45,6 +45,7 @@ NEXT_PHASE = {
 }
 
 PHASE_EVIDENCE_FILES = {
+    ProjectPhase.IDEA: ("docs/IDEA.md",),
     ProjectPhase.BRAINSTORM: ("docs/IDEA.md",),
     ProjectPhase.DOCUMENTATION: (
         "docs/PRODUCT.md",
@@ -60,6 +61,7 @@ PHASE_EVIDENCE_FILES = {
 }
 
 PHASE_EVIDENCE_MARKERS = {
+    ProjectPhase.IDEA: ("LabOS initial idea",),
     ProjectPhase.BRAINSTORM: ("LabOS brainstorming notes",),
     ProjectPhase.PLANNING: ("Acceptance Criteria",),
     ProjectPhase.VALIDATION: ("Validation Results", "Acceptance Criteria"),
@@ -83,7 +85,9 @@ def phase_instruction(phase: ProjectPhase) -> str:
     instructions = {
         ProjectPhase.IDEA: (
             "You are in the IDEA phase. Clarify the initial idea and establish the project "
-            "starting point. When the idea is clear and recorded, report DONE."
+            "starting point. Create or update docs/IDEA.md with the agreed initial idea and "
+            "the marker 'LabOS initial idea'. Do not begin brainstorming. When the idea is "
+            "clear and recorded, report DONE."
         ),
         ProjectPhase.BRAINSTORM: (
             "You are in the BRAINSTORMING phase. Explore the idea thoroughly: define the "
@@ -243,6 +247,8 @@ def can_advance(project_root: Path, current: ProjectPhase, target: ProjectPhase)
     expected = next_phase(current)
     if target is not expected:
         return False, ("invalid sequential lifecycle transition",)
+    if target is ProjectPhase.BRAINSTORM and current is ProjectPhase.IDEA:
+        return phase_evidence(project_root, ProjectPhase.IDEA)
     if target is ProjectPhase.DOCUMENTATION and current is ProjectPhase.BRAINSTORM:
         return phase_evidence(project_root, ProjectPhase.BRAINSTORM)
     if target is ProjectPhase.PLANNING:
