@@ -65,6 +65,11 @@ def _parse_ci_stages(raw: object) -> dict[str, tuple[tuple[str, ...], ...]]:
         stages[stage] = tuple(parsed)
     return stages
 
+def _raise_invalid_manual_advance(project: str) -> bool:
+    raise ValueError(
+        f"lifecycle.manual_lifecycle_advance_enabled for project {project} must be a boolean"
+    )
+
 def load_config(path: Path) -> AppConfig:
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     br = raw.get("browser", {})
@@ -115,7 +120,11 @@ def load_config(path: Path) -> AppConfig:
             lifecycle_approved=lifecycle_state.approved,
             lifecycle_approved_at=lifecycle_state.approved_at,
             project_mode=normalize_project_mode(lifecycle.get("mode", "guided")),
-            manual_lifecycle_advance_enabled=bool(lifecycle.get("manual_lifecycle_advance_enabled", True)),
+            manual_lifecycle_advance_enabled=(
+                lifecycle.get("manual_lifecycle_advance_enabled", True)
+                if isinstance(lifecycle.get("manual_lifecycle_advance_enabled", True), bool)
+                else (_raise_invalid_manual_advance(key))
+            ),
             initial_idea=str(value.get("initial_idea", "")),
             brainstorm_notes=str(value.get("brainstorm_notes", "")),
         )
