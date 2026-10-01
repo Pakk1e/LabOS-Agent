@@ -267,6 +267,11 @@ class _NewChatPage:
     def __init__(self, url="https://chatgpt.com/c/testing"):
         self.url = url
         self.control = _NewChatControl()
+        self.navigations = []
+
+    def goto(self, url, wait_until=None, timeout=None):
+        self.navigations.append((url, wait_until, timeout))
+        self.url = url
 
     def locator(self, selector):
         if selector == 'button[aria-label="New chat"]':
@@ -302,10 +307,11 @@ class _NewChatPage:
         self.url = "https://chatgpt.com/"
 
 
-def test_start_new_chat_activates_global_new_chat_control():
+def test_start_new_chat_forces_generic_root_before_using_new_chat_control():
     page = _NewChatPage()
     chat = ChatGPTPage(page)
     chat.start_new_chat()
+    assert page.navigations == [("https://chatgpt.com/", "domcontentloaded", 60000)]
     assert page.control.clicked == 1
     assert page.url == "https://chatgpt.com/"
 
