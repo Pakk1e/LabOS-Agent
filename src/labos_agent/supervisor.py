@@ -408,6 +408,19 @@ class ConversationSupervisor:
             and observed.commit_sha == self._last_progress_commit
         )
 
+    def _record_no_progress(
+        self,
+        analysis: LabOSResponse,
+        observed: GitHubObservation | None,
+    ) -> bool:
+        if self._is_no_progress(analysis, observed):
+            self._no_progress_iterations += 1
+        else:
+            self._no_progress_iterations = 0
+        if observed is not None:
+            self._last_progress_commit = observed.commit_sha
+        return self._no_progress_iterations >= self.project.max_no_progress_iterations
+
     def _recovery_context(self, memory: SupervisorMemory, observation: GitHubObservation) -> str:
         if not memory.last_analysis:
             return (
@@ -636,14 +649,7 @@ Start now. Complete the current phase rather than merely describing what should 
                 except Exception as exc:
                     trace("run.error", project=self.project_name, error=f"GitHub observation failed after response: {exc}")
 
-                if self._is_no_progress(analysis, observed):
-                    self._no_progress_iterations += 1
-                else:
-                    self._no_progress_iterations = 0
-                if observed is not None:
-                    self._last_progress_commit = observed.commit_sha
-
-                if self._no_progress_iterations >= self.project.max_no_progress_iterations:
+                if self._record_no_progress(analysis, observed):
                     reason = (
                         f"no repository progress for {self._no_progress_iterations} consecutive "
                         "iterations; stopping the supervisor instead of repeating the same prompt"
