@@ -297,7 +297,13 @@ def next_phase(phase: ProjectPhase) -> ProjectPhase | None:
     return NEXT_PHASE.get(phase)
 
 
-def lifecycle_state_path(state_root: Path, project: str) -> Path:
+def milestone_lifecycle_state_path(state_root: Path, project: str, milestone_id: str) -> Path:
+    if not milestone_id or "/" in milestone_id or "\\" in milestone_id or milestone_id in {".", ".."}:
+        raise ValueError("invalid milestone id")
+    return state_root / project / "milestones" / milestone_id / "project_lifecycle.json"
+
+
+def lifecycle_state_path(state_root: Path, project: str, milestone_id: str | None = None) -> Path:
     if not project or project in {".", ".."} or "/" in project or "\\" in project:
         raise ValueError("invalid lifecycle project name")
     return state_root / project / "project_lifecycle.json"
