@@ -1053,6 +1053,7 @@ class Handler(BaseHTTPRequestHandler):
         if _process_status(self.config_path, name)["running"]:
             return self._send(409, {"error": "stop the supervisor before changing the lifecycle"})
         current = project_config.lifecycle_phase
+        active_milestone = _milestone(project_config)
         requested = body.get("phase")
         target = current if requested is None else normalize_phase(str(requested))
         approved_raw = body.get("approved", False)
@@ -1081,7 +1082,13 @@ class Handler(BaseHTTPRequestHandler):
                 },
             )
         if target != current:
-            allowed, missing = can_advance(project_config.project_root, current, target)
+            allowed, missing = can_advance(
+                project_config.project_root,
+                current,
+                target,
+                implementation_plan_path=active_milestone.plan_path if active_milestone else None,
+                validation_report_path=active_milestone.validation_path if active_milestone else None,
+            )
             if not allowed:
                 return self._send(
                     409,
@@ -1099,8 +1106,21 @@ class Handler(BaseHTTPRequestHandler):
                 approved=True,
                 approved_at=datetime.now(timezone.utc).isoformat(),
             )
-        save_lifecycle_state(self.config_path.parent / "state", name, state)
-        _record_lifecycle_event(self.config_path, name, phase=state.phase, approved=state.approved, event="approval_granted" if approved else ("phase_transition" if target != current else "state_updated"), previous_phase=current if target != current else None)
+        save_lifecycle_state(
+            self.config_path.parent / "state",
+            name,
+            state,
+            milestone_id=project_config.active_milestone_id,
+        )
+        _record_lifecycle_event(
+            self.config_path,
+            name,
+            phase=state.phase,
+            approved=state.approved,
+            event="approval_granted" if approved else ("phase_transition" if target != current else "state_updated"),
+            previous_phase=current if target != current else None,
+            milestone_id=project_config.active_milestone_id,
+        )
         if has_notes:
             payload = _config_payload(self.config_path)
             project = payload["projects"][name]
