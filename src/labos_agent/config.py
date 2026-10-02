@@ -6,6 +6,16 @@ import yaml
 
 from .lifecycle import ProjectPhase, load_lifecycle_state, normalize_phase, normalize_project_mode
 
+
+@dataclass(frozen=True)
+class MilestoneConfig:
+    id: str
+    title: str
+    objective: str
+    continuation_message: str
+    plan_path: str
+    validation_path: str
+
 @dataclass(frozen=True)
 class BrowserConfig:
     cdp_url: str = "http://127.0.0.1:9222"
@@ -46,6 +56,8 @@ class ProjectConfig:
     manual_lifecycle_advance_enabled: bool = True
     initial_idea: str = ""
     brainstorm_notes: str = ""
+    milestones: tuple[MilestoneConfig, ...] = ()
+    active_milestone_id: str | None = None
 
 @dataclass(frozen=True)
 class AppConfig:
@@ -101,6 +113,40 @@ def load_config(path: Path) -> AppConfig:
             fallback_approved=legacy_approved,
             fallback_approved_at=legacy_approved_at,
         )
+        raw_milestones = lifecycle.get("milestones", [])
+        if not isinstance(raw_milestones, list):
+            raise ValueError(f"lifecycle.milestones for project {key} must be a list")
+        milestones = []
+        seen_milestones = set()
+        for item in raw_milestones:
+            if not isinstance(item, dict):
+                raise ValueError(f"lifecycle.milestones for project {key} must contain mappings")
+            milestone_id = str(item.get("id", "")).strip()
+            if not milestone_id or "/" in milestone_id or "\\" in milestone_id or milestone_id in {".", ".."}:
+                raise ValueError(f"invalid milestone id for project {key}: {milestone_id}")
+            if milestone_id in seen_milestones:
+                raise ValueError(f"duplicate milestone id for project {key}: {milestone_id}")
+            seen_milestones.add(milestone_id)
+            milestones.append(MilestoneConfig(
+                id=milestone_id,
+                title=str(item.get("title", milestone_id)).strip() or milestone_id,
+                objective=str(item.get("objective", "")).strip(),
+                continuation_message=str(item.get("continuation_message", "")).strip(),
+                plan_path=str(item.get("plan_path", f".labos/milestones/{milestone_id}/PLAN.md")).strip(),
+                validation_path=str(item.get("validation_path", f".labos/milestones/{milestone_id}/VALIDATION.md")).strip(),
+            ))
+        active_milestone_id = lifecycle.get("active_milestone_id")
+        if active_milestone_id is not None:
+            active_milestone_id = str(active_milestone_id).strip() or None
+            if active_milestone_id and active_milestone_id not in seen_milestones:
+                raise ValueError(f"active milestone does not exist for project {key}: {active_milestone_id}")
+            if active_milestone_id:
+                lifecycle_state = load_lifecycle_state(
+                    path.parent / "state",
+                    key,
+                    fallback_phase=ProjectPhase.PLANNING,
+                    milestone_id=active_milestone_id,
+                )
         projects[key] = ProjectConfig(
             name=key, repository=value["repository"], project_root=root,
             continuation_message=value.get("continuation_message",f"Continue {key.title()}"),
@@ -133,5 +179,7 @@ def load_config(path: Path) -> AppConfig:
             ),
             initial_idea=str(value.get("initial_idea", "")),
             brainstorm_notes=str(value.get("brainstorm_notes", "")),
+            milestones=tuple(milestones),
+            active_milestone_id=active_milestone_id,
         )
     return AppConfig(browser=browser, projects=projects, state_root=path.parent / "state")
