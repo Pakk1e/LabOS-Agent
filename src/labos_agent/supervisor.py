@@ -356,9 +356,11 @@ class ConversationSupervisor:
             + (f"CURRENT MILESTONE: {self.active_milestone.id} — {self.active_milestone.title}\n"
                f"MILESTONE OBJECTIVE: {self.active_milestone.objective}\n" if self.active_milestone else "")
             + f"PROJECT MODE: {self.project.project_mode}\n"
-            f"PHASE WORK CONTRACT:\n{phase_instruction(phase)}\n"
-            "PHASE TRANSITION: LabOS advances automatically after DONE is independently "
-            "verified and the required repository evidence is present."
+            + (f"MILESTONE PLAN FILE: {self.active_milestone.plan_path}\n"
+               f"MILESTONE VALIDATION FILE: {self.active_milestone.validation_path}\n" if self.active_milestone else "")
+            + f"PHASE WORK CONTRACT:\n{phase_instruction(phase)}\n"
+            + "PHASE TRANSITION: LabOS advances automatically after DONE is independently "
+            + "verified and the required repository evidence is present."
         )
 
     def _phase_material(self) -> str:
