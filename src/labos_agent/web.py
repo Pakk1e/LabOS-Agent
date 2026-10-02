@@ -434,24 +434,54 @@ def _assess_existing_repository(config_path: Path, project: str, root: Path) -> 
 
 def _lifecycle_history_path(config_path: Path, project: str) -> Path:
     return config_path.parent / "state" / project / "lifecycle_history.jsonl"
+def _milestone(project, milestone_id: str | None = None):
+    target = milestone_id or project.active_milestone_id
+    return next((item for item in project.milestones if item.id == target), None) if target else None
 
-def _record_lifecycle_event(config_path: Path, project: str, *, phase: ProjectPhase, approved: bool, event: str, previous_phase: ProjectPhase | None = None) -> None:
+
+def _milestone_view(config_path: Path, project, milestone) -> dict:
+    state = load_lifecycle_state(
+        config_path.parent / "state",
+        project.name,
+        fallback_phase=ProjectPhase.PLANNING,
+        milestone_id=milestone.id,
+    )
+    return {
+        "id": milestone.id,
+        "title": milestone.title,
+        "objective": milestone.objective,
+        "continuation_message": milestone.continuation_message,
+        "plan_path": milestone.plan_path,
+        "validation_path": milestone.validation_path,
+        "phase": state.phase.value,
+        "complete": state.phase is ProjectPhase.MAINTENANCE,
+        "active": project.active_milestone_id == milestone.id,
+    }
+
+
+
+def _record_lifecycle_event(config_path: Path, project: str, *, phase: ProjectPhase, approved: bool, event: str, previous_phase: ProjectPhase | None = None, milestone_id: str | None = None) -> None:
     path = _lifecycle_history_path(config_path, project)
     path.parent.mkdir(parents=True, exist_ok=True)
     record = {"ts": datetime.now(timezone.utc).isoformat(), "event": event, "project": project, "phase": phase.value, "approved": approved}
     if previous_phase is not None:
         record["previous_phase"] = previous_phase.value
+    if milestone_id is not None:
+        record["milestone_id"] = milestone_id
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 def _lifecycle_gate(project) -> dict:
     target = next_phase(project.lifecycle_phase)
+    milestone = _milestone(project)
     if target is None:
         return {"target": None, "satisfied": True, "missing": []}
     satisfied, missing = can_advance(
         project.project_root,
         project.lifecycle_phase,
         target,
+        implementation_plan_path=milestone.plan_path if milestone else None,
+        validation_report_path=milestone.validation_path if milestone else None,
     )
     return {"target": target.value, "satisfied": satisfied, "missing": list(missing)}
 def _lifecycle_history(config_path: Path, project: str, limit: int = 100) -> list[dict]:
@@ -591,6 +621,8 @@ def _project_view(config_path: Path, name: str, project) -> dict:
         "last_response": memory.get("last_response"),
         "analysis": analysis,
         "recent_events": _latest_run_events(config_path, name),
+        "active_milestone_id": project.active_milestone_id,
+        "milestones": [_milestone_view(config_path, project, item) for item in project.milestones],
     }
 
 
