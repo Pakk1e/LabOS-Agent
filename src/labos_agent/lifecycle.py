@@ -95,7 +95,7 @@ def phase_instruction(phase: ProjectPhase) -> str:
             "a practical direction. Work independently for this turn; do not stop after a "
             "small suggestion. When brainstorming is complete, create or update docs/IDEA.md "
             "with the agreed brainstorming notes and the marker 'LabOS brainstorming notes', "
-            "then report DONE. Do not start the documentation phase."
+            "then report DONE. Do not start the documentation phase. Reporting DONE is the trigger for LabOS to advance automatically; do not wait for human authorization to report DONE or use the next phase's authorization as a reason to continue brainstorming."
         ),
         ProjectPhase.DOCUMENTATION: (
             "You are in the DOCUMENTATION phase. Turn the agreed idea into complete, durable "
