@@ -133,3 +133,14 @@ def test_milestone_start_does_not_change_legacy_project_state(tmp_path):
     config = load_config(config_path)
     save_lifecycle_state(tmp_path / "state", "demo", LifecycleState(ProjectPhase.MAINTENANCE))
     assert config.projects["demo"].lifecycle_phase is ProjectPhase.MAINTENANCE
+
+
+def test_lifecycle_gate_supports_legacy_project_objects(tmp_path):
+    from labos_agent.lifecycle import ProjectPhase
+    from labos_agent.web import _lifecycle_gate
+    root = tmp_path / "repo"
+    (root / "docs").mkdir(parents=True)
+    (root / "docs" / "REQUIREMENTS.md").write_text("# Requirements\n", encoding="utf-8")
+    project = type("Project", (), {"project_root": root, "lifecycle_phase": ProjectPhase.PLANNING})()
+    gate = _lifecycle_gate(project)
+    assert gate["target"] == "DEVELOPMENT"
