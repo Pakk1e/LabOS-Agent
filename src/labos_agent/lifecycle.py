@@ -316,8 +316,9 @@ def load_lifecycle_state(
     fallback_phase: ProjectPhase = ProjectPhase.IDEA,
     fallback_approved: bool = False,
     fallback_approved_at: str | None = None,
+    milestone_id: str | None = None,
 ) -> LifecycleState:
-    path = lifecycle_state_path(state_root, project)
+    path = lifecycle_state_path(state_root, project, milestone_id)
     if not path.exists():
         return LifecycleState(
             phase=fallback_phase,
@@ -360,8 +361,9 @@ def save_lifecycle_state(
     state_root: Path,
     project: str,
     state: LifecycleState,
+    milestone_id: str | None = None,
 ) -> Path:
-    path = lifecycle_state_path(state_root, project)
+    path = lifecycle_state_path(state_root, project, milestone_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "phase": state.phase.value,
