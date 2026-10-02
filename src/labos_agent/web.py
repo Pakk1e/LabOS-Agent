@@ -435,8 +435,8 @@ def _assess_existing_repository(config_path: Path, project: str, root: Path) -> 
 def _lifecycle_history_path(config_path: Path, project: str) -> Path:
     return config_path.parent / "state" / project / "lifecycle_history.jsonl"
 def _milestone(project, milestone_id: str | None = None):
-    target = milestone_id or project.active_milestone_id
-    return next((item for item in project.milestones if item.id == target), None) if target else None
+    target = milestone_id or getattr(project, "active_milestone_id", None)
+    return next((item for item in getattr(project, "milestones", ()) if item.id == target), None) if target else None
 
 
 def _milestone_view(config_path: Path, project, milestone) -> dict:
