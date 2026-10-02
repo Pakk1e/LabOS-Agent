@@ -321,6 +321,7 @@ class ConversationSupervisor:
         )
         self.turns = 0
         self.current_phase = project.lifecycle_phase
+        self.active_milestone = next((m for m in project.milestones if m.id == project.active_milestone_id), None)
         self._last_fresh_chat_monotonic: float | None = None
         self._last_fresh_chat_at: datetime | None = None
         self._last_progress_commit: str | None = None
@@ -352,10 +353,14 @@ class ConversationSupervisor:
         phase = self.current_phase
         return (
             f"CURRENT PHASE: {phase.value}\n"
-            f"PROJECT MODE: {self.project.project_mode}\n"
-            f"PHASE WORK CONTRACT:\n{phase_instruction(phase)}\n"
-            "PHASE TRANSITION: LabOS advances automatically after DONE is independently "
-            "verified and the required repository evidence is present."
+            + (f"CURRENT MILESTONE: {self.active_milestone.id} — {self.active_milestone.title}\n"
+               f"MILESTONE OBJECTIVE: {self.active_milestone.objective}\n" if self.active_milestone else "")
+            + f"PROJECT MODE: {self.project.project_mode}\n"
+            + (f"MILESTONE PLAN FILE: {self.active_milestone.plan_path}\n"
+               f"MILESTONE VALIDATION FILE: {self.active_milestone.validation_path}\n" if self.active_milestone else "")
+            + f"PHASE WORK CONTRACT:\n{phase_instruction(phase)}\n"
+            + "PHASE TRANSITION: LabOS advances automatically after DONE is independently "
+            + "verified and the required repository evidence is present."
         )
 
     def _phase_material(self) -> str:
@@ -496,7 +501,9 @@ class ConversationSupervisor:
         project_name = self.project.project_name or self.project_name
         repository = self.project.repository
         project_root = str(self.project.project_root)
-        task = self.project.continuation_message.strip()
+        task = (self.active_milestone.continuation_message if self.active_milestone and self.active_milestone.continuation_message else self.project.continuation_message).strip()
+        if self.active_milestone:
+            task = f"Milestone: {self.active_milestone.title}\nObjective: {self.active_milestone.objective}\n\nMilestone task:\n{task}"
 
         return f"""You are the coding agent for this LabOS session.
 
@@ -574,6 +581,7 @@ Start now. Complete the current phase rather than merely describing what should 
             self.config.state_root,
             self.project_name,
             LifecycleState(phase=target_phase, approved=False),
+            milestone_id=self.project.active_milestone_id,
         )
         if tracker is not None:
             _save_run_event(
@@ -754,6 +762,8 @@ Start now. Complete the current phase rather than merely describing what should 
                             self.project.project_root,
                             self.current_phase,
                             target_phase,
+                            implementation_plan_path=self.active_milestone.plan_path if self.active_milestone else None,
+                            validation_report_path=self.active_milestone.validation_path if self.active_milestone else None,
                         )
                         if can_transition:
                             previous_phase = self.current_phase

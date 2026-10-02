@@ -132,7 +132,7 @@ def phase_instruction(phase: ProjectPhase) -> str:
     return instructions[phase]
 
 
-def phase_evidence(project_root: Path, phase: ProjectPhase) -> tuple[bool, tuple[str, ...]]:
+def phase_evidence(project_root: Path, phase: ProjectPhase, *, implementation_plan_path: str | None = None, validation_report_path: str | None = None) -> tuple[bool, tuple[str, ...]]:
     """Return whether the repository contains the minimum evidence for entering phase."""
     required = PHASE_EVIDENCE_FILES.get(phase, ())
     missing: list[str] = []
@@ -144,6 +144,12 @@ def phase_evidence(project_root: Path, phase: ProjectPhase) -> tuple[bool, tuple
         else None
     )
     alternatives = ALTERNATIVE_EVIDENCE.get(evidence_key, ()) if evidence_key else ()
+    if phase is ProjectPhase.PLANNING and implementation_plan_path:
+        required = ()
+        alternatives = (implementation_plan_path,)
+    if phase is ProjectPhase.VALIDATION and validation_report_path:
+        required = ()
+        alternatives = (validation_report_path,)
     if alternatives:
         existing_alternative = next(
             (relative for relative in alternatives if (project_root / relative).is_file()),
@@ -181,10 +187,10 @@ def _find_evidence_file(project_root: Path, key: str) -> Path | None:
     )
 
 
-def validate_acceptance_criteria(project_root: Path) -> tuple[bool, tuple[str, ...]]:
+def validate_acceptance_criteria(project_root: Path, *, implementation_plan_path: str | None = None, validation_report_path: str | None = None) -> tuple[bool, tuple[str, ...]]:
     """Verify every plan acceptance criterion has a PASS result in validation."""
-    plan = _find_evidence_file(project_root, "implementation_plan")
-    validation = _find_evidence_file(project_root, "validation_report")
+    plan = (project_root / implementation_plan_path) if implementation_plan_path else _find_evidence_file(project_root, "implementation_plan")
+    validation = (project_root / validation_report_path) if validation_report_path else _find_evidence_file(project_root, "validation_report")
     if plan is None:
         return False, ("implementation plan is missing",)
     if validation is None:
@@ -243,7 +249,7 @@ def validate_acceptance_criteria(project_root: Path) -> tuple[bool, tuple[str, .
             missing.append(f"{criterion_id} is not marked PASS")
     return not missing, tuple(missing)
 
-def can_advance(project_root: Path, current: ProjectPhase, target: ProjectPhase) -> tuple[bool, tuple[str, ...]]:
+def can_advance(project_root: Path, current: ProjectPhase, target: ProjectPhase, *, implementation_plan_path: str | None = None, validation_report_path: str | None = None) -> tuple[bool, tuple[str, ...]]:
     expected = next_phase(current)
     if target is not expected:
         return False, ("invalid sequential lifecycle transition",)
@@ -254,12 +260,12 @@ def can_advance(project_root: Path, current: ProjectPhase, target: ProjectPhase)
     if target is ProjectPhase.PLANNING:
         return phase_evidence(project_root, ProjectPhase.DOCUMENTATION)
     if target is ProjectPhase.DEVELOPMENT:
-        return phase_evidence(project_root, ProjectPhase.PLANNING)
+        return phase_evidence(project_root, ProjectPhase.PLANNING, implementation_plan_path=implementation_plan_path)
     if target is ProjectPhase.MAINTENANCE:
-        ok, missing = phase_evidence(project_root, ProjectPhase.VALIDATION)
+        ok, missing = phase_evidence(project_root, ProjectPhase.VALIDATION, validation_report_path=validation_report_path)
         if not ok:
             return ok, missing
-        return validate_acceptance_criteria(project_root)
+        return validate_acceptance_criteria(project_root, implementation_plan_path=implementation_plan_path, validation_report_path=validation_report_path)
     return True, ()
 
 
@@ -297,7 +303,15 @@ def next_phase(phase: ProjectPhase) -> ProjectPhase | None:
     return NEXT_PHASE.get(phase)
 
 
-def lifecycle_state_path(state_root: Path, project: str) -> Path:
+def milestone_lifecycle_state_path(state_root: Path, project: str, milestone_id: str) -> Path:
+    if not milestone_id or "/" in milestone_id or "\\" in milestone_id or milestone_id in {".", ".."}:
+        raise ValueError("invalid milestone id")
+    return state_root / project / "milestones" / milestone_id / "project_lifecycle.json"
+
+
+def lifecycle_state_path(state_root: Path, project: str, milestone_id: str | None = None) -> Path:
+    if milestone_id:
+        return milestone_lifecycle_state_path(state_root, project, milestone_id)
     if not project or project in {".", ".."} or "/" in project or "\\" in project:
         raise ValueError("invalid lifecycle project name")
     return state_root / project / "project_lifecycle.json"
@@ -310,8 +324,9 @@ def load_lifecycle_state(
     fallback_phase: ProjectPhase = ProjectPhase.IDEA,
     fallback_approved: bool = False,
     fallback_approved_at: str | None = None,
+    milestone_id: str | None = None,
 ) -> LifecycleState:
-    path = lifecycle_state_path(state_root, project)
+    path = lifecycle_state_path(state_root, project, milestone_id)
     if not path.exists():
         return LifecycleState(
             phase=fallback_phase,
@@ -354,8 +369,9 @@ def save_lifecycle_state(
     state_root: Path,
     project: str,
     state: LifecycleState,
+    milestone_id: str | None = None,
 ) -> Path:
-    path = lifecycle_state_path(state_root, project)
+    path = lifecycle_state_path(state_root, project, milestone_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "phase": state.phase.value,
