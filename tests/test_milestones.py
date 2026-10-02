@@ -89,3 +89,47 @@ def test_milestone_view_reports_active_phase(tmp_path):
     view = _milestone_view(config_path, config.projects["demo"], config.projects["demo"].milestones[0])
     assert view["phase"] == "PLANNING"
     assert view["active"] is True
+
+
+def test_start_milestone_requires_completed_project_foundation(tmp_path):
+    from labos_agent.web import Handler
+
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        f"""projects:
+  demo:
+    repository: example/demo
+    project_root: {tmp_path / "repo"}
+    continuation_message: Continue demo
+    lifecycle:
+      phase: MAINTENANCE
+""",
+        encoding="utf-8",
+    )
+    handler = object.__new__(Handler)
+    handler.server = type("Server", (), {"config_path": config_path})()
+    sent = {}
+    handler._send = lambda status, body, content_type="application/json": sent.update(status=status, body=body)
+    handler._create_milestone("demo", {"id": "ui", "title": "UI", "objective": "Build UI", "start": True})
+    assert sent["status"] == 200
+    project = load_config(config_path).projects["demo"]
+    assert project.active_milestone_id == "ui"
+    assert project.lifecycle_phase is ProjectPhase.PLANNING
+
+
+def test_milestone_start_does_not_change_legacy_project_state(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        f"""projects:
+  demo:
+    repository: example/demo
+    project_root: {tmp_path / "repo"}
+    continuation_message: Continue demo
+    lifecycle:
+      phase: MAINTENANCE
+""",
+        encoding="utf-8",
+    )
+    config = load_config(config_path)
+    save_lifecycle_state(tmp_path / "state", "demo", LifecycleState(ProjectPhase.MAINTENANCE))
+    assert config.projects["demo"].lifecycle_phase is ProjectPhase.MAINTENANCE
