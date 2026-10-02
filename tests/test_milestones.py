@@ -144,3 +144,32 @@ def test_lifecycle_gate_supports_legacy_project_objects(tmp_path):
     project = type("Project", (), {"project_root": root, "lifecycle_phase": ProjectPhase.PLANNING})()
     gate = _lifecycle_gate(project)
     assert gate["target"] == "DEVELOPMENT"
+
+
+def test_supervisor_milestone_context_names_isolated_evidence_files(tmp_path):
+    from labos_agent.config import AppConfig, MilestoneConfig, ProjectConfig
+    from labos_agent.lifecycle import ProjectPhase
+    from labos_agent.supervisor import ConversationSupervisor
+
+    project = ProjectConfig(
+        name="demo",
+        repository="example/demo",
+        project_root=tmp_path / "repo",
+        continuation_message="Continue demo",
+        project_name="Demo",
+        lifecycle_phase=ProjectPhase.PLANNING,
+        milestones=(MilestoneConfig(
+            id="ui",
+            title="User Interface",
+            objective="Build UI",
+            continuation_message="Implement the UI",
+            plan_path=".labos/milestones/ui/PLAN.md",
+            validation_path=".labos/milestones/ui/VALIDATION.md",
+        ),),
+        active_milestone_id="ui",
+    )
+    supervisor = ConversationSupervisor(AppConfig(projects={"demo": project}, state_root=tmp_path / "state"), "demo")
+    context = supervisor._lifecycle_context()
+    assert ".labos/milestones/ui/PLAN.md" in context
+    assert ".labos/milestones/ui/VALIDATION.md" in context
+    assert "project-level PLAN.md or VALIDATION.md" in context
