@@ -125,12 +125,12 @@ function render(){renderList();const p=projects.find(x=>x.name===selected);docum
 function updateProjectHeader(p){const b=document.getElementById('startBtn');b.disabled=!p;b.textContent=p&&p.running?'■ Stop':'▶ Start';document.getElementById('pageTitle').textContent=p?.name||'Lab OS';document.getElementById('pageRepo').textContent=p?p.repository+' · '+p.project_root:'Select a project'}
 function page(p){if(view==='lifecycle')return lifecyclePage(p);if(view==='documentation')return workspacePage('Documentation','/documentation',documentationView);if(view==='planning')return planningView(p);if(view==='validation')return workspacePage('Validation','/validation',validationView);if(view==='repository')return workspacePage('Repository assessment','/repository-assessment',repositoryView);if(view==='runs')return '<div class="card wide"><h3>Supervisor run history</h3><div id="runs"><div class="empty">Loading…</div></div></div>';if(view==='ci')return '<div class="card wide"><h3>GitHub Actions</h3><div id="ci"><div class="empty">Loading…</div></div></div>';if(view==='settings')return settings(p);return overview(p)}
 function lifecycleControls(p){
- const phases=['IDEA','BRAINSTORM','DOCUMENTATION','PLANNING','DEVELOPMENT','VALIDATION','MAINTENANCE'];
+ const phases=p.active_milestone_id?['PLANNING','DEVELOPMENT','VALIDATION','MAINTENANCE']:['IDEA','BRAINSTORM','DOCUMENTATION','PLANNING','DEVELOPMENT','VALIDATION','MAINTENANCE'];
  const i=phases.indexOf(p.lifecycle_phase),next=phases[i+1],gate=p.lifecycle_gate;
  const description={IDEA:'Capture the problem and intended outcome.',BRAINSTORM:'Explore the idea, constraints and alternatives.',DOCUMENTATION:'Turn the idea into durable product and engineering documentation.',PLANNING:'Create an implementation plan with explicit acceptance criteria.',DEVELOPMENT:'Implement the approved plan.',VALIDATION:'Validate the implementation against requirements and acceptance criteria.',MAINTENANCE:'Maintain the validated project.'}[p.lifecycle_phase];
  return `<section class="card wide">
  <div class="section-head"><div><div class="eyebrow">Lifecycle</div><h3>Where the project is now</h3></div><span class="badge ${p.lifecycle_phase==='DEVELOPMENT'&&!p.lifecycle_approved?'warn':p.lifecycle_phase==='MAINTENANCE'?'good':''}">${esc(p.lifecycle_phase)}</span></div>
- <div class="phase-track" aria-label="Project lifecycle">${phases.map((x,n)=>`<div class="phase ${n<i?'done':n===i?'current':''} ${gate?.target===x&&!gate?.satisfied?'blocked':''}" aria-current="${n===i?'step':'false'}">${n<i?'✓ ':''}${x}<small>${n===i?'Current':n<i?'Complete':n===i+1?'Next':'Later'}</small></div>`).join('')}</div>
+ <div class="phase-track" aria-label="${p.active_milestone_id?'Current milestone lifecycle':'Project lifecycle'}">${phases.map((x,n)=>`<div class="phase ${n<i?'done':n===i?'current':''} ${gate?.target===x&&!gate?.satisfied?'blocked':''}" aria-current="${n===i?'step':'false'}">${n<i?'✓ ':''}${x}<small>${n===i?'Current':n<i?'Complete':n===i+1?'Next':'Later'}</small></div>`).join('')}</div>
  <div class="dialog-section"><div class="section-head"><div><h4>Milestones</h4><div class="hint">Each milestone runs its own Planning → Development → Validation → Maintenance cycle.</div></div><button onclick="openMilestoneDialog()">New milestone</button></div>
  \${p.milestones?.length ? \`<div class="table-wrap"><table class="table"><tr><th>Milestone</th><th>Phase</th><th>Objective</th><th></th></tr>\${p.milestones.map(m=>\`<tr><td><strong>\${esc(m.title)}</strong><div class="hint">\${esc(m.id)}</div></td><td><span class="badge \${m.complete?'good':m.active?'warn':''}">\${esc(m.phase)}\${m.active?' · Current':''}</span></td><td>\${esc(m.objective)}</td><td>\${m.complete&&!m.active?\`<button onclick="startMilestone('\${esc(m.id)}')">Start</button>\`:''}</td></tr>\`).join('')}</table></div>\` : \`<div class="empty">No milestones defined yet.</div>\`}
  </div>
@@ -140,7 +140,7 @@ function lifecycleControls(p){
  </section>`;
 }
 function compactLifecycle(p){
- const phases=['IDEA','BRAINSTORM','DOCUMENTATION','PLANNING','DEVELOPMENT','VALIDATION','MAINTENANCE'];
+ const phases=p.active_milestone_id?['PLANNING','DEVELOPMENT','VALIDATION','MAINTENANCE']:['IDEA','BRAINSTORM','DOCUMENTATION','PLANNING','DEVELOPMENT','VALIDATION','MAINTENANCE'];
  const i=phases.indexOf(p.lifecycle_phase),gate=p.lifecycle_gate;
  return `<section class="card wide lifecycle-summary">
    <div class="section-head"><div><div class="eyebrow">Project lifecycle</div><h3>Progress</h3></div><span class="badge ${p.lifecycle_phase==='MAINTENANCE'?'good':''}">${esc(p.lifecycle_phase)}</span></div>
