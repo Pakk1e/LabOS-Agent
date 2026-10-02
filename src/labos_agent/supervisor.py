@@ -308,7 +308,7 @@ class ConversationSupervisor:
         self.config = config
         self.project: ProjectConfig = project
         self.project_name = project_name
-        self.max_turns = max_turns
+        self.max_turns = max_turns if max_turns > 0 else project.max_turns
         self.ci_timeout_seconds = (
             ci_timeout_seconds
             if ci_timeout_seconds is not None
@@ -432,8 +432,8 @@ class ConversationSupervisor:
             return chat.send_project_message_and_wait_for_response(
                 self.project.project_name,
                 message,
-                timeout_seconds=self.config.browser.response_timeout_seconds,
-                quiet_seconds=self.config.browser.quiet_seconds,
+                timeout_seconds=self.project.response_timeout_seconds,
+                quiet_seconds=self.project.quiet_seconds,
             )
         return chat.send_and_wait_for_response(
             message,

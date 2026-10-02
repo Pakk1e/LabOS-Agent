@@ -27,6 +27,9 @@ class ProjectConfig:
     min_fresh_chat_delay_seconds: float = 420.0
     response_to_next_message_delay_seconds: float = 45.0
     max_no_progress_iterations: int = 5
+    max_turns: int = 0
+    response_timeout_seconds: float = 1200.0
+    quiet_seconds: float = 3.0
     ci_timeout_seconds: float = 1800.0
     ci_stage: str | None = None
     ci_stages: dict[str, tuple[tuple[str, ...], ...]] = field(default_factory=dict)
@@ -108,6 +111,9 @@ def load_config(path: Path) -> AppConfig:
             min_fresh_chat_delay_seconds=float(value.get("min_fresh_chat_delay_seconds",420)),
             response_to_next_message_delay_seconds=float(value.get("response_to_next_message_delay_seconds",45)),
             max_no_progress_iterations=int(value.get("max_no_progress_iterations",5)),
+            max_turns=int(value.get("max_turns",0)),
+            response_timeout_seconds=float(value.get("response_timeout_seconds",1200)),
+            quiet_seconds=float(value.get("quiet_seconds",3)),
             ci_timeout_seconds=float(value.get("ci_timeout_seconds",1800)),
             ci_stage=value.get("ci_stage"), ci_stages=_parse_ci_stages(value.get("ci")),
             state_files=tuple(value.get("state_files",ProjectConfig.state_files)),
