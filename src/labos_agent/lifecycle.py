@@ -209,13 +209,13 @@ def validate_acceptance_criteria(project_root: Path, *, implementation_plan_path
             continue
         if in_section and stripped.startswith("## "):
             break
-        if in_section and stripped.startswith("- "):
-            criterion = stripped[2:].strip()
+        if in_section:
+            criterion = stripped[2:].strip() if stripped.startswith("- ") else stripped
             match = re.match(r"(AC-[A-Za-z0-9._-]+)\b", criterion)
-            if not match:
-                criteria.append("")
-            else:
+            if match:
                 criteria.append(match.group(1))
+            elif stripped.startswith("- "):
+                criteria.append("")
     if not criteria:
         return False, ("implementation plan contains no acceptance criteria",)
     if any(not criterion for criterion in criteria):

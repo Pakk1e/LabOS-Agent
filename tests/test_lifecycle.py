@@ -306,6 +306,24 @@ def test_brainstorm_gate_requires_brainstorm_notes(tmp_path):
     assert not missing
 
 
+def test_maintenance_gate_accepts_bare_ac_criteria(tmp_path):
+    from labos_agent.lifecycle import validate_acceptance_criteria
+
+    root = tmp_path
+    (root / "PLAN.md").write_text(
+        "# Plan\n\n## Acceptance Criteria\nAC-1 first\nAC-2 second",
+        encoding="utf-8",
+    )
+    (root / "VALIDATION.md").write_text(
+        "# Validation\n\n## Acceptance Criteria\nAC-1 PASS\nAC-2 PASS",
+        encoding="utf-8",
+    )
+
+    ok, missing = validate_acceptance_criteria(root)
+    assert ok is True
+    assert missing == ()
+
+
 def test_maintenance_gate_validates_each_acceptance_criterion(tmp_path):
     from labos_agent.lifecycle import can_advance
     root = tmp_path / "repo"
