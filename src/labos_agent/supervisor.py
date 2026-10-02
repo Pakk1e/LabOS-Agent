@@ -357,7 +357,9 @@ class ConversationSupervisor:
                f"MILESTONE OBJECTIVE: {self.active_milestone.objective}\n" if self.active_milestone else "")
             + f"PROJECT MODE: {self.project.project_mode}\n"
             + (f"MILESTONE PLAN FILE: {self.active_milestone.plan_path}\n"
-               f"MILESTONE VALIDATION FILE: {self.active_milestone.validation_path}\n" if self.active_milestone else "")
+               f"MILESTONE VALIDATION FILE: {self.active_milestone.validation_path}\n"
+               "For this milestone, use these milestone-specific files instead of the project-level "
+               "PLAN.md or VALIDATION.md. Keep the project-level documentation unchanged.\n" if self.active_milestone else "")
             + f"PHASE WORK CONTRACT:\n{phase_instruction(phase)}\n"
             + "PHASE TRANSITION: LabOS advances automatically after DONE is independently "
             + "verified and the required repository evidence is present."
