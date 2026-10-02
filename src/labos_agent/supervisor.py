@@ -760,6 +760,8 @@ Start now. Complete the current phase rather than merely describing what should 
                             self.project.project_root,
                             self.current_phase,
                             target_phase,
+                            implementation_plan_path=self.active_milestone.plan_path if self.active_milestone else None,
+                            validation_report_path=self.active_milestone.validation_path if self.active_milestone else None,
                         )
                         if can_transition:
                             previous_phase = self.current_phase
