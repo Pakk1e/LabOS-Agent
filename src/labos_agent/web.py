@@ -561,6 +561,14 @@ def _project_view(config_path: Path, name: str, project) -> dict:
         "brainstorm_notes": project.brainstorm_notes,
         "project_mode": project.project_mode,
         "manual_lifecycle_advance_enabled": project.manual_lifecycle_advance_enabled,
+        "max_turns": project.max_turns,
+        "response_timeout_seconds": project.response_timeout_seconds,
+        "quiet_seconds": project.quiet_seconds,
+        "min_fresh_chat_delay_seconds": project.min_fresh_chat_delay_seconds,
+        "response_to_next_message_delay_seconds": project.response_to_next_message_delay_seconds,
+        "max_no_progress_iterations": project.max_no_progress_iterations,
+        "ci_timeout_seconds": project.ci_timeout_seconds,
+        "ci_poll_seconds": project.remote_ci_poll_seconds,
         "lifecycle_phase": project.lifecycle_phase.value,
         "lifecycle_approved": project.lifecycle_approved,
         "lifecycle_approved_at": project.lifecycle_approved_at,
@@ -844,6 +852,26 @@ class Handler(BaseHTTPRequestHandler):
                 body["manual_lifecycle_advance_enabled"],
                 "manual_lifecycle_advance_enabled",
             )
+        numeric_fields = {
+            "max_turns": (int, 0, 1000),
+            "response_timeout_seconds": (float, 30, 3600),
+            "quiet_seconds": (float, 0, 30),
+            "min_fresh_chat_delay_seconds": (float, 0, 3600),
+            "response_to_next_message_delay_seconds": (float, 0, 600),
+            "max_no_progress_iterations": (int, 1, 50),
+            "ci_timeout_seconds": (float, 60, 7200),
+            "ci_poll_seconds": (float, 1, 60),
+        }
+        for key, (kind, minimum, maximum) in numeric_fields.items():
+            if key not in body:
+                continue
+            try:
+                value = kind(body[key])
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"{key} must be a number") from exc
+            if value < minimum or value > maximum:
+                raise ValueError(f"{key} must be between {minimum} and {maximum}")
+            project[key] = value
         for key in ("project_name", "project_url", "new_chat_selector", "ci_stage"):
             value = str(body.get(key, "")).strip()
             if key == "project_url" and value and not _URL_RE.fullmatch(value):
@@ -1010,7 +1038,10 @@ class Handler(BaseHTTPRequestHandler):
         if existing_status["running"]:
             return self._send(409, {"error": "supervisor already running", "pid": existing_status["pid"]})
         with _process_lock:
-            max_turns = int(body.get("max_turns", 0))
+            try:
+                max_turns = int(body.get("max_turns", project.max_turns))
+            except (TypeError, ValueError):
+                return self._send(400, {"error": "max_turns must be a number"})
             if max_turns < 0 or max_turns > 1000:
                 return self._send(400, {"error": "max_turns must be between 0 and 1000"})
             cmd = [sys.executable, "-m", "labos_agent.cli", "supervise", name,
