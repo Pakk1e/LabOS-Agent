@@ -132,7 +132,7 @@ def phase_instruction(phase: ProjectPhase) -> str:
     return instructions[phase]
 
 
-def phase_evidence(project_root: Path, phase: ProjectPhase) -> tuple[bool, tuple[str, ...]]:
+def phase_evidence(project_root: Path, phase: ProjectPhase, *, implementation_plan_path: str | None = None, validation_report_path: str | None = None) -> tuple[bool, tuple[str, ...]]:
     """Return whether the repository contains the minimum evidence for entering phase."""
     required = PHASE_EVIDENCE_FILES.get(phase, ())
     missing: list[str] = []
@@ -144,6 +144,10 @@ def phase_evidence(project_root: Path, phase: ProjectPhase) -> tuple[bool, tuple
         else None
     )
     alternatives = ALTERNATIVE_EVIDENCE.get(evidence_key, ()) if evidence_key else ()
+    if phase is ProjectPhase.PLANNING and implementation_plan_path:
+        alternatives = (implementation_plan_path,)
+    if phase is ProjectPhase.VALIDATION and validation_report_path:
+        alternatives = (validation_report_path,)
     if alternatives:
         existing_alternative = next(
             (relative for relative in alternatives if (project_root / relative).is_file()),
@@ -181,10 +185,10 @@ def _find_evidence_file(project_root: Path, key: str) -> Path | None:
     )
 
 
-def validate_acceptance_criteria(project_root: Path) -> tuple[bool, tuple[str, ...]]:
+def validate_acceptance_criteria(project_root: Path, *, implementation_plan_path: str | None = None, validation_report_path: str | None = None) -> tuple[bool, tuple[str, ...]]:
     """Verify every plan acceptance criterion has a PASS result in validation."""
-    plan = _find_evidence_file(project_root, "implementation_plan")
-    validation = _find_evidence_file(project_root, "validation_report")
+    plan = (project_root / implementation_plan_path) if implementation_plan_path else _find_evidence_file(project_root, "implementation_plan")
+    validation = (project_root / validation_report_path) if validation_report_path else _find_evidence_file(project_root, "validation_report")
     if plan is None:
         return False, ("implementation plan is missing",)
     if validation is None:
@@ -243,7 +247,7 @@ def validate_acceptance_criteria(project_root: Path) -> tuple[bool, tuple[str, .
             missing.append(f"{criterion_id} is not marked PASS")
     return not missing, tuple(missing)
 
-def can_advance(project_root: Path, current: ProjectPhase, target: ProjectPhase) -> tuple[bool, tuple[str, ...]]:
+def can_advance(project_root: Path, current: ProjectPhase, target: ProjectPhase, *, implementation_plan_path: str | None = None, validation_report_path: str | None = None) -> tuple[bool, tuple[str, ...]]:
     expected = next_phase(current)
     if target is not expected:
         return False, ("invalid sequential lifecycle transition",)
@@ -254,12 +258,12 @@ def can_advance(project_root: Path, current: ProjectPhase, target: ProjectPhase)
     if target is ProjectPhase.PLANNING:
         return phase_evidence(project_root, ProjectPhase.DOCUMENTATION)
     if target is ProjectPhase.DEVELOPMENT:
-        return phase_evidence(project_root, ProjectPhase.PLANNING)
+        return phase_evidence(project_root, ProjectPhase.PLANNING, implementation_plan_path=implementation_plan_path)
     if target is ProjectPhase.MAINTENANCE:
-        ok, missing = phase_evidence(project_root, ProjectPhase.VALIDATION)
+        ok, missing = phase_evidence(project_root, ProjectPhase.VALIDATION, validation_report_path=validation_report_path)
         if not ok:
             return ok, missing
-        return validate_acceptance_criteria(project_root)
+        return validate_acceptance_criteria(project_root, implementation_plan_path=implementation_plan_path, validation_report_path=validation_report_path)
     return True, ()
 
 
