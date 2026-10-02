@@ -746,6 +746,12 @@ class Handler(BaseHTTPRequestHandler):
             body = self._json()
             if parsed.path == "/api/projects":
                 return self._create_project(body)
+            if parsed.path.startswith("/api/projects/") and parsed.path.endswith("/milestones"):
+                name = unquote(parsed.path.removeprefix("/api/projects/").removesuffix("/milestones")).strip("/")
+                return self._create_milestone(name, body)
+            if parsed.path.startswith("/api/projects/") and parsed.path.endswith("/milestones/start"):
+                name = unquote(parsed.path.removeprefix("/api/projects/").removesuffix("/milestones/start")).strip("/")
+                return self._start_milestone(name, body)
             if parsed.path.startswith("/api/projects/") and parsed.path.endswith("/lifecycle"):
                 name = unquote(parsed.path.removeprefix("/api/projects/").removesuffix("/lifecycle")).strip("/")
                 return self._update_lifecycle(name, body)
@@ -977,6 +983,67 @@ class Handler(BaseHTTPRequestHandler):
     def _update_lifecycle(self, name: str, body: dict):
         with _lifecycle_lock:
             return self._update_lifecycle_unlocked(name, body)
+    def _create_milestone(self, name: str, body: dict):
+        config = load_config(self.config_path)
+        project = config.projects.get(name)
+        if project is None:
+            return self._send(404, {"error": "project not found"})
+        if _process_status(self.config_path, name)["running"]:
+            return self._send(409, {"error": "stop the supervisor before changing milestones"})
+        milestone_id = str(body.get("id", "")).strip()
+        title = str(body.get("title", "")).strip()
+        objective = str(body.get("objective", "")).strip()
+        continuation_message = str(body.get("continuation_message", "")).strip()
+        if not milestone_id or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", milestone_id):
+            return self._send(400, {"error": "milestone id must contain only letters, numbers, dots, underscores, and hyphens"})
+        if not title:
+            return self._send(400, {"error": "milestone title is required"})
+        if not objective:
+            return self._send(400, {"error": "milestone objective is required"})
+        if any(item.id == milestone_id for item in project.milestones):
+            return self._send(409, {"error": "milestone already exists"})
+        payload = _config_payload(self.config_path)
+        lifecycle = payload["projects"][name].setdefault("lifecycle", {})
+        lifecycle.setdefault("milestones", []).append({
+            "id": milestone_id,
+            "title": title,
+            "objective": objective,
+            "continuation_message": continuation_message or objective,
+            "plan_path": str(body.get("plan_path", f".labos/milestones/{milestone_id}/PLAN.md")).strip(),
+            "validation_path": str(body.get("validation_path", f".labos/milestones/{milestone_id}/VALIDATION.md")).strip(),
+        })
+        _write_config(self.config_path, payload)
+        if _parse_bool(body.get("start"), "start", default=False):
+            return self._start_milestone(name, {"id": milestone_id})
+        config = load_config(self.config_path)
+        return self._send(201, _project_view(self.config_path, name, config.projects[name]))
+
+    def _start_milestone(self, name: str, body: dict):
+        config = load_config(self.config_path)
+        project = config.projects.get(name)
+        if project is None:
+            return self._send(404, {"error": "project not found"})
+        if _process_status(self.config_path, name)["running"]:
+            return self._send(409, {"error": "stop the supervisor before starting a milestone"})
+        milestone_id = str(body.get("id", "")).strip()
+        milestone = _milestone(project, milestone_id)
+        if milestone is None:
+            return self._send(404, {"error": "milestone not found"})
+        if project.active_milestone_id and project.lifecycle_phase is not ProjectPhase.MAINTENANCE:
+            return self._send(409, {"error": "the current milestone must reach MAINTENANCE before starting another milestone"})
+        if not project.active_milestone_id and project.lifecycle_phase is not ProjectPhase.MAINTENANCE:
+            return self._send(409, {"error": "the project foundation must reach MAINTENANCE before starting a milestone"})
+        existing_state = load_lifecycle_state(self.config_path.parent / "state", name, fallback_phase=ProjectPhase.PLANNING, milestone_id=milestone.id)
+        if existing_state.phase is not ProjectPhase.PLANNING and existing_state.phase is not ProjectPhase.MAINTENANCE:
+            return self._send(409, {"error": "milestone has already started and is not complete"})
+        payload = _config_payload(self.config_path)
+        payload["projects"][name].setdefault("lifecycle", {})["active_milestone_id"] = milestone.id
+        _write_config(self.config_path, payload)
+        save_lifecycle_state(self.config_path.parent / "state", name, LifecycleState(phase=ProjectPhase.PLANNING), milestone_id=milestone.id)
+        _record_lifecycle_event(self.config_path, name, phase=ProjectPhase.PLANNING, approved=False, event="milestone_started", milestone_id=milestone.id)
+        config = load_config(self.config_path)
+        return self._send(200, _project_view(self.config_path, name, config.projects[name]))
+
 
     def _update_lifecycle_unlocked(self, name: str, body: dict):
         config = load_config(self.config_path)
