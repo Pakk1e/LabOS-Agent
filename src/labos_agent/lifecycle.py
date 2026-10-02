@@ -145,8 +145,10 @@ def phase_evidence(project_root: Path, phase: ProjectPhase, *, implementation_pl
     )
     alternatives = ALTERNATIVE_EVIDENCE.get(evidence_key, ()) if evidence_key else ()
     if phase is ProjectPhase.PLANNING and implementation_plan_path:
+        required = ()
         alternatives = (implementation_plan_path,)
     if phase is ProjectPhase.VALIDATION and validation_report_path:
+        required = ()
         alternatives = (validation_report_path,)
     if alternatives:
         existing_alternative = next(
@@ -308,6 +310,8 @@ def milestone_lifecycle_state_path(state_root: Path, project: str, milestone_id:
 
 
 def lifecycle_state_path(state_root: Path, project: str, milestone_id: str | None = None) -> Path:
+    if milestone_id:
+        return milestone_lifecycle_state_path(state_root, project, milestone_id)
     if not project or project in {".", ".."} or "/" in project or "\\" in project:
         raise ValueError("invalid lifecycle project name")
     return state_root / project / "project_lifecycle.json"
