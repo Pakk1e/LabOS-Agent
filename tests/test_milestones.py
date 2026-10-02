@@ -1,0 +1,91 @@
+from pathlib import Path
+
+from labos_agent.config import load_config
+from labos_agent.lifecycle import LifecycleState, ProjectPhase, can_advance, load_lifecycle_state, save_lifecycle_state
+from labos_agent.web import _milestone_view
+
+
+def test_milestone_state_is_isolated_from_project_lifecycle(tmp_path):
+    root = tmp_path / "state"
+    save_lifecycle_state(root, "demo", LifecycleState(ProjectPhase.MAINTENANCE))
+    save_lifecycle_state(root, "demo", LifecycleState(ProjectPhase.DEVELOPMENT), milestone_id="ui")
+
+    assert load_lifecycle_state(root, "demo").phase is ProjectPhase.MAINTENANCE
+    assert load_lifecycle_state(root, "demo", milestone_id="ui").phase is ProjectPhase.DEVELOPMENT
+
+
+def test_active_milestone_becomes_effective_project_phase(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        f"""projects:
+  demo:
+    repository: example/demo
+    project_root: {tmp_path / "repo"}
+    continuation_message: Continue demo
+    lifecycle:
+      mode: guided
+      phase: MAINTENANCE
+      active_milestone_id: ui
+      milestones:
+        - id: ui
+          title: User Interface
+          objective: Build the user interface
+          continuation_message: Build the UI
+""",
+        encoding="utf-8",
+    )
+    save_lifecycle_state(tmp_path / "state", "demo", LifecycleState(ProjectPhase.DEVELOPMENT), milestone_id="ui")
+
+    config = load_config(config_path)
+    project = config.projects["demo"]
+    assert project.active_milestone_id == "ui"
+    assert project.lifecycle_phase is ProjectPhase.DEVELOPMENT
+    assert project.milestones[0].title == "User Interface"
+
+
+def test_milestone_specific_plan_is_used_for_development_gate(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    plan = repo / ".labos" / "milestones" / "ui" / "PLAN.md"
+    plan.parent.mkdir(parents=True)
+    plan.write_text("# UI Plan\n\n## Acceptance Criteria\n- AC-UI-1", encoding="utf-8")
+
+    ok, missing = can_advance(
+        repo,
+        ProjectPhase.PLANNING,
+        ProjectPhase.DEVELOPMENT,
+        implementation_plan_path=".labos/milestones/ui/PLAN.md",
+    )
+    assert ok
+    assert missing == ()
+
+
+def test_milestone_view_reports_active_phase(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        f"""projects:
+  demo:
+    repository: example/demo
+    project_root: {tmp_path / "repo"}
+    continuation_message: Continue demo
+    lifecycle:
+      phase: MAINTENANCE
+      milestones:
+        - id: ui
+          title: User Interface
+          objective: Build UI
+          continuation_message: Build UI
+          active_milestone_id: ui
+""",
+        encoding="utf-8",
+    )
+    config = load_config(config_path)
+    # active_milestone_id belongs at lifecycle level; repair the fixture explicitly.
+    payload = config_path.read_text(encoding="utf-8").replace("          active_milestone_id: ui\n", "")
+    payload = payload.replace("      milestones:\n", "      active_milestone_id: ui\n      milestones:\n")
+    config_path.write_text(payload, encoding="utf-8")
+    save_lifecycle_state(tmp_path / "state", "demo", LifecycleState(ProjectPhase.PLANNING), milestone_id="ui")
+    config = load_config(config_path)
+    view = _milestone_view(config_path, config.projects["demo"], config.projects["demo"].milestones[0])
+    assert view["phase"] == "PLANNING"
+    assert view["active"] is True
